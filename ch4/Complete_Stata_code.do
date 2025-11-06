@@ -11,7 +11,8 @@
 * IMPORTANT: Change this path to YOUR directory
 *================================================================
 
-version 15
+* Script tested in Stata 19.5
+* Compatible with Stata version 19 or later
 
 cd "C:/Users/YourName/Documents/book-materials/ch4/data"
 
