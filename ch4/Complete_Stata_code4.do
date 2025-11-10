@@ -6,15 +6,18 @@
 * edition/tree/main/code/ch4
 *================================================================
 
-*================================================================
-* SETUP: Set your working directory
-* IMPORTANT: Change this path to YOUR directory
-*================================================================
-
 * Script tested in Stata 19.5
 * Compatible with Stata version 19 or later
 
+*===============================================================================
+* 📂 IMPORTANT: Set working directory (customize this for your system)
+*===============================================================================
+* for example:
 cd "C:/Users/YourName/Documents/book-materials/ch4/data"
+
+* ✅ or use a global path to make it easy to update in one place
+global ch5data "C:/Users/YourName/Documents/book-materials/ch4/data"
+cd "$ch4data"
 
 * Verify working directory
 pwd
@@ -24,7 +27,7 @@ pwd
 *================================================================
 
 *----------------------------------------------------------------
-* Example 1: Simple data entry using input command
+* Simple data entry using input command
 *----------------------------------------------------------------
 clear all
 input variable_x variable_y variable_z
@@ -49,13 +52,13 @@ edit
 export delimited using "Example 1.csv", replace
 
 *----------------------------------------------------------------
-* Example 2: Importing data from CSV file
+* Importing data from CSV file
 *----------------------------------------------------------------
 clear all
 insheet using "Example 1.csv", comma
 
 *----------------------------------------------------------------
-* Example 3: Installing iefieldkit for primary data collection (CAPI)
+* Installing iefieldkit for primary data collection (CAPI)
 *----------------------------------------------------------------
 * Install the package
 ssc install iefieldkit, replace
@@ -68,7 +71,7 @@ ssc install iefieldkit, replace
 *================================================================
 
 *----------------------------------------------------------------
-* Example 4: Importing data from NCES Digest Table 302.50
+* Importing data from NCES Digest Table 302.50
 * High school graduates enrolled in postsecondary education by
 * state, 2012
 *----------------------------------------------------------------
@@ -86,7 +89,7 @@ import excel "tabn302_50.xlsx", sheet("reformatted") firstrow clear
 browse
 
 *----------------------------------------------------------------
-* Example 5: Adding FIPS codes and state abbreviations
+* Adding FIPS codes and state abbreviations
 *----------------------------------------------------------------
 * Install statastates package
 ssc install statastates, replace
@@ -101,7 +104,7 @@ drop _merge
 * order state_abbrev state_fips, before(State)
 
 *----------------------------------------------------------------
-* Example 6: Saving with descriptive name and viewing structure
+* Saving with descriptive name and viewing structure
 *----------------------------------------------------------------
 * Save the dataset
 save "US high school graduates in 2012 enrolled in PSE, by state.dta", replace
@@ -110,7 +113,7 @@ save "US high school graduates in 2012 enrolled in PSE, by state.dta", replace
 describe
 
 *----------------------------------------------------------------
-* Example 7: Adding variable labels
+* Adding variable labels
 *----------------------------------------------------------------
 lab var Stateid "Stateid"
 lab var state_abbrev "State abbreviation"
@@ -138,7 +141,7 @@ save "US high school graduates in 2012 enrolled in PSE, by state.dta", replace
 *================================================================
 
 *----------------------------------------------------------------
-* Example 8: Creating time series dataset from NCES Digest Table * 302.10
+* Creating time series dataset from NCES Digest Table * 302.10
 * Percent of HS graduates enrolled in college, 1960-2016
 *----------------------------------------------------------------
 clear all
@@ -162,7 +165,9 @@ order year, first
 tsset year, yearly
 
 * Save the time series dataset
-save "Percent of US high school graduates in PSE, 1960 to 2016.dta", replace
+save "Percent of US high school graduates in PSE, 1960 to 2016.dta"
+* Note: On GitHub, this file is named Example_4_2_2_TS.dta and found in the 
+* /data/ch4/ repository. 
 
 *----------------------------------------------------------------
 * Alternative: Download reformatted data from GitHub
@@ -175,15 +180,17 @@ import excel "tabn302_10.xlsx", sheet("reformatted") firstrow clear
 * Declare as time series
 tsset year, yearly
 
-* Save
-save "Percent of US high school graduates in PSE, 1960 to 2016.dta", replace
+* Save the time series dataset
+save "Percent of US high school graduates in PSE, 1960 to 2016.dta"
+* Note: On GitHub, this file is named Example_4_2_2_TS.dta and found in the 
+* /data/ch4/ repository. 
 
-*================================================================
+*===============================================================================
 * SECTION 4.2.2: SECONDARY DATA - PANEL DATA
-*==============================================================================
+*===============================================================================
 
 *----------------------------------------------------------------
-* Example 9: Creating panel dataset from NCES Digest Table 304.70
+* Creating panel dataset from NCES Digest Table 304.70
 * Undergraduate enrollment by state, 2000-2017
 *----------------------------------------------------------------
 clear all
@@ -201,7 +208,7 @@ import excel "tabn304_70.xlsx", sheet("Undergrads") firstrow clear
 save "Undergraduate enrollment data - Wide.dta", replace
 
 *----------------------------------------------------------------
-* Example 10: Converting panel data from wide to long format
+* Converting panel data from wide to long format
 *----------------------------------------------------------------
 * Install sreshape if not already installed
 * Type: search sreshape, all
@@ -220,7 +227,7 @@ xtdes
 save "Undergraduate enrollment data - Long.dta", replace
 
 *----------------------------------------------------------------
-* Example 11: Creating and reshaping high school graduation
+* Creating and reshaping high school graduation
 * dataset
 *----------------------------------------------------------------
 clear all
@@ -244,7 +251,7 @@ save "HSGrad - Long.dta", replace
 *================================================================
 
 *----------------------------------------------------------------
-* Example 12: Joining two panel datasets
+* Joining two panel datasets
 *----------------------------------------------------------------
 * Load the first dataset
 use "HSGrad - Long.dta", clear
@@ -256,7 +263,7 @@ use "HSGrad - Long.dta", clear
 browse
 
 *----------------------------------------------------------------
-* Example 13: Joining multiple panel datasets
+* Joining multiple panel datasets
 *----------------------------------------------------------------
 * Load undergraduate enrollment data
 use "Undergraduate enrollment data - Long.dta", clear
@@ -274,7 +281,7 @@ xtset id year, yearly
 xtdes
 
 * Save the combined dataset
-save "Example - 4.1.dta", replace
+save "Example4_2_2_Panel", replace
 
 * Browse the final dataset
 browse
