@@ -15,12 +15,12 @@
 * 📂 IMPORTANT: Set working directory (customize this for your system)
 *===============================================================================
 
-* ✅ Use a global path to make it easy to update in one place
+* Use a global path to make it easy to update in one place
 global ch5data "C:/Users/YourName/Documents/book-materials/ch5/data"
 cd "$ch5data"
 
 *===============================================================================
-* 📊 Section 5.2: Getting to Know the Structure of Our Datasets
+* Section 5.2: Getting to Know the Structure of Our Datasets
 *===============================================================================
 
 /* Download or use the copy and import commands to open the use the datatset
@@ -56,7 +56,7 @@ save "Example_5_0.dta", replace
 clear all
 
 *===============================================================================
-* 📈 Section 5.2 (continued): SHEEO Finance Data Example
+* Section 5.2 (continued): SHEEO Finance Data Example
 *===============================================================================
 
 * 🔹 Download and import Excel file from GitHub
@@ -88,9 +88,9 @@ save "Example_5_2.dta", replace
 clear all
 
 *===============================================================================
-* 🔎 Section 5.3: Getting to Know Our Data
+* Section 5.3: Getting to Know Our Data
 *===============================================================================
-/* 📥 Use full public_use HSLS:09 dataset (2017 Student File), which can be 
+/* Use full public_use HSLS:09 dataset (2017 Student File), which can be 
  downloaded directly from NCES at 
  https://nces.ed.gov/datalab/onlinecodebook and rename HSLS09.dta.
  Be aware, this is a hugh file. If you don't have Stata/MP or Stata/SE, you may 
@@ -101,7 +101,7 @@ clear all
 
 keep STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA S3CLGPELL P1TUITION
 
-/* If you have neither Stata/MP or Stata/SE, download the a truncated version of
+/* If you have neither Stata/MP nor Stata/SE, download a truncated version of
  of the public_use HSLS:09 dataset (Example_5_3.dta) on GitHub in 
  the repository /ch5/data, or use the copy and import commands. */
 
@@ -110,7 +110,7 @@ use "Example_5_3.dta", clear
 
 codebook S3CLGPELL
 
-* 🔄 Recode special missing values
+* mvdecode replaces special missing values (-9) with Stata's system missing (.)
 mvdecode _all, mv(-9=.)
 
 *===============================================================================
@@ -123,7 +123,8 @@ copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/da
 
 use "Example_5_4_1.dta", clear
 
-* 🔹 Install and run missing value summaries
+* Install and run missing value summaries
+* Tip: Run this line only once to install the command
 cap ssc install mdesc, replace
 mdesc
 
@@ -163,7 +164,7 @@ bysort X1RACE : missings table
 *===============================================================================
 * 🧪 Section 5.4.1: Testing for Missing Completely at Random (MCAR)
 *===============================================================================
-*This is s repeat from above, but also testing for MCAR.
+*This is a repeat from above, but also includes testing for MCAR.
 /* 📥 Use full public_use HSLS:09 dataset (2017 Student File), which can be 
  downloaded directly from NCES at 
  https://nces.ed.gov/datalab/onlinecodebook and rename HSLS09.dta.
@@ -175,7 +176,7 @@ bysort X1RACE : missings table
 
 keep STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA S3CLGPELL P1TUITION
 
-/* If you have neither Stata/MP or Stata/SE, download the a truncated version of
+/* If you have neither Stata/MP nor Stata/SE, download a truncated version of
  of the public_use HSLS:09 dataset (Example_5_3.dta) on GitHub in 
  the repository /ch5/data, or use the copy and import commands. */
 
