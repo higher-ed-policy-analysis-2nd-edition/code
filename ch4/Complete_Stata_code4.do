@@ -63,7 +63,7 @@ insheet using "Example 1.csv", comma
 * Installing iefieldkit for primary data collection (CAPI)
 *----------------------------------------------------------------
 * Install the package
-ssc install iefieldkit, replace
+cap ssc install iefieldkit, replace
 
 * For information on iefieldkit, visit:
 * https://dimewiki.worldbank.org/wiki/Iefieldkit
@@ -94,7 +94,7 @@ browse
 * Adding FIPS codes and state abbreviations
 *----------------------------------------------------------------
 * Install statastates package
-ssc install statastates, replace
+cap ssc install statastates, replace
 
 * Add FIPS codes and state abbreviations
 * statastates, name(State)
