@@ -4,6 +4,8 @@
 * Higher Education Policy Analysis Using Quantitative Techniques *(2nd Edition)
 * Source: https://github.com/higher-ed-policy-analysis-2nd-
 * edition/tree/main/code/ch5
+* Author: Marvin A. Titus
+* Date: November 10, 2025
 *================================================================
 
 * Script tested in Stata 19.5
@@ -21,29 +23,35 @@ cd "$ch5data"
 * 📊 Section 5.2: Getting to Know the Structure of Our Datasets
 *===============================================================================
 
-* 🔹 Use time series data from Chapter 4
-
-use "Percent of US high school graduates in PSE, 1960 to 2016.dta", clear
+/* Download or use the copy and import commands to open the use the datatset
+ of the time series of the dataset of the percent of US high school graduates in
+ PSE, 1960 to 2016 from Chapter 4. On GitHub, this file is named 
+ Example_4_2_2_TS.dta and found in the /data/ch4/ repository. */ 
+ 
+copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch4/Example_4_2_2_TS.dta" "Example_4_2_2_TS.dta", replace
+use "Example_4_2_2_TS.dta", clear
+ 
 describe
 compress
 describe
 
-* 🔹 Open panel dataset
+save  "Example_4_2_2_TS.dta", replace 
+
+* 🔹 Open a panel dataset
+/* Download or use the copy and import commands to open Example_5_0.dta, found
+ in the /data/ch5/ repository. */ 
+ 
+copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Example_5_0.dta" "Example_5_0.dta", replace
 use "Example_5_0.dta", clear
+
 compress
 describe
 
 * 🔹 Recast id variable to integer
 recast int id
 describe
-save "Example_5_0.dta", replace
 
-* 🔹 Load a large dataset (HSLS:09)
-set maxvar 60000
-use "Public_use_HSLS.dta", clear
-describe, short
-memory
-compress
+save "Example_5_0.dta", replace
 
 clear all
 
@@ -57,14 +65,17 @@ copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/da
 
 import excel "Example_5_1.xlsx", sheet("reformatted") firstrow clear
 
+* drop pre-2010 recession years 
 drop if FY < 2010
 list if FY == 2010
+
+*drop U.S. aggregate and D.C.
 drop if State == "U.S."
 drop if State == "D.C."
 
 * 🔹 Create state identifiers
 * Install statastates if needed:
-cap ssc install statastates
+ssc install statastates
 statastates, name(State) nogenerate
 
 * Alternative method
@@ -79,17 +90,28 @@ clear all
 *===============================================================================
 * 🔎 Section 5.3: Getting to Know Our Data
 *===============================================================================
+/* 📥 Use full public_use HSLS:09 dataset (2017 Student File), which can be 
+ downloaded directly from NCES at 
+ https://nces.ed.gov/datalab/onlinecodebook and rename HSLS09.dta.
+ Be aware, this is a hugh file. If you don't have Stata/MP or Stata/SE, you may 
+ not be able to download the entire file. 
+ If you have Stata/MP, set maxvar 60000. If you have Stata/SE, set maxvar 32000.
+ Then keep the these variables: STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA
+ S3CLGPELL P1TUITION*/
 
-* 📥 Download truncated HSLS:09 dataset
-copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Example_5_3.dta" ///
-     "Example_5_3.dta", replace
+keep STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA S3CLGPELL P1TUITION
 
+/* If you have neither Stata/MP or Stata/SE, download the a truncated version of
+ of the public_use HSLS:09 dataset (Example_5_3.dta) on GitHub in 
+ the repository /ch5/data, or use the copy and import commands. */
+
+ copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Example_5_3.dta"  "Example_5_3.dta", replace
 use "Example_5_3.dta", clear
+
 codebook S3CLGPELL
 
 * 🔄 Recode special missing values
 mvdecode _all, mv(-9=.)
-save "Example_5_3.dta", replace
 
 *===============================================================================
 * ❓ Section 5.4: Missing Data Analysis
@@ -133,15 +155,15 @@ xtmis grantlow, id(unitid_s)
 use "Example_5_4_1.dta", clear
 
 * 🔹 Install missings suite
-cap net install dm0085_1.pkg, replace
+net install dm0085_1.pkg, replace
 
 bysort X1SESQ5 : missings table
 bysort X1RACE : missings table
 
 *===============================================================================
-* 🧪 Section 5.4.1: Testing for MCAR (Missing Completely at Random)
+* 🧪 Section 5.4.1: Testing for Missing Completely at Random (MCAR)
 *===============================================================================
-
+*This is s repeat from above, but also testing for MCAR.
 /* 📥 Use full public_use HSLS:09 dataset (2017 Student File), which can be 
  downloaded directly from NCES at 
  https://nces.ed.gov/datalab/onlinecodebook and rename HSLS09.dta.
@@ -151,14 +173,16 @@ bysort X1RACE : missings table
  Then keep the these variables: STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA
  S3CLGPELL P1TUITION*/
 
- keep STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA S3CLGPELL P1TUITION
+keep STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA S3CLGPELL P1TUITION
 
 /* If you have neither Stata/MP or Stata/SE, download the a truncated version of
- of public_use HSLS:09 dataset (Public_use_HSLS_09_truncated.dta) on GitHub in 
- the repository /ch5/data, or use the copy and import commands.
- 
+ of the public_use HSLS:09 dataset (Example_5_3.dta) on GitHub in 
+ the repository /ch5/data, or use the copy and import commands. */
 
+ copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Example_5_3.dta"  "Example_5_3.dta", replace
+use "Example_5_3.dta", clear
 
+* Change numeric values with -9) to missing values 
 mvdecode _all, mv(-9=.)
 
 * 🔹 Run MCAR tests (using mcartest, if installed)
@@ -175,3 +199,7 @@ mcartest S3CLGPELL P1TUITION = i.X1RACE if X1RACE != ., ///
     unequal emoutput nolog
 
 exit
+
+*================================================================
+* END OF CHAPTER 5 CODE
+*==============================================================================
