@@ -65,8 +65,8 @@ display "IQR = " r(p75) - r(p25)
 /* Download the public-use HSLS:09 subset data from GitHub or use the copy 
    command. This dataset contains student demographic and achievement data. */
 
-copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch6/Example_6_2.dta" "Example_6_2.dta", replace
-use "Example_6_2.dta", clear
+copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch6/Example_6_2_3.dta" "Example_6_2_3.dta", replace
+use "Example_6_2_3.dta", clear
 
 * 🔹 Frequency distribution
 tabulate X1RACE, missing
@@ -85,6 +85,55 @@ sktest X1SES
 
 clear all
 
+/* create a new categorical variable (with fewer categories), RaceEthnic, and
+   value labels */
+   
+codebook X1RACE // to look at the variable names, labels, and data 
+gen RaceEthnic = 0 // create new variable
+
+* create categories  
+replace RaceEthnic = 1 if X1RACE==2
+replace RaceEthnic = 2 if X1RACE==3
+replace RaceEthnic = 3 if X1RACE==4 | X1RACE==5
+replace RaceEthnic = 4 if X1RACE==6
+replace RaceEthnic = 5 if X1RACE==1 | X1RACE==7
+replace RaceEthnic = 6 if X1RACE==8
+lab var RaceEthnic "Race/Ethnicity" // create a label variable
+
+* create a value label
+label define RaceEthnic1 1 Asian 2 Black 3 Hispanic 4 Multiracial 5 Other 6 White
+label values RaceEthnic RaceEthnic1 // link the new variable to the value labels
+
+/* two-way table to generate a summary statistic (e.g., means) across two 
+   categories - EarnHr across RaceEthnic and X1SEX */
+tabulate RaceEthnic X1SEX, sum(EarnHr) means //
+
+*-------------------------------------------------------------------------------
+* Exploratory Data Analysis (EDA) of Panel Data
+*-------------------------------------------------------------------------------
+
+/* We can download or access this data (Example_6_3.dta) from our GitHub 
+   repository /data/ch6 or use the copy and import commands. */
+copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch6/Example_6_3.dta" "Example_6_3.dta", replace
+
+use "Example_6_3.dta", clear
+
+/* Use the xtset commmand with year and time variable and fips 
+  (Federal Information Processing Standards) code as the panel variable for the 
+   state, we specify that the dataset is structured as a panel. */
+  
+xtset fips year, yearly  
+
+/* use the xttab command to examine the distribution of data across higher 
+  categories (e.g., education academic common markets or regional compacts) */
+
+xttab region_compact  
+
+/* use the xttans command to examine the distribution of time-variant  
+  categories (e.g., state-level undergraduate merit aid)  */
+  
+xttrans ugradmerit
+  
 *===============================================================================
 * Section 6.3: Graphs
 *===============================================================================
