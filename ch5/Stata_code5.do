@@ -16,8 +16,8 @@
 *===============================================================================
 
 * Use a global path to make it easy to update in one place
-global ch5data "C:/Users/YourName/Documents/book-materials/ch5/data"
-cd "$ch5data"
+* global ch5data "C:/Users/YourName/Documents/book-materials/ch5/data"
+* cd "$ch5data"
 
 *===============================================================================
 * Section 5.2: Getting to Know the Structure of Our Datasets
@@ -90,14 +90,16 @@ clear all
 *===============================================================================
 * Section 5.3: Getting to Know Our Data
 *===============================================================================
-/* Use full public_use HSLS:09 dataset (2017 Student File), which can be 
- downloaded directly from NCES at 
- https://nces.ed.gov/datalab/onlinecodebook and rename HSLS09.dta.
- Be aware, this is a hugh file. If you don't have Stata/MP or Stata/SE, you may 
- not be able to download the entire file. 
- If you have Stata/MP, set maxvar 60000. If you have Stata/SE, set maxvar 32000.
- Then keep the these variables: STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA
- S3CLGPELL P1TUITION*/
+/* Use the public-use HSLS:09 dataset (2017 Student File),
+   which can be downloaded directly from NCES at
+   https://nces.ed.gov/datalab/onlinecodebook.
+   Be aware, this is a hugh file. If you don't have Stata/MP or Stata/SE, you
+   may not be able to download the entire file. 
+   If you have Stata/MP, set maxvar 60000. If you have Stata/SE, 
+   set maxvar 32000. Then keep the these variables: STU_ID X1SEX X1RACE X1SES
+   X1SESQ5 X4ATPRLVLA S3CLGPELL P1TUITION */
+ 
+ 
 
 keep STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA S3CLGPELL P1TUITION
 
