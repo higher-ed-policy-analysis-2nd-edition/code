@@ -12,7 +12,7 @@
 * Compatible with Stata version 19 or later
 
 *===============================================================================
-* 📂 IMPORTANT: Set working directory (customize this for your system)
+* IMPORTANT: Set working directory (customize this for your system)
 *===============================================================================
 
 * Use a global path to make it easy to update in one place
