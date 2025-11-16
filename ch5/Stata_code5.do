@@ -27,6 +27,8 @@
  of the time series of the dataset of the percent of US high school graduates in
  PSE, 1960 to 2016 from Chapter 4. On GitHub, this file is named 
  Example_4_2_2_TS.dta and found in the /data/ch4/ repository. */ 
+
+clear all 
  
 copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch4/Example_4_2_2_TS.dta" "Example_4_2_2_TS.dta", replace
 use "Example_4_2_2_TS.dta", clear
@@ -35,7 +37,7 @@ describe
 compress
 describe
 
-save  "Example_4_2_2_TS.dta", replace 
+* save  "Example_4_2_2_TS.dta", replace 
 
 * 🔹 Open a panel dataset
 /* Download or use the copy and import commands to open Example_5_0.dta, found
@@ -51,7 +53,7 @@ describe
 recast int id
 describe
 
-save "Example_5_0.dta", replace
+* save "Example_5_0.dta", replace
 
 clear all
 
@@ -83,7 +85,7 @@ statastates, name(State) nogenerate
 
 compress
 xtset state_fips FY, yearly
-save "Example_5_2.dta", replace
+* save "Example_5_2.dta", replace
 
 clear all
 
@@ -142,10 +144,10 @@ misstable patterns
 misstable tree, frequency
 
 *===============================================================================
-* 🔄 Section 5.4 (continued): Panel Missing Analysis with xtmis
+* Section 5.4 (continued): Panel Missing Analysis with xtmis
 *===============================================================================
 
-* 📥 Download IPEDS panel dataset
+* Download IPEDS panel dataset
 copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Example_5_4.dta" ///
      "Example_5_4.dta", replace
 
@@ -155,33 +157,31 @@ use "Example_5_4.dta", clear
 cap ssc install tomata
 cap ssc install xtmis
 
-tostring unitid, generate(unitid_s)
+* create a string variable
+tostring unitid, generate(unitid_str)
 xtmis grantlow, id(unitid_s)
 
 *===============================================================================
-* 📊 Section 5.4 (continued): Missing Data by Categorical Variables
+* Section 5.4 (continued): Missing Data by Categorical Variables
 *===============================================================================
 
 use "Example_5_4_1.dta", clear
-
-* 🔹 Install missings suite
-net install dm0085_1.pkg, replace
 
 bysort X1SESQ5 : missings table
 bysort X1RACE : missings table
 
 *===============================================================================
-* 🧪 Section 5.4.1: Testing for Missing Completely at Random (MCAR)
+* Section 5.4.1: Testing for Missing Completely at Random (MCAR)
 *===============================================================================
 *This is a repeat from above, but also includes testing for MCAR.
-/* 📥 Use full public_use HSLS:09 dataset (2017 Student File), which can be 
- downloaded directly from NCES at 
- https://nces.ed.gov/datalab/onlinecodebook and rename HSLS09.dta.
- Be aware, this is a hugh file. If you don't have Stata/MP or Stata/SE, you may 
- not be able to download the entire file. 
- If you have Stata/MP, set maxvar 60000. If you have Stata/SE, set maxvar 32000.
- Then keep the these variables: STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA
- S3CLGPELL P1TUITION*/
+/* Use full public_use HSLS:09 dataset (2017 Student File), which can be 
+   downloaded directly from NCES at 
+   https://nces.ed.gov/datalab/onlinecodebook and rename HSLS09.dta.
+   Be aware, this is a hugh file. If you don't have Stata/MP or Stata/SE, you may 
+   not be able to download the entire file. 
+   If you have Stata/MP, set maxvar 60000. If you have Stata/SE, set maxvar 32000.
+   Then keep the these variables: STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA
+   S3CLGPELL P1TUITION*/
 
 keep STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA S3CLGPELL P1TUITION
 
