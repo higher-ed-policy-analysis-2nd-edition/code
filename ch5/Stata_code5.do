@@ -97,9 +97,14 @@ clear all
    may not be able to download the entire file. 
    If you have Stata/MP, set maxvar 60000. If you have Stata/SE, 
    set maxvar 32000. Then keep the these variables: STU_ID X1SEX X1RACE X1SES
-   X1SESQ5 X4ATPRLVLA S3CLGPELL P1TUITION */
- 
- 
+   X1SESQ5 X4ATPRLVLA S3CLGPELL P1TUITION; or copy and import
+   Public_use_HSLS_09_truncated on GitHub in the /data/ch5/ repository. */
+
+clear all
+   
+copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Public_use_HSLS_09_truncated.dta" "Public_use_HSLS_09_truncated.dta", replace
+
+use "Public_use_HSLS_09_truncated.dta", clear
 
 keep STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA S3CLGPELL P1TUITION
 
@@ -116,10 +121,12 @@ codebook S3CLGPELL
 mvdecode _all, mv(-9=.)
 
 *===============================================================================
-* ❓ Section 5.4: Missing Data Analysis
+* Section 5.4: Missing Data Analysis
 *===============================================================================
 
-* 📥 Load dataset with missing data already recoded
+clear all
+
+* Load dataset with missing data already recoded
 copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Example_5_4_1.dta" ///
      "Example_5_4_1.dta", replace
 
