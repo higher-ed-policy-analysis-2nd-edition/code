@@ -1,392 +1,173 @@
-# Chapter 5 – Getting to Know Thy Data
+```markdown
+# Chapter 5 — Getting to Know Thy Data
 
-Higher Education Policy Analysis Using Quantitative Techniques (2nd Edition)  
-Author: Marvin A. Titus  
-Repository: higher-ed-policy-analysis-2nd-edition/code/ch5
+**Book:** Higher Education Policy Analysis Using Quantitative Techniques (2nd Edition)  
+**Author:** Marvin A. Titus  
+**Repository:** https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch5
 
-This directory contains the complete, reproducible code and supporting files for Chapter 5 of the book. The chapter demonstrates data structure examination, panel data organization, missing data analysis, missingness patterns, and tests for Missing Completely At Random (MCAR) using the datasets distributed with the book. Both Stata and R implementations are provided and have been cross-checked for consistency.
+## Overview
 
----
+This directory contains complete, reproducible code and supporting files for Chapter 5. The chapter teaches practical data‑preparation and data‑discovery skills used throughout the book: examining dataset structures, declaring panel data, exploring missingness patterns, and performing formal missing‑data diagnostics (including Little’s MCAR test and related diagnostics). Both Stata and R implementations are provided and validated for consistency.
 
-## Contents
+## Repository Contents
 
-- **Stata_Code5.do**  
-  Complete Stata do-file that reproduces the analyses used in Chapter 5 (tested in Stata 19.5+).
+- `Stata_code5.do` — Complete Stata do-file (tested in Stata 19.5)  
+- `R_code5.R` (also provided as `R_code5.txt`) — Full R translation (tested in R >= 4.0)  
+- `Public_use_HSLS_09_truncated.dta` (downloaded by scripts) — truncated HSLS:09 student data used for examples  
+- `Example_5_0.dta`, `Example_5_1.xlsx`, `Example_5_3.dta`, `Example_5_4.dta`, `Example_5_4_1.dta` — data files downloaded by the scripts at runtime  
+- `Comparison of R and Stata Results.txt` — Section-by-section comparison showing R and Stata outputs match for the Chapter 5 analyses
 
-- **R_Code5.R** (also provided as R_Code5.txt)  
-  Full R translation of the Stata do-file using tidyverse, haven, plm, naniar, mice, and other packages. This script downloads the same data used by the Stata code and runs identical analyses.
+## Datasets (downloaded by the scripts)
 
-- **Results_Comparison.md**  
-  Detailed validation document showing statistical equivalence of Stata vs R MCAR test results (chi-square statistics match within 0.065%).
+All datasets are stored in the companion data repository and are downloaded automatically by the scripts when run:
 
-- **Datasets** (downloaded automatically by scripts)  
-  Example_4_2_2_TS.dta, Example_5_0.dta, Example_5_1.xlsx, Example_5_3.dta, Example_5_4.dta, Example_5_4_1.dta, and Public_use_HSLS_09_truncated.dta are downloaded from the book data repository at runtime.
+- `Example_4_2_2_TS.dta` — time series example (1960–2016 high‑school-to‑PSE percentage)
+- `Example_5_0.dta` — small panel example (id, year, state, enrollment, state aid)
+- `Example_5_1.xlsx` — SHEEO finance worksheet (reformatted sheet used in the chapter)
+- `Public_use_HSLS_09_truncated.dta` / `Example_5_3.dta` — HSLS:09 student data (truncated for examples)
+- `Example_5_4.dta`, `Example_5_4_1.dta` — IPEDS / institutional panel data used for missingness diagnostics
 
----
+Data URL root:
+`https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/`
 
-## Data
+## Software Requirements
 
-All datasets used in the scripts are available in the book's data repository and are downloaded automatically by the Stata and R scripts. The primary files used in this chapter are:
+### Stata
+- Version: Stata 19.0+ (code tested in Stata 19.5)
+- Recommended / optional user-written commands:
+  - `statastates` — convenient for matching state names / IDs (used in the script)
+  - `mdesc`, `misstable` — missing data summaries (usually included in base Stata; `mdesc` may be user-written)
+  - `xtmis`, `tomata` — panel missingness diagnostics (install via `ssc install xtmis, replace` / `ssc install tomata, replace`)
+  - `mcartest` — Little’s MCAR test (install if needed; e.g., `cap net install st0318.pkg, replace` as directed in the do-file)
 
-- **Example_4_2_2_TS.dta** – time series of percent of US high school graduates in postsecondary education, 1960–2016
-- **Example_5_0.dta** – panel dataset of state-level undergraduate enrollment and financial aid (50 states × 5 years)
-- **Example_5_1.xlsx** (reformatted sheet) – SHEEO state higher education finance data (FY 2010–2024)
-- **Public_use_HSLS_09_truncated.dta** – truncated version of HSLS:09 2017 Student File (23,503 observations)
-- **Example_5_3.dta** – HSLS:09 subset with selected variables for MCAR testing (STU_ID, X1SEX, X1RACE, X1SES, X1SESQ5, X4ATPRLVLA, S3CLGPELL, P1TUITION)
-- **Example_5_4.dta** – IPEDS institutional data example (5,173 institutions)
-- **Example_5_4_1.dta** – HSLS:09 data for missing pattern analysis
+The do-file includes inline comments describing where to install user-written packages if required.
 
-Data repository (raw files):  
-https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch5
+### R
+- Version: R 4.0 or later (R 4.3.0+ recommended)
+- Required R packages (the R script attempts to install missing packages automatically):
+  - tidyverse, haven, readxl, plm, naniar, mice, DescTools, car
+- Optional MCAR packages (fallbacks used in R code if available):
+  - BaylorEdPsych, MissMech
 
-Note: The full public-use HSLS:09 dataset (2017 Student File) can be downloaded directly from NCES at https://nces.ed.gov/datalab/onlinecodebook. This is a large file requiring Stata/MP or Stata/SE with appropriate maxvar settings. The truncated version provided is sufficient for all chapter examples.
+If automatic installation fails, install packages manually. Example:
+```r
+install.packages(c("tidyverse", "haven", "readxl", "plm", "naniar", "mice", "DescTools", "car"))
+```
 
----
+## Quick Start
 
-## Quick start – Stata
+### Clone the repository
+```bash
+git clone https://github.com/higher-ed-policy-analysis-2nd-edition/code.git
+cd code/ch5
+```
 
-1. Open Stata and set your working directory to this folder (or edit the do-file paths).
-2. (Optional) Install user-written packages if needed:
-   - `mcartest` (required for Little's MCAR test):
-     ```stata
-     net install st0318.pkg, replace
-     ```
-3. Run:
+### Run with Stata
+1. Open `Stata_code5.do`.
+2. (Optional) Edit the working directory path at the top of the do-file (`global ch5data ...`) to a local folder.
+3. If needed, install user-written packages referenced in the do-file:
    ```stata
-   do Stata_Code5.do
+   ssc install statastates, replace
+   ssc install xtmis, replace
+   cap net install st0318.pkg, replace   // if mcartest not available
+   ```
+4. Execute the do-file:
+   ```stata
+   do Stata_code5.do
    ```
 
-The do-file will download required data files, examine data structures using `describe` and `compress`, create panel data structures, analyze missing data patterns, and perform Little's MCAR test with equal variances, unequal variances, and covariate-dependent missing (CDM) specifications.
+The do-file downloads required datasets from the book's data repository, prepares variables, runs missingness summaries and patterns, and executes Little’s MCAR and related diagnostics.
 
----
-
-## Quick start – R
-
-The R script reproduces the Stata workflow. It downloads the same datasets and performs equivalent analyses with automatic fallback methods for MCAR testing.
-
-**Prerequisites:**
-- R >= 4.0
-- Recommended packages (the script will attempt to install missing packages):
-  - Required: `tidyverse`, `haven`, `readxl`, `plm`, `naniar`, `mice`, `DescTools`, `car`
-  - Optional: `BaylorEdPsych`, `MissMech` (fallback MCAR test methods)
-
-**Run the script:**
-1. Open the R script file (R_Code5.R) or the R version included here.
-2. Optionally set a local directory for persistent file storage:
+### Run with R
+1. Open `R_code5.R` (or `R_code5.txt`) in R or RStudio.
+2. (Optional) Set `ch5data` at the top of the script if you wish to persist downloaded files locally.
+3. Source or run the script:
    ```r
-   ch5data <- "C:/Users/YourName/Documents/book-materials/ch5/data"
-   dir.create(ch5data, recursive = TRUE, showWarnings = FALSE)
-   setwd(ch5data)
+   source("R_code5.R")
    ```
-3. Source the file or run it in an R session:
-   ```r
-   source("R_Code5.R")
-   ```
+The R script installs missing packages (if needed), downloads the datasets, creates necessary variables and ids, computes missingness summaries, displays missingness patterns, and runs Little’s MCAR test (via `naniar::mcar_test()` with fallbacks to `BaylorEdPsych`/`MissMech` if available). It also includes a CDM-style logistic fallback (missingness ~ covariates) when formal MCAR functions are not present.
 
-The script prints summaries to the console, displays missing data patterns, performs MCAR tests, and saves results to an RDS file.
-
----
+## What the Code Does (High Level)
 
-## What the code does (high level)
+- Section 5.2 — Inspecting data structures and declaring panels:
+  - Load time series and panel datasets (describe, compress, recast id types)
+  - Read and filter SHEEO Excel file (drop pre-2010 or aggregates such as U.S. and D.C.)
+  - Create state identifiers and declare panels (`xtset` in Stata; `pdata.frame()` in R)
 
-### Section 5.2 – Getting to Know the Structure of Our Datasets
+- Section 5.3 — Missingness summaries and patterns:
+  - Variable-level missingness summaries (`mdesc`/`misstable` in Stata; `naniar::miss_var_summary`, `mice::md.pattern` in R)
+  - Nested missing patterns and frequencies (Stata `misstable tree`; R `md.pattern()` and a custom pattern frequency table)
 
-- **Time series data examination:**
-  - Load and describe Example_4_2_2_TS.dta (56 observations, 2 variables)
-  - Variable types and storage optimization (compress/downcast)
+- Section 5.4 — Missing data diagnostics:
+  - Unit-level panel missing summaries (Stata `xtmis`; R can reproduce via grouping/aggregation)
+  - Tests for Missing Completely at Random (Little’s MCAR):
+    - Stata: `mcartest` (equal- and unequal-variance versions; CDM conditional test variant)
+    - R: `naniar::mcar_test()` primary, with optional fallbacks to `BaylorEdPsych::LittleMCAR` or `MissMech` functions
+  - When formal MCAR tests are unavailable, the R code runs CDM‑style logistic diagnostics (fit missingness indicators on covariates, report LR tests and a Fisher combination)
 
-- **Panel data structure:**
-  - Load Example_5_0.dta (250 observations: 50 states × 5 years)
-  - Examine panel structure (id, year, State, Ugrad, need, merit)
-  - Data type optimization and variable recasting
+## Cross-Platform Validation
 
-- **SHEEO finance data:**
-  - Import Example_5_1.xlsx and filter to FY >= 2010
-  - Exclude aggregate rows (U.S., D.C.)
-  - Create panel data structures with state and year indices
+A dedicated comparison file (`Comparison of R and Stata Results.txt`) documents that the R translation reproduces Stata outputs for Chapter 5 analyses. Notable matches:
 
-### Section 5.3 – Analyzing Missing Data Patterns
+- Dataset loads and shapes:
+  - Example_4_2_2_TS: 56 observations, 2 variables (matched)
+  - Example_5_0: 250 observations, 6 variables (matched)
+  - SHEEO (filtered FY >= 2010, excluding U.S./D.C.): 750 rows (matched)
+  - HSLS truncated and Example_5_3 / Example_5_4_1: 23,503 rows (matched)
+  - Example_5_4 (IPEDS panel): 9,596 rows (matched)
 
-- **HSLS:09 dataset preparation:**
-  - Load truncated HSLS:09 dataset (23,503 students)
-  - Keep relevant variables for analysis
-  - Recode -9 values to missing (NA/.)
+- Missingness summaries:
+  - P1TUITION: 1,407 missing (5.99%)
+  - X1RACE: 1,006 missing (4.28%)
+  - S3CLGPELL: 459 missing (1.95%)
+  - Dominant complete-case pattern (e.g., pattern `00000000` with 20,572 complete cases)
+  - These counts and pattern frequencies match between Stata and R outputs.
 
-- **Missing data pattern analysis:**
-  - Summarize missing values by variable (`naniar::miss_var_summary` in R, `misstable` in Stata)
-  - Identify missing data patterns (`mice::md.pattern` in R)
-  - Examine patterns by demographic subgroups (race/ethnicity)
-  - Display frequency of each unique missing pattern
+- Little’s MCAR test:
+  - Stata: Chi-square ≈ 68.1557, df = 2, p < 0.0001 (reject MCAR)
+  - R (`naniar::mcar_test`): statistic ≈ 68.2, df = 2, p ≈ 1.55e-15 (same conclusion)
+  - CDM and unequal-variance variants produce highly significant results in both implementations.
 
-### Section 5.4.1 – Testing for Missing Completely at Random (MCAR)
+Conclusion: The R translation reproduces Stata results with high precision. Minor differences are confined to formatting and numeric display rounding; substantive conclusions match.
 
-- **Little's MCAR test** on S3CLGPELL and P1TUITION:
-  - **Equal variances** (primary test): Tests whether missingness is completely at random
-  - **Unequal variances** (Stata): Relaxes equal variance assumption
-  - **Covariate-Dependent Missing (CDM)**: Tests whether missingness depends on observed covariates (X1RACE)
+## Troubleshooting & Notes
 
-- **R implementation features:**
-  - Primary method: `naniar::mcar_test()` (modern, actively maintained)
-  - Fallback hierarchy: BaylorEdPsych → MissMech → logistic regression CDM
-  - Automatic handling of completely missing observations
-  - Fisher combination of p-values for CDM diagnostics
-  - Results saved to RDS file for reproducibility
+- Data download errors: Check internet connectivity or download datasets manually from the data repository and place them in your working directory.
+- Stata package installation:
+  - If `mcartest` is not available in your Stata installation, the do-file suggests `cap net install st0318.pkg, replace` or install the relevant user package.
+  - Install `xtmis`, `statastates`, or `tomata` via `ssc install` if missing.
+- R package issues:
+  - If automatic installation fails, install packages manually and restart R.
+  - The R script checks for optional MCAR packages (`BaylorEdPsych`, `MissMech`) — these are not required but provide alternative implementations.
+- Differences to expect:
+  - Output formatting differs across platforms (Stata tables vs R tibbles). Numbers match to displayed precision.
+  - Some specialized CDM tests available in Stata may not have direct equivalents in base R packages; the R script provides diagnostic fallbacks (CDM‑style logistic models) to approximate the same checks.
 
-- **Key outputs:**
-  - Chi-square test statistic and degrees of freedom
-  - P-value for MCAR null hypothesis
-  - Number of observations and missing patterns
-  - EM algorithm convergence diagnostics (Stata CDM)
+## Reproducibility & Where to Look in the Code
 
----
+- `Stata_code5.do` contains inline comments and step-by-step commands for:
+  - Downloading data, recoding special missing values, summarizing missingness, and running Little’s MCAR and CDM diagnostics.
+- `R_code5.R` mirrors the Stata workflow and includes:
+  - Helpers to recode -9 to NA, downcast numeric types, produce missingness patterns, run `naniar::mcar_test`, and fallback CDM logistic diagnostics.
 
-## Reproducibility & validation
+## Citation
 
-- The R translation has been rigorously validated against the Stata output (see `Results_Comparison.md`).
-- **MCAR test validation:**
-  - Chi-square statistics: 68.1557 (Stata) vs 68.2 (R) – difference of 0.0443 (0.065%)
-  - Degrees of freedom: 2 (both implementations)
-  - P-values: < 0.001 (both implementations reject MCAR)
-  - Sample sizes: 23,471 observations (both, excluding 32 with all variables missing)
-  - Missing patterns: 3 distinct patterns identified (both)
+If you use these materials in research or teaching, please cite:
 
-- **Dataset validation:**
-  - All 7 datasets load with identical dimensions (rows and columns)
-  - Filtering operations produce identical sample sizes
-  - Missing data patterns match exactly
-  - Variable transformations (recoding, type conversions) are equivalent
+Titus, M. A. (2025). Higher Education Policy Analysis Using Quantitative Techniques (2nd ed.). Springer.
 
-- **Statistical conclusions:**
-  - Both implementations reject the MCAR null hypothesis (p < 0.001)
-  - Data exhibit Missing At Random (MAR) or Missing Not At Random (MNAR) mechanisms
-  - Missingness is significantly related to race/ethnicity (CDM test)
-  - Complete-case analysis would introduce bias
+GitHub repository: https://github.com/higher-ed-policy-analysis-2nd-edition/code
 
-- **Code quality:**
-  - R code follows professional formatting standards consistent with Chapter 6
-  - Clear section organization with 64-character dividers
-  - Comprehensive inline documentation
-  - Robust error handling and fallback mechanisms
+## Author & Contact
 
----
+Marvin A. Titus, Ph.D.  
+Email: marvinatitus@gmail.com
 
-## Key findings from Chapter 5 analyses
+## License
 
-### Data Structure Insights
+Code is provided for educational and research purposes. See the repository license for terms of use.
 
-- **Time series data:** 56 annual observations from 1960–2016 demonstrate long-term trends
-- **Panel data:** 50 states × 5 years structure enables within-state and between-state comparisons
-- **SHEEO finance:** 750 state-year observations (15 years × 50 states) after filtering
+## Last Updated
 
-### Missing Data Patterns
-
-- **Complete cases:** 20,572 students (87.5%) have no missing values on analysis variables
-- **Most common pattern:** 1,358 students (5.8%) missing only S3CLGPELL (Pell Grant receipt)
-- **Second pattern:** 969 students (4.1%) missing only X1RACE
-- **Total patterns:** 3 distinct patterns across 8 variables
-
-### MCAR Test Results
-
-- **Null hypothesis rejected:** χ² = 68.16, df = 2, p < 0.001
-- **Implication:** Data are NOT Missing Completely At Random
-- **Substantive finding:** Missingness varies systematically by race/ethnicity (CDM χ² = 105.20, df = 18, p < 0.001)
-- **Methodological implication:** Complete-case analysis would be biased; use multiple imputation, inverse probability weighting, or other MAR-appropriate methods
-
----
-
-## Technical notes
-
-### Helper Functions (R)
-
-The R script includes two helper functions for data optimization and cleaning:
-
-- **`downcast_double()`:** Converts double-precision numeric variables to integers when appropriate (values are whole numbers), reducing memory usage and matching Stata's `compress` behavior.
-
-- **`recode_minus9_to_na()`:** Converts all -9 coded missing values to proper NA values, equivalent to Stata's `mvdecode _all, mv(-9=.)`.
-
-### MCAR Test Methods
-
-**Stata implementation:**
-- Uses `mcartest` command (user-written package by Bluml et al., 2007)
-- Implements Little's (1988) test via EM algorithm
-- Options: `equal` (default), `unequal` (relaxes equal variance), CDM with covariates
-
-**R implementation:**
-- Primary: `naniar::mcar_test()` based on Little's (1988) test
-- Falls back to `BaylorEdPsych::LittleMCAR()` or `MissMech::TestMCAR()` if naniar unavailable
-- Final fallback: logistic regression approach (missingness ~ covariates) with Fisher combination of p-values
-- All methods test the same null hypothesis and produce statistically equivalent results
-
-**Reference:**  
-Little, R.J.A. (1988). A test of missing completely at random for multivariate data with missing values. *Journal of the American Statistical Association*, 83(404), 1198-1202.
-
----
-
-## Troubleshooting
-
-### Stata issues
-
-- **"mcartest not found":**
-  - Install with: `net install st0318.pkg, replace`
-  - Alternatively: `ssc install mcartest` (if available on SSC)
-
-- **"insufficient memory" errors with full HSLS:09 dataset:**
-  - Use Stata/MP or Stata/SE (not Stata/IC)
-  - Set `set maxvar 32000` (Stata/SE) or `set maxvar 60000` (Stata/MP)
-  - Alternatively, use the truncated version (Example_5_3.dta) provided
-
-- **Download failures:**
-  - Check internet connection
-  - GitHub raw URLs may require https access
-  - Save files locally and edit file paths in do-file
-
-### R issues
-
-- **"naniar not found" error:**
-  - The script should auto-install, but if it fails:
-    ```r
-    install.packages("naniar", dependencies = TRUE)
-    ```
-
-- **Package installation fails:**
-  - Install packages manually:
-    ```r
-    install.packages(c("tidyverse", "haven", "readxl", "plm", 
-                       "naniar", "mice", "DescTools", "car"))
-    ```
-
-- **"BaylorEdPsych not available" warning:**
-  - This is expected; BaylorEdPsych is archived on CRAN
-  - The script uses naniar instead (modern, maintained alternative)
-  - Warning does not affect functionality
-
-- **Memory issues with large datasets:**
-  - R loads entire datasets into memory
-  - Close other applications if needed
-  - Use 64-bit R for large datasets
-  - The truncated datasets provided are suitable for most systems
-
-- **"rows have all test variables missing" message:**
-  - This is informational, not an error
-  - Indicates observations excluded from MCAR test (expected behavior)
-  - Stata and R both exclude 32 observations with all test variables missing
-
----
-
-## Understanding the output
-
-### MCAR Test Interpretation
-
-**If p-value < 0.05 (reject MCAR):**
-- Missing data mechanism is NOT completely at random
-- Missingness depends on observed or unobserved variables
-- Complete-case analysis may be biased
-- Consider: multiple imputation (if MAR), selection models (if MNAR), or inverse probability weighting
-
-**If p-value ≥ 0.05 (fail to reject MCAR):**
-- Insufficient evidence against MCAR
-- Complete-case analysis may be acceptable
-- However, low power with small samples; consider multiple imputation for robustness
-
-**CDM Test Interpretation:**
-- Tests whether missingness depends on observed covariates
-- Significant result suggests Missing At Random (MAR) conditional on covariates
-- Guides choice of variables to include in imputation models
-
-### Missing Data Pattern Interpretation
-
-- **Pattern "00000000":** Complete cases (no missing values)
-- **Pattern "00000001":** Missing only the rightmost variable (often outcome variable)
-- **Pattern "00100000":** Missing only the 3rd variable (from left)
-
-More complex patterns suggest:
-- Unit nonresponse (entire surveys missing)
-- Item nonresponse (specific questions skipped)
-- Systematic data collection issues
-
----
-
-## Extensions and modifications
-
-Researchers can modify these scripts to:
-
-1. **Test different variables for MCAR:**
-   - Stata: Change variable list in `mcartest` command
-   - R: Modify `vars_test <- c("VAR1", "VAR2")` vector
-
-2. **Add covariates to CDM test:**
-   - Stata: Add to formula: `mcartest Y1 Y2 = i.COVAR1 i.COVAR2`
-   - R: Modify `covariates <- c("VAR1", "VAR2")` vector
-
-3. **Analyze different subgroups:**
-   - Use `if` conditions (Stata) or `filter()` (R) before testing
-   - Example: `filter(X1SEX == 1)` for male students only
-
-4. **Visualize missing patterns:**
-   - R: Add `naniar::gg_miss_var(dataset)` for variable-level plot
-   - R: Add `naniar::gg_miss_upset(dataset)` for pattern intersection plot
-   - Stata: Use `misstable patterns, freq` for frequency table
-
-5. **Export results for reporting:**
-   - R: Results saved automatically to `MCAR_test_result.rds`
-   - R: Load with `readRDS("MCAR_test_result.rds")`
-   - Stata: Use `estout` or `outreg2` to export test statistics
-
----
-
-## Data citation
-
-When using the HSLS:09 data, please cite:
-
-U.S. Department of Education, National Center for Education Statistics. (2017). *High School Longitudinal Study of 2009 (HSLS:09) Second Follow-up and High School Transcript Data File Documentation* (NCES 2017-401). Washington, DC: Author.
-
-Dataset available at: https://nces.ed.gov/surveys/hsls09/
-
----
-
-## Book citation and license
-
-Please cite the book when using this code in research or teaching:
-
-Titus, M. A. (2025). *Higher Education Policy Analysis Using Quantitative Techniques* (2nd ed.). Springer.
-
-Code repository: https://github.com/higher-ed-policy-analysis-2nd-edition/code
-
-License: See the book/repository license for permitted use and redistribution.
-
----
-
-## Contact / Support
-
-For code-related issues or corrections:
-- Open an issue in this GitHub repository: https://github.com/higher-ed-policy-analysis-2nd-edition/code/issues
-- Email the author: marvinatitus@gmail.com
-
-For questions about the HSLS:09 dataset:
-- NCES data support: https://nces.ed.gov/datalab/help
-
----
-
-## Version history
-
-- **2025-11-16:** Initial release with validated R translation
-  - R code reformatted to match Chapter 6 style standards
-  - Cross-validated against Stata output (chi-square match within 0.065%)
-  - Added comprehensive documentation and troubleshooting
-  - Implemented robust fallback methods for MCAR testing
-
----
-
-## Acknowledgments
-
-The R translation benefits from the excellent work of the naniar package developers (Tierney & Cook, 2023) and the mice package team (van Buuren & Groothuis-Oudshoorn, 2011) for modern missing data analysis tools.
-
-**Key package citations:**
-
-Tierney, N., & Cook, D. (2023). Expanding tidy data principles to facilitate missing data exploration, visualization and assessment of imputations. *Journal of Statistical Software*, 105(7), 1-31.
-
-van Buuren, S., & Groothuis-Oudshoorn, K. (2011). mice: Multivariate imputation by chained equations in R. *Journal of Statistical Software*, 45(3), 1-67.
-
----
-
-Last updated: 2025-11-16
+November 16, 2025
+```
