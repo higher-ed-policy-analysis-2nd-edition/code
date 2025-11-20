@@ -1,0 +1,136 @@
+# ================================================================
+# Chapter 8 – Full R Script: Sections 8.2 to 8.9
+# ================================================================
+
+# Load/install required packages
+required_packages <- c("haven", "dplyr", "ggplot2", "tseries", "urca",
+                       "lmtest", "plm", "sandwich", "car", "forecast", 
+                       "broom", "prais", "tidyr", "clubSandwich", "data.table")
+
+for(pkg in required_packages){
+  if(!require(pkg, character.only = TRUE)){
+    install.packages(pkg)
+    library(pkg, character.only = TRUE)
+  }
+}
+
+# ================================================================
+# SECTION 8.2 – Time Series Regression and Autocorrelation
+# ================================================================
+
+download.file("https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch8/Example_8_2.dta",
+              "Example_8_2.dta", mode = "wb")
+
+ts_data <- read_dta("Example_8_2.dta") %>%
+  arrange(year) %>%
+  mutate(
+    lntupub2yr = log(tupub2yr),
+    lnenpub2yr = log(enpub2yr),
+    lnunemprate = log(unemprate),
+    dlnenpub2yr = c(NA, diff(log(enpub2yr))),
+    dlntupub2yr = c(NA, diff(log(tupub2yr))),
+    dlnunemprate = c(NA, diff(log(unemprate)))
+  ) %>%
+  filter(!is.na(dlnenpub2yr))
+
+model_diff <- lm(dlnenpub2yr ~ dlntupub2yr + dlnunemprate, data = ts_data)
+summary(model_diff)
+
+dwtest(model_diff)
+bgtest(model_diff, order = 1)
+acf(residuals(model_diff), main = "ACF of OLS Residuals")
+pacf(residuals(model_diff), main = "PACF of OLS Residuals")
+
+model_pw <- prais_winsten(dlnenpub2yr ~ dlntupub2yr + dlnunemprate,
+                          data = ts_data, index = "year")
+summary(model_pw)
+
+xreg_matrix <- as.matrix(ts_data[, c("dlntupub2yr", "dlnunemprate")])
+model_arima <- Arima(ts_data$dlnenpub2yr, order = c(2, 0, 0), xreg = xreg_matrix)
+summary(model_arima)
+
+# ================================================================
+# SECTION 8.6 – Panel Serial Correlation Test (Corrected)
+# ================================================================
+
+download.file("https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch8/Example_8_6.dta",
+              "Example_8_6.dta", mode = "wb")
+
+panel_data <- read_dta("Example_8_6.dta") %>%
+  mutate(
+    lnstapr = log(stapr),
+    lnnetuit = log(netuit),
+    lnfte = log(fte),
+    lnpc_income = log(pc_income)
+  )
+
+# ✅ Correct panel structure: stateid and year
+pdata <- pdata.frame(panel_data, index = c("stateid", "year"))
+pwartest(lnnetuit ~ lnstapr + lnfte + lnpc_income, data = pdata)
+
+# ================================================================
+# SECTION 8.7 – Panel Regression with AR(1) Error Structure
+# ================================================================
+
+model_fe <- plm(lnnetuit ~ lnstapr + lnfte + lnpc_income,
+                data = pdata, model = "within")
+summary(model_fe)
+
+pdata <- pdata %>%
+  group_by(stateid) %>%
+  mutate(
+    d_lnnetuit = c(NA, diff(lnnetuit)),
+    d_lnstapr = c(NA, diff(lnstapr)),
+    d_lnfte = c(NA, diff(lnfte)),
+    d_lnpc_income = c(NA, diff(lnpc_income))
+  ) %>%
+  ungroup()
+
+pdata_diff <- na.omit(pdata)
+
+model_re_diff <- plm(d_lnnetuit ~ d_lnstapr + d_lnfte + d_lnpc_income,
+                     data = pdata_diff, model = "random")
+summary(model_re_diff)
+
+acf(residuals(model_re_diff), main = "ACF of RE Model Residuals")
+
+# ================================================================
+# SECTION 8.8 – Cross-Sectional Dependence Tests
+# ================================================================
+
+download.file("https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch8/Example_8_8_2.dta",
+              "Example_8_8_2.dta", mode = "wb")
+
+cs_data <- read_dta("Example_8_8_2.dta") %>%
+  mutate(
+    lneg = log(eg),
+    lnstatea = log(statea),
+    lntuition = log(tuition),
+    lnfte = log(totfteiarep),
+    lnftfac = log(ftfac),
+    lnptfac = log(ptfac)
+  )
+
+pdata_cs <- pdata.frame(cs_data, index = c("opeid5_new", "endyear"))
+
+model_cs_fe <- plm(lneg ~ lnstatea + lntuition + lnfte + lnftfac + lnptfac,
+                   data = pdata_cs, model = "within")
+pcdtest(model_cs_fe, test = "cd")
+
+# ================================================================
+# SECTION 8.9 – Driscoll-Kraay Standard Errors
+# ================================================================
+
+model_dk <- plm(lneg ~ lnstatea + lntuition + lnfte + lnftfac + lnptfac,
+                data = pdata_cs, model = "within")
+coeftest(model_dk, vcov = vcovSCC(model_dk, type = "HC0", maxlag = 2))
+
+model_dk_yr <- plm(lneg ~ lnstatea + lntuition + lnfte + lnftfac + lnptfac + factor(endyear),
+                   data = pdata_cs, model = "within")
+coeftest(model_dk_yr, vcov = vcovSCC(model_dk_yr, type = "HC0", maxlag = 2))
+
+acf(residuals(model_dk_yr), main = "ACF of DK Residuals")
+
+# ================================================================
+# END OF CHAPTER 8 SCRIPT
+# ================================================================
