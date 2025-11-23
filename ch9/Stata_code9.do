@@ -61,6 +61,13 @@ twoway (line lny1 FY), by(state) ///
 twoway (line lnx3 FY), by(state) ///
   xlabel(1980 (12) 2024, labsize(small)) ///
   ytitle(Log of Per Capita Income) xtitle(Fiscal Year)
+
+*=======================================================
+* Section 9.3.2: Tests for Nonstationary Data
+*=======================================================
+* OLS regression
+reg lny1 lnx1 lnx2 lnx3 
+* 
 *=======================================================
 * Section 9.6.2: Tests for Nonstationary Data
 *=======================================================
