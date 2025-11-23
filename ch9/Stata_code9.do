@@ -65,8 +65,8 @@ twoway (line lnx3 FY), by(state) ///
 *=======================================================
 * Section 9.3.2: Tests for Nonstationary Data
 *=======================================================
-* OLS regression
-reg lny1 lnx1 lnx2 lnx3 
+* OLS regression referred to in the text
+reg lny1 lnx1 lnx2 lnx3, fe 
 * 
 *=======================================================
 * Section 9.6.2: Tests for Nonstationary Data
