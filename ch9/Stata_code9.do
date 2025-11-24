@@ -52,8 +52,8 @@ lab var lnx3 "Log of State Per Capita Income"
 * State
 *=======================================================
 twoway (line lny1 FY), by(state) ///
-   xlabel(1980 (12) 2024,labsize(small))///
-   ytitle(Log of State Appropriations)///
+   xlabel(1980 (12) 2024,labsize(small)) ///
+   ytitle(Log of State Appropriations) ///
    xtitle(Fiscal Year)
 *=======================================================
 * Create Figure 9.2: Trends in Log of Per Capita Income * by State
@@ -65,8 +65,8 @@ twoway (line lnx3 FY), by(state) ///
 *=======================================================
 * Section 9.3.2: Tests for Nonstationary Data
 *=======================================================
-* OLS regression referred to in the text
-reg lny1 lnx1 lnx2 lnx3, fe 
+* OLS regression with state fixed effects referred to in the text
+xtreg lny1 lnx1 lnx2 lnx3, fe 
 * 
 *=======================================================
 * Section 9.6.2: Tests for Nonstationary Data
@@ -98,7 +98,6 @@ xtpurt lnx2, test(hmw) trend
 xtpurt lnx3, test(hmw) trend
 
 * xtpurt with all test options with first-differences (d)
-
 * create first-differences
 gen dlny1 = D.lny1
 gen dlnx1 = D.lnx1
@@ -129,9 +128,9 @@ xtcointtest pedroni lny1 lnx1 lnx2 lnx3, demean
 xtcointtest westerlund lny1 lnx1 lnx2 lnx3
 xtcointtest westerlund lny1 lnx1 lnx2 lnx3, demean
 
-/* ECM-based cointegration test, developed by Westerlund 2007), that is robust
-   to structural breaks in the intercept and slope of the cointegrated
-   regression, serial correlation, and heteroscedasticity.
+/* ECM-based cointegration test (xtwest), developed by Westerlund 2007), that is
+   robust to structural breaks in the intercept and slope of the cointegrated
+   regression, serial correlation, and heteroscedasticity. 
 */
 xtwest lny1 lnx1 lnx2 lnx3, constant lags(0 3)
 
@@ -195,22 +194,22 @@ xtdcce2 D1.lny1 L1.D1.lny1 L1.D1.lnx1 L1.D1.lnx2 ///
 */
 xtdcce2 D1.lny1 L1.D1.lny1 L1.D1.lnx1 L1.D1.lnx2 ///
    L1.D1.lnx3, reportc cr(_all) cr_lags(1 3 3 3) ///
-   lr(L1.lny1 lnx1 lnx2 lnx3) lr_options(ardl)///
+   lr(L1.lny1 lnx1 lnx2 lnx3) lr_options(ardl) ///
    exponent showin
-
-/*  
-========================================================
+  
+*========================================================
 * Additional Analysis Options
-========================================================
+*========================================================
 
 /* Alternative specifications with different cross-sectional lags 2 cross-sectional lags
 xtdcce2 D1.lny1 L1.D1.lny1 L1.D1.lnx1 L1.D1.lnx2 ///
    L1.D1.lnx3, reportc cr(_all) cr_lags(2 2 2 2) ///
    lr(L1.lny1 lnx1 lnx2 lnx3) lr_options(ardl)
 
-4 cross-sectional lags
+4 cross-sectional lags 
+
 xtdcce2 D1.lny1 L1.D1.lny1 L1.D1.lnx1 L1.D1.lnx2 ///
-   L1.D1.lnx3, reportc cr(_all) cr_lags(4 4 4 4)///
+   L1.D1.lnx3, reportc cr(_all) cr_lags(4 4 4 4) ///
    lr(L1.lny1 lnx1 lnx2 lnx3) lr_options(ardl)
 */
     

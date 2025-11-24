@@ -55,6 +55,41 @@ pdata_df <- pdata %>%
 pdata <- pdata.frame(pdata_df, index = c("fips", "FY"))
 
 # -------------------------
+# Section 9.3.2: Tests for Nonstationary Data
+# -------------------------
+# OLS regression with state fixed effects referred to in the text
+# Stata equivalent: xtreg lny1 lnx1 lnx2 lnx3, fe
+message("\n=== Section 9.3.2: OLS regression with state fixed effects ===")
+model_fe_9_3_2 <- plm(lny1 ~ lnx1 + lnx2 + lnx3, data = pdata, model = "within")
+print(summary(model_fe_9_3_2))
+
+# Additional diagnostics for the fixed effects model
+message("\n=== Fixed Effects Model Diagnostics ===")
+# Extract fixed effects (state-specific intercepts)
+fixed_effects <- fixef(model_fe_9_3_2)
+message("Number of state fixed effects: ", length(fixed_effects))
+message("Range of fixed effects: [", round(min(fixed_effects), 3), ", ", 
+        round(max(fixed_effects), 3), "]")
+
+# Test for time fixed effects
+model_fe_time <- plm(lny1 ~ lnx1 + lnx2 + lnx3, data = pdata, 
+                      model = "within", effect = "time")
+message("\n=== Time Fixed Effects Test ===")
+print(summary(model_fe_time))
+
+# Test for two-way fixed effects
+model_fe_twoways <- plm(lny1 ~ lnx1 + lnx2 + lnx3, data = pdata, 
+                         model = "within", effect = "twoways")
+message("\n=== Two-way Fixed Effects Test ===")
+print(summary(model_fe_twoways))
+
+# F-test for fixed effects (vs pooled OLS)
+model_pooled <- plm(lny1 ~ lnx1 + lnx2 + lnx3, data = pdata, model = "pooling")
+pFtest_result <- pFtest(model_fe_9_3_2, model_pooled)
+message("\n=== F-test for Fixed Effects (H0: pooled OLS is adequate) ===")
+print(pFtest_result)
+
+# -------------------------
 # Section 9.6.2: Unit Root Tests (IPS)
 # -------------------------
 message("\n=== IPS unit-root tests (levels) ===")
