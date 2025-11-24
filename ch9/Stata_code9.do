@@ -206,11 +206,11 @@ xtdcce2 D1.lny1 L1.D1.lny1 L1.D1.lnx1 L1.D1.lnx2 ///
    L1.D1.lnx3, reportc cr(_all) cr_lags(2 2 2 2) ///
    lr(L1.lny1 lnx1 lnx2 lnx3) lr_options(ardl)
 
-4 cross-sectional lags 
+* 4 cross-sectional lags 
 
 xtdcce2 D1.lny1 L1.D1.lny1 L1.D1.lnx1 L1.D1.lnx2 ///
    L1.D1.lnx3, reportc cr(_all) cr_lags(4 4 4 4) ///
-   lr(L1.lny1 lnx1 lnx2 lnx3) lr_options(ardl)
+   lr(L1.lny1 lnx1 lnx2 lnx3) lr_options(ardl) 
 */
     
 clear all
