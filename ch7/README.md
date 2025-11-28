@@ -25,7 +25,6 @@ Chapter 7 introduces intermediate regression methods and applied panel-data tech
 - Section 7.2.4: Pooled OLS for panel data and interactions (categorical × categorical, categorical × continuous, continuous × continuous)
 - Regression diagnostics and robust/clustered standard errors
 - Section 7.4: Fixed-effects estimation (FEDV, within estimator), institutional-level examples
-- Section 7.4.3: Difference-in-differences (DiD) with multiple control specifications and placebo tests (Colorado College Opportunity Fund example)
 - Section 7.5: Random-effects models, Breusch-Pagan test, Hausman test (including log-transformed specifications)
 
 ## Data Sources
@@ -72,7 +71,6 @@ The R translation has been validated against the Stata implementation. Key point
 - Representative matching results:
   - Bivariate OLS (2016): stapr_fte ≈ -0.354, R² ≈ 0.1303, F ≈ 7.19
   - Pooled OLS (1990–2016): identical coefficients and N = 1,350
-  - DiD (Colorado College Opportunity Fund example): treatment effects estimated consistently across platforms; placebo tests support parallel trends
 
 See `Comparison of R script and Stata script results.txt` for a detailed side-by-side comparison.
 
@@ -130,9 +128,6 @@ The R script will install missing packages, download datasets from GitHub, creat
 
 2. Random Effects & Numerical Stability:
    - R’s `plm` sometimes encounters singularities for certain RE specifications (particularly with time-invariant factors or untransformed level variables). The R code uses log-transformed specifications when necessary and documents these choices.
-
-3. DiD Placebo Tests:
-   - The R implementation correctly restricts placebo samples to the pre-treatment window (1996–2004) using the AND operator. The Stata do-file contains comments highlighting a common OR vs. AND pitfall in similar code examples and uses correct filtering in practice.
 
 ## Troubleshooting
 
