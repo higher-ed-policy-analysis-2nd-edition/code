@@ -1,82 +1,235 @@
+*=======================================================
+* Chapter 10 - Causal Inference Techniques
+* Complete Stata Code
+* Higher Education Policy Analysis Using Quantitative
+* Techniques (2nd Edition)
+* Source: https://github.com/higher-ed-policy-analysis- * 2nd-edition/tree/main/code/ch9
+* Author: Marvin A. Titus
+* Date: November 27, 2025
+*=======================================================
+* Script tested in Stata 19.5
+* Compatible with Stata version 19 or later
+*=======================================================
+* IMPORTANT: Set working directory (customize this for your system)
+*=======================================================
+/* Use a global path to make it easy to update in one place
+global ch9data "C:/Users/YourName/Documents/book-materials/ch9/data"
+cd "$ch9data"
+*/
+*=======================================================
+* Causal Inference Techniques
+*=======================================================
+
+clear all
+
+/* The reserch question: Did Georgia's system-wide consolidation policy
+   (treatment)that was phased in between 2013 and 2018 and fully implemented by
+   2018 (start of the "steady-state" post-consolidation regime) have an effect
+   on Georgia's higher education general operating expenses?" 
+*/
+* Access the data using the copy and import delimited commands
+copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch10/Finance_Data.csv" ///
+     "Finance_Data.csv", replace
+import delimited "Finance_Data.csv", clear
+
+replace state = strtrim(state)
+
+gen sreb = inlist(state, "Alabama", "Arkansas", "Delaware", "Florida", ///
+           "Georgia", "Kentucky", "Louisiana", "Maryland", "Mississippi") ///
+    | inlist(state, "North Carolina", "Oklahoma", "South Carolina", ///
+             "Tennessee", "Texas", "Virginia", "West Virginia")
+keep if sreb == 1
+
+gen fips = .
+replace fips = 1  if state == "Alabama"
+replace fips = 5  if state == "Arkansas"
+replace fips = 10 if state == "Delaware"
+replace fips = 12 if state == "Florida"
+replace fips = 13 if state == "Georgia"
+replace fips = 21 if state == "Kentucky"
+replace fips = 22 if state == "Louisiana"
+replace fips = 24 if state == "Maryland"
+replace fips = 28 if state == "Mississippi"
+replace fips = 37 if state == "North Carolina"
+replace fips = 40 if state == "Oklahoma"
+replace fips = 45 if state == "South Carolina"
+replace fips = 47 if state == "Tennessee"
+replace fips = 48 if state == "Texas"
+replace fips = 51 if state == "Virginia"
+replace fips = 54 if state == "West Virginia"
+
+gen treat_state = (state == "Georgia")
+gen post = (fy >= 2018)
+gen did = treat_state * post
+
+gen post_placebo = (fy >= 2012)
+gen did_placebo = treat_state * post_placebo
+
+*===============================================================================
+* Section:  Difference-in-Differences (DiD)
+*===============================================================================
+*create log transformed variables
+gen lngenop  = log(general_public_operations)
+*gen lnactax  = log(actual_tax_revenue)
+gen lntotsup = log(total_state_support)
+gen lnfinaid = log(total_financial_aid)
+gen lntuifee = log(net_tuition_and_fee_revenue)
+gen lnfte    = log(net_fte_enrollment) 
+
+global controls "lntotsup lnfinaid lntuifee lnfte"
 
 
+// ─── 1. DiD ────────────────────────────────────────────────────
+reghdfe lngenop did ///
+    $controls, ///
+    absorb(fips fy) vce(cluster fips)
+	
+cap which synth
+if _rc ssc install synth, replace
 
-*========================================================================
-* Section 7.4.3: Fixed-Effects Regression and Difference-in-Differences
-* Section 7.4.3.2: Fixed-Effects Regression-Based DiD Example
-*========================================================================
+xtset fips fy
 
-/* Difference-in-differences evaluates policy impact
-   Example: Colorado's College Opportunity Fund (enacted 2004) */
+xtdidregress (lngenop $controls) (did), group(fips) time(fy)
 
-/* Return to state-level data */
-use "Example_7_2_2.dta", clear
+// ─── 2. LASSO-Residualized DiD ───────────────────────────────────────
+cap which lasso
+if _rc {
+    display as text "LASSO not available, using OLS residualization"
+    reg lngenop ///
+     $controls  
+    predict yhat
+    gen resid_y = lngenop - yhat
+} 
+else {
+    display as text "Using LASSO residualization"
+    lasso linear lngenop ///
+        $controls, selection(adaptive)
+    predict yhat
+    gen resid_y = lngenop - yhat
+}
 
-/* Create per FTE variables */
-gen netuit_fte = netuit/fte
-gen stapr_fte = stapr/fte
+reghdfe resid_y did, absorb(fips fy) vce(cluster fips)
 
-/* Create treatment indicator: Colorado = 1, all other states = 0 */
-gen T = 0
-replace T = 1 if state=="CO"
+// Store with consistent naming for summary table
+estimates store lasso  // Changed back to 'lasso' for consistency with export script
+estimates save "${output}\lasso_results", replace
 
-/* Create post-treatment indicator: 1 for years 2004 and after */
-gen P = 0
-replace P = 1 if year>=2004
+if "`mode'" == "standalone" {
+    esttab lasso using "${output}\lasso_did.rtf", replace ///
+        se star(* 0.1 ** 0.05 *** 0.01) ///
+        title("LASSO-Residualized DiD") ///
+        label compress
+}
 
-/* Define control groups
-   C1: All states except Colorado (broad control group) */
-gen C1 = 0
-replace C1 = 1 if state !="CO"
+	
 
-/* C2: Only WICHE states except Colorado (regional control group)
-   region_compact==2 identifies WICHE member states */
-gen C2 = 0
-replace C2 = 1 if state !="CO" & region_compact==2
+/*==============================================================================
+  Section:  Synthetic (SCM) Control Methods 
+ ===============================================================================
+ If needed, ssc install synth2, replace 
 
-/* Create global macros for convenience
-   Dependent variable */
-global y "netuit_fte"
+To save graphs
+ Step 1: Create a temp folder path
+local tmpdir = "`c(tmpdir)'/synth_graphs"
 
-/* Control variables (covariates) */
-global controls "stapr_fte pc_income"
+ Step 2: Create the directory
+mkdir "`tmpdir'"
 
-/* DiD regression with state and year fixed effects
-   T#P is the DiD estimator (treatment effect)
-   i.year controls for common time trends
-   i.fips creates state fixed effects
-   robust option provides heteroscedasticity-robust standard errors */
-reg $y i.T i.P T#P $controls i.year i.fips ///
-    if year>=2000 & (C1==1 | T==1), robust
+ Step 3: Set global macro so synth2 can use it
+global figures "`tmpdir'"
 
-/* Within-group fixed-effects DiD (alternative specification)
-   xtreg with fe automatically includes state fixed effects
-   T##P creates T, P, and T×P (same as i.T i.P T#P) */
-xtreg $y T##P $controls i.year ///
-      if year>=2000 & (C1==1 | T==1), fe robust
+* (Optional) Check it worked
+display "$figures"
+*/	
+* run synth2	
+synth2 lngenop ///
+    $controls, ///
+    trunit(13) trperiod(2018) ///
+    preperiod(2005(1)2017) ///
+    postperiod(2018(1)2021) ///
+    placebo(unit) ///
+    frame(ga_scm) ///
+    savegraph("$figures/ga_scm", replace)
+	
+/* To save all graphs 
+* Define base name (must match what you used in savegraph())
+local base "$figures/ga_scm"
 
-/* DiD with regional control group (WICHE states only)
-   Provides more comparable comparison states
-   Trade-off: Fewer control states but better similarity */
-xtreg $y T##P $controls i.year ///
-      if year>=2000 & (C2==1 | T==1), fe robust
+* Define desired format
+local format png   // or: pdf, eps
 
-*========================================================================
-* Section 7.4.3.3: DiD Placebo Tests
-*========================================================================
+* List of expected graphs
+local suffixes effect balance placebo bias
 
-/* Placebo tests check for spurious treatment effects
-   Falsely assign treatment to pre-treatment period
-   If "effect" found, original DiD may be invalid */
+foreach suf in `suffixes' {
+    local gfile = "`base'_`suf'.gph"
+    local ofile = "`base'_`suf'.`format'"
 
-/* Create placebo treatment: Falsely set treatment year to 2000 */
-gen placebo_2000 = 1 if year>=2000
-recode placebo_2000 (.=0)
+    capture noisily {
+        graph use "`gfile'", name(gout, replace)
+        graph export "`ofile'", name(gout) replace
+        display as result "Exported: `ofile'"
+    }
+}
+*/
 
-/* Test for "treatment effect" in pre-treatment period (1996-2004)
-   If placebo is significant, parallel trends assumption likely violated */
-xtreg $y T##placebo_2000 $controls ///
-      if (year>1995 | year<2005) & (C2==1 | T==1), fe robust
+rename lngenop actual
+rename pred·lngenop synth
+rename tr·lngenop effect
 
-/* Expected result: Placebo should NOT be statistically significant
-   Significant placebo suggests pre-existing trends, not policy effect */
+list fips fy actual synth effect pvalTwo if fips == 13
+
+twoway (line actual fy if fips == 13, lcolor(navy)) ///
+       (line synth fy if fips == 13, lcolor(cranberry)), ///
+       title("Actual vs Synthetic: Georgia") ///
+       xtitle("Fiscal Year") ///
+       legend(order(1 "Actual" 2 "Synthetic"))
+
+line effect fy if fips == 13, ///
+    yline(0, lpattern(dash)) ///
+    title("Treatment Effect Over Time (Georgia)") ///
+    xtitle("Fiscal Year") ytitle("Effect (Actual − Synthetic)")
+
+	
+// ─── Run SDID Estimation ──────────────────────────────────────────────
+cap which sdid
+if _rc ssc install sdid, replace
+
+sdid lngenop fips fy did, vce(placebo) ///
+     covariates($controls)
+	 
+// ─── Event study ──────────────────────────────────────────────	 
+*----------------------------------------*
+* 0. Install necessary packages (only once)
+*----------------------------------------*
+cap which csdid
+if _rc ssc install csdid, replace
+
+cap which drdid
+if _rc ssc install drdid, replace
+
+*----------------------------------------*
+* Generate gvar = first treatment year for treated units
+*----------------------------------------*
+gen gyear = .                             // Initialize
+replace gyear = 2018 if fips == 13  // Georgia treated in 2018
+
+* Drop any remaining missing outcome
+drop if missing(lngenop)
+
+*----------------------------------------*
+* Run csdid using dynamic DRIPW estimator
+*----------------------------------------*
+csdid lngenop $controls, ///
+    ivar(fips) ///
+    time(fy) ///
+    gvar(gyear) ///
+    method(dripw) ///
+    vce(cluster fips)
+
+
+* -----------------------------------------------------------------------------
+
+
+   
+   
