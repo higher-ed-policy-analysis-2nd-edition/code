@@ -158,12 +158,7 @@ reg netuit_fte stapr_fte stapr_fte2 pc_income i.region_compact, cluster(state)
 * Section 7.4.2: Estimating FEDV Multivariate POLS Regression Models
 *========================================================================
 
-/* Download institutional-level panel dataset
-   Different dataset: 220 institutions observed over ~9 years each */
-copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch7/Example_7_4_2.dta" ///
-     "Example_7_4_2.dta", replace
-
-use "Example_7_4_2.dta", clear
+/* Continue using state-level panel data (Example_7_2_2.dta) for state FE models */
 
 /* Fixed-effects with state dummy variables (FEDV approach)
    i.stateid creates dummy for each state, controlling for state differences */
@@ -177,6 +172,13 @@ testparm i.stateid
    Produces same coefficients but doesn't display all dummy variables */
 areg netuit_fte stapr_fte stapr_fte2 pc_income, ///
      cluster(stateid) absorb(stateid)
+
+/* Now switch to institutional-level panel dataset for institution FE models
+   Different dataset: 220 institutions observed over ~9 years each */
+copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch7/Example_7_4_2.dta" ///
+     "Example_7_4_2.dta", replace
+
+use "Example_7_4_2.dta", clear
 
 /* Institutional-level fixed effects example
    Controls for time-invariant institution characteristics
@@ -675,13 +677,36 @@ di "  - Policy-relevant treatment effects (PRTE, MPRTE)"
 * Save Dataset for Chapter 10
 *========================================================================
 
+/* Save synthetic B&B dataset to user's working directory.
+   This file will be used in Chapter 10 for MTE analysis.
+   
+   NOTE: The file saves to your current working directory (set at the 
+   beginning of this script via: cd "$ch7data"). If you have not set 
+   a working directory, Stata will save to your default directory.
+   
+   To verify your working directory, run: pwd
+   To change it, run: cd "your/desired/path" 
+
+Save as Stata .dta file, using this syntax:
 save "bb_iv_simulation.dta", replace
-di _n "Dataset saved: bb_iv_simulation.dta"
-di "This dataset will be used in Chapter 10 for MTE analysis."
+
+Also export as CSV for cross-platform compatibility, using this syntax:
+export delimited using "bb_iv_simulation.csv", replace
+
+di _n "=============================================="
+di "DATASETS SAVED TO WORKING DIRECTORY:"
+di "=============================================="
+di "  1. bb_iv_simulation.dta (Stata format)"
+di "  2. bb_iv_simulation.csv (CSV for R/Python)"
+di _n "Current working directory:"
+* check your working directory, using this syntax:
+pwd
+di _n "These datasets will be used in Chapter 10 for MTE analysis."
 
 *================================================================
 * END OF CHAPTER 7 CODE
-*================================================================
+*================================================================ */
 
 clear all
+
 exit

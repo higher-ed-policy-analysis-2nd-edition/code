@@ -26,7 +26,7 @@
 
 # Install packages if not already installed
 required_packages <- c("haven", "dplyr", "lmtest", "sandwich", "car", 
-                       "plm", "margins", "ggplot2", "multiwayvcov", 
+                       "plm", "ggplot2", "multiwayvcov", 
                        "stargazer", "broom", "tidyr", "AER")
 
 for(pkg in required_packages) {
@@ -115,7 +115,10 @@ lrtest(model1, model2)
 
 # Alternative test of interaction terms only (Wald test)
 # Test all interaction terms jointly
-linearHypothesis(model2, grep(":", names(coef(model2)), value = TRUE))
+interaction_terms <- grep(":", names(coef(model2)), value = TRUE)
+if(length(interaction_terms) > 0) {
+  linearHypothesis(model2, interaction_terms)
+}
 
 # EXAMPLE 2: Categorical × Continuous Interaction
 # Tests whether appropriations effect varies by tuition-setting authority
@@ -125,9 +128,11 @@ model_cat_cont <- lm(netuit_fte ~ factor(ugradmerit) + factor(region_compact) +
 summary(model_cat_cont)
 
 # Test interaction terms
-linearHypothesis(model_cat_cont, 
-                 grep("stapr_fte:factor\\(tuitset\\)", 
-                      names(coef(model_cat_cont)), value = TRUE))
+interaction_terms_2 <- grep("stapr_fte:factor\\(tuitset\\)", 
+                            names(coef(model_cat_cont)), value = TRUE)
+if(length(interaction_terms_2) > 0) {
+  linearHypothesis(model_cat_cont, interaction_terms_2)
+}
 
 # EXAMPLE 3: Continuous × Continuous Interaction
 # Tests whether appropriations effect varies by level of need-based aid
@@ -157,7 +162,7 @@ plot_data <- data.frame(
 # Create visualization showing how relationship changes
 ggplot(plot_data, aes(x = stapr_fte, y = predicted, 
                       color = factor(state_needFTE))) +
-  geom_line(size = 1) +
+  geom_line(linewidth = 1) +
   labs(x = "State Appropriations per FTE",
        y = "Predicted Net Tuition per FTE",
        color = "State Need-Based Aid per FTE",
@@ -188,23 +193,26 @@ bptest(model_diag)
 # Results are valid even if constant variance assumption is violated
 coeftest(model_diag, vcov = vcovHC(model_diag, type = "HC1"))
 
+# Test for heteroscedasticity across states
+# Generates residuals and examines variance by state
+data_7_2_2$eps <- residuals(model_diag)
+var_by_state <- data_7_2_2 %>%
+  group_by(state) %>%
+  summarize(var_eps = var(eps, na.rm = TRUE),
+            n = n())
+print(var_by_state)
+
 # Cluster-robust standard errors account for within-state correlation
 # Use when observations within same state are not independent
-model_cluster <- lm(netuit_fte ~ stapr_fte + stapr_fte2 + pc_income + 
-                      factor(region_compact), 
-                    data = data_7_2_2)
-
-# Calculate cluster-robust standard errors
-vcov_cluster <- cluster.vcov(model_cluster, data_7_2_2$state)
-coeftest(model_cluster, vcov_cluster)
+vcov_cluster <- cluster.vcov(model_diag, data_7_2_2$state)
+coeftest(model_diag, vcov_cluster)
 
 # ========================================================================
 # Section 7.4: Fixed-Effects Regression
 # Section 7.4.2: Estimating FEDV Multivariate POLS Regression Models
 # ========================================================================
 
-# Note: The first models in this section use state-level data (Example_7_2_2)
-# Later we switch to institutional-level data (Example_7_4_2)
+# Continue using state-level panel data (Example_7_2_2) for state FE models
 
 # Fixed-effects with state dummy variables (FEDV approach)
 # factor(stateid) creates dummy for each state, controlling for state differences
@@ -218,9 +226,8 @@ coeftest(model_fedv, vcov_cluster_state)
 
 # Test whether state dummies are jointly significant
 # If significant, state fixed effects are needed
-linearHypothesis(model_fedv, 
-                 grep("factor\\(stateid\\)", names(coef(model_fedv)), 
-                      value = TRUE))
+state_dummies <- grep("factor\\(stateid\\)", names(coef(model_fedv)), value = TRUE)
+linearHypothesis(model_fedv, state_dummies)
 
 # Alternative: Use plm package for more efficient fixed effects estimation
 # Set up panel data structure (using state-level data)
@@ -238,7 +245,7 @@ coeftest(model_plm_state, vcov = vcovHC(model_plm_state,
                                         type = "HC1", 
                                         cluster = "group"))
 
-# Now load institutional-level panel dataset for institutional models
+# Now load institutional-level panel dataset for institution FE models
 # Different dataset: 220 institutions observed over ~9 years each
 download.file("https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch7/Example_7_4_2.dta",
               "Example_7_4_2.dta", mode = "wb")
@@ -327,7 +334,39 @@ plmtest(model_re, type = "bp")
 data_7_4_2 <- read_dta("Example_7_4_2.dta")
 pdata_inst <- pdata.frame(data_7_4_2, index = c("opeid5_new", "endyear"))
 
-# Log-transformed variables work better for Hausman test
+# Estimate both models with level variables
+# NOTE: Random effects with level variables may encounter numerical issues
+# due to the scale of variables (eg, statea, tuition are in different magnitudes).
+# The Swamy-Arora method (random.method = "swar") is more numerically stable.
+# If this still fails, use log-transformed variables (shown below).
+
+model_fe_level <- plm(eg ~ statea + tuition + totfteiarep + ftfac + ptfac, 
+                      data = pdata_inst, 
+                      model = "within", 
+                      effect = "individual")
+
+# Try random effects with Swamy-Arora method for better numerical stability
+model_re_level <- tryCatch({
+  plm(eg ~ statea + tuition + totfteiarep + ftfac + ptfac, 
+      data = pdata_inst, 
+      model = "random", 
+      random.method = "swar",  # Swamy-Arora method
+      effect = "individual")
+}, error = function(e) {
+  message("Note: Random effects with level variables failed due to numerical issues.")
+  message("This is common with variables of very different scales.")
+  message("Using log-transformed variables instead (see below).")
+  NULL
+})
+
+# Hausman test (only if random effects model succeeded)
+if (!is.null(model_re_level)) {
+  phtest(model_fe_level, model_re_level)
+} else {
+  cat("Skipping Hausman test with level variables - see log-transformed version below.\n")
+}
+
+# Log-transformed variables often work better for Hausman test
 # Reduces influence of outliers and improves test properties
 model_fe_log <- plm(lneg ~ lnstatea + lntuition + lntotfteiarep + 
                       lnftfac + ptfac, 
@@ -343,6 +382,11 @@ model_re_log <- plm(lneg ~ lnstatea + lntuition + lntotfteiarep +
 
 # Hausman test with log-transformed variables
 phtest(model_fe_log, model_re_log)
+
+# Note: Cluster-robust Hausman test requires custom implementation
+# The standard phtest doesn't support clustering
+# For a cluster-robust version, you would need to implement a bootstrap procedure
+# similar to Stata's rhausman command
 
 
 ################################################################################
@@ -539,6 +583,11 @@ df$salary <- exp(df$ln_salary)
 # Section 7.6.6: Summary Statistics and True Parameters
 # ========================================================================
 
+cat("\n==============================================\n")
+cat("SECTION 7.6: IV/2SLS DEMONSTRATION\n")
+cat("Effect of Master's Degree on Salary\n")
+cat("==============================================\n")
+
 cat("\n--- Sample Characteristics ---\n")
 cat("Treatment distribution:\n")
 print(table(df$masters))
@@ -734,17 +783,33 @@ cat("  - Policy-relevant treatment effects (PRTE, MPRTE)\n")
 # Save Dataset for Chapter 10
 # ========================================================================
 
-# Select variables to save
-save_vars <- c("id", "masters", "ln_salary", "salary", "te_masters", "p_masters",
-               "female", "black", "hispanic", "asian", "age_ba", "firstgen",
-               "parent_income_q", "parent_grad", "ugpa", "stem_major", "bus_major",
-               "ed_major", "selective_inst", "public_ug", "state_unemp", "metro",
-               "ga_funding_adj", "state")
-
-write.csv(df[, save_vars], "bb_iv_simulation.csv", row.names = FALSE)
-
-cat("\nDataset saved: bb_iv_simulation.csv\n")
-cat("This dataset will be used in Chapter 10 for MTE analysis.\n")
+# Save synthetic B&B dataset to user's working directory.
+# This file will be used in Chapter 10 for MTE analysis.
+#
+# NOTE: The file saves to your current working directory (set at the 
+# beginning of this script via: setwd(ch7data)). If you have not set 
+# a working directory, R will save to your default directory.
+#
+# To verify your working directory, run: getwd()
+# To change it, run: setwd("your/desired/path")
+#
+# Select variables to save, using this syntax:
+# save_vars <- c("id", "masters", "ln_salary", "salary", "te_masters", "p_masters",
+#                "female", "black", "hispanic", "asian", "age_ba", "firstgen",
+#                "parent_income_q", "parent_grad", "ugpa", "stem_major", "bus_major",
+#                "ed_major", "selective_inst", "public_ug", "state_unemp", "metro",
+#                "ga_funding_adj", "state")
+#
+# Save to working directory, using this syntax:
+# output_file <- file.path(getwd(), "bb_iv_simulation.csv")
+# write.csv(df[, save_vars], output_file, row.names = FALSE)
+#
+# cat("\n==============================================\n")
+# cat("DATASET SAVED TO WORKING DIRECTORY:\n")
+# cat("==============================================\n")
+# cat(sprintf("  File: %s\n", output_file))
+# cat(sprintf("  Current working directory: %s\n", getwd()))
+# cat("\nThis dataset will be used in Chapter 10 for MTE analysis.\n")
 
 # ================================================================
 # END OF CHAPTER 7 CODE
