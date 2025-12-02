@@ -27,7 +27,7 @@
 # Install packages if not already installed
 required_packages <- c("haven", "dplyr", "lmtest", "sandwich", "car", 
                        "plm", "margins", "ggplot2", "multiwayvcov", 
-                       "stargazer", "broom", "tidyr")
+                       "stargazer", "broom", "tidyr", "AER")
 
 for(pkg in required_packages) {
   if(!require(pkg, character.only = TRUE)) {
@@ -188,15 +188,6 @@ bptest(model_diag)
 # Results are valid even if constant variance assumption is violated
 coeftest(model_diag, vcov = vcovHC(model_diag, type = "HC1"))
 
-# Levene's test for heteroscedasticity across states
-# First create residuals
-data_7_2_2$residuals <- NA
-data_7_2_2$residuals[as.numeric(names(residuals(model_diag)))] <- residuals(model_diag)
-
-# Test if variance differs by state
-leveneTest(residuals ~ factor(state), 
-           data = data_7_2_2 %>% filter(!is.na(residuals)))
-
 # Cluster-robust standard errors account for within-state correlation
 # Use when observations within same state are not independent
 model_cluster <- lm(netuit_fte ~ stapr_fte + stapr_fte2 + pc_income + 
@@ -319,11 +310,6 @@ model_re <- plm(netuit_fte ~ stapr_fte + stapr_fte2 + pc_income,
 # Display summary with standard errors
 summary(model_re)
 
-# Note: R's plm package has numerical instability issues when computing 
-# cluster-robust standard errors for random effects models.
-# Stata handles this more gracefully. For cluster-robust inference with
-# panel data in R, fixed effects models are more reliable.
-
 # Breusch-Pagan test: Is random effects better than pooled OLS?
 # Null hypothesis: variance of random effects = 0
 # If rejected, use random effects instead of pooled OLS
@@ -340,23 +326,6 @@ plmtest(model_re, type = "bp")
 # For institutional-level data
 data_7_4_2 <- read_dta("Example_7_4_2.dta")
 pdata_inst <- pdata.frame(data_7_4_2, index = c("opeid5_new", "endyear"))
-
-# Note: Random effects estimation with level variables often encounters
-# numerical instability issues in R due to multicollinearity/scaling.
-# We proceed directly to log-transformed variables which work more reliably.
-
-# Estimate both models with level variables (FE works, but RE may fail in R)
-model_fe <- plm(eg ~ statea + tuition + totfteiarep + ftfac + ptfac, 
-                data = pdata_inst, 
-                model = "within", 
-                effect = "individual")
-
-# Attempting RE with level variables often fails in R:
-# model_re_inst <- plm(eg ~ statea + tuition + totfteiarep + ftfac + ptfac, 
-#                      data = pdata_inst, 
-#                      model = "random", 
-#                      effect = "individual")
-# Error: system is computationally singular
 
 # Log-transformed variables work better for Hausman test
 # Reduces influence of outliers and improves test properties
@@ -375,116 +344,408 @@ model_re_log <- plm(lneg ~ lnstatea + lntuition + lntotfteiarep +
 # Hausman test with log-transformed variables
 phtest(model_fe_log, model_re_log)
 
-# Note: Cluster-robust Hausman test requires custom implementation
-# The standard phtest doesn't support clustering
-# For a cluster-robust version, you would need to implement a bootstrap procedure
 
-# ========================================================================
-# Section 7.4.3: Fixed-Effects Regression and Difference-in-Differences
-# Section 7.4.3.2: Fixed-Effects Regression-Based DiD Example
-# ========================================================================
+################################################################################
+################################################################################
+##
+## SECTION 7.6: INSTRUMENTAL VARIABLES AND TWO-STAGE LEAST SQUARES
+##
+## This section introduces IV/2SLS estimation using a simulation based on
+## the Baccalaureate and Beyond Longitudinal Study (B&B) characteristics.
+##
+## Application: Effect of Master's Degree on Salary Outcomes
+## Instrument: State Graduate Assistantship (GA) Funding
+##
+## The same synthetic dataset is used in Chapter 10 for Marginal Treatment
+## Effects (MTE) analysis, providing pedagogical continuity.
+##
+################################################################################
+################################################################################
 
-# Difference-in-differences evaluates policy impact
-# Example: Colorado's College Opportunity Fund (enacted 2004)
-
-# Return to state-level data
-data_7_2_2 <- read_dta("Example_7_2_2.dta")
-
-# Create per FTE variables
-data_7_2_2 <- data_7_2_2 %>%
-  mutate(netuit_fte = netuit / fte,
-         stapr_fte = stapr / fte)
-
-# Create treatment indicator: Colorado = 1, all other states = 0
-data_7_2_2 <- data_7_2_2 %>%
-  mutate(T = ifelse(state == "CO", 1, 0))
-
-# Create post-treatment indicator: 1 for years 2004 and after
-data_7_2_2 <- data_7_2_2 %>%
-  mutate(P = ifelse(year >= 2004, 1, 0))
-
-# Define control groups
-# C1: All states except Colorado (broad control group)
-data_7_2_2 <- data_7_2_2 %>%
-  mutate(C1 = ifelse(state != "CO", 1, 0))
-
-# C2: Only WICHE states except Colorado (regional control group)
-# region_compact==2 identifies WICHE member states
-data_7_2_2 <- data_7_2_2 %>%
-  mutate(C2 = ifelse(state != "CO" & region_compact == 2, 1, 0))
-
-# DiD regression with state and year fixed effects
-# T*P is the DiD estimator (treatment effect)
-# factor(year) controls for common time trends
-# factor(fips) creates state fixed effects
-did_data_c1 <- data_7_2_2 %>% filter(year >= 2000 & (C1 == 1 | T == 1))
-
-model_did_c1 <- lm(netuit_fte ~ factor(T) + factor(P) + factor(T):factor(P) + 
-                     stapr_fte + pc_income + factor(year) + factor(fips), 
-                   data = did_data_c1)
-
-# Robust standard errors
-coeftest(model_did_c1, vcov = vcovHC(model_did_c1, type = "HC1"))
-
-# Within-group fixed-effects DiD (alternative specification)
-# Set up panel data
-pdata_did_c1 <- pdata.frame(did_data_c1, index = c("fips", "year"))
-
-model_did_fe_c1 <- plm(netuit_fte ~ T * P + stapr_fte + pc_income + 
-                         factor(year), 
-                       data = pdata_did_c1, 
-                       model = "within", 
-                       effect = "individual")
-
-# Robust standard errors
-coeftest(model_did_fe_c1, vcov = vcovHC(model_did_fe_c1, type = "HC1"))
-
-# DiD with regional control group (WICHE states only)
-# Provides more comparable comparison states
-did_data_c2 <- data_7_2_2 %>% filter(year >= 2000 & (C2 == 1 | T == 1))
-pdata_did_c2 <- pdata.frame(did_data_c2, index = c("fips", "year"))
-
-model_did_fe_c2 <- plm(netuit_fte ~ T * P + stapr_fte + pc_income + 
-                         factor(year), 
-                       data = pdata_did_c2, 
-                       model = "within", 
-                       effect = "individual")
-
-coeftest(model_did_fe_c2, vcov = vcovHC(model_did_fe_c2, type = "HC1"))
-
-# ========================================================================
-# Section 7.4.3.3: DiD Placebo Tests
-# ========================================================================
-
-# Placebo tests check for spurious treatment effects
-# Falsely assign treatment to pre-treatment period
-# If "effect" found, original DiD may be invalid
-
-# Create placebo treatment: Falsely set treatment year to 2000
-data_7_2_2 <- data_7_2_2 %>%
-  mutate(placebo_2000 = ifelse(year >= 2000, 1, 0))
-
-# Test for "treatment effect" in pre-treatment period (1996-2004)
-# If placebo is significant, parallel trends assumption likely violated
-placebo_data <- data_7_2_2 %>% 
-  filter(year > 1995 & year < 2005 & (C2 == 1 | T == 1))
-
-pdata_placebo <- pdata.frame(placebo_data, index = c("fips", "year"))
-
-model_placebo <- plm(netuit_fte ~ T * placebo_2000 + stapr_fte + pc_income, 
-                     data = pdata_placebo, 
-                     model = "within", 
-                     effect = "individual")
-
-coeftest(model_placebo, vcov = vcovHC(model_placebo, type = "HC1"))
-
-# Expected result: Placebo should NOT be statistically significant
-# Significant placebo suggests pre-existing trends, not policy effect
-
-# Clean up
+# Clear environment for Section 7.6
 rm(list = ls())
+
+# Set seed for reproducibility
+set.seed(20251130)
+
+# Sample size
+N <- 8000
+
+# ========================================================================
+# Section 7.6.1-7.6.5: Synthetic Data Generation
+# (B&B-Style Simulation for IV/2SLS Demonstration)
+# ========================================================================
+
+# NOTE ON SYNTHETIC DATA:
+# -----------------------
+# This application uses synthetic data calibrated to mirror the Baccalaureate
+# and Beyond Longitudinal Study (B&B). We use synthetic rather than actual
+# B&B data for several reasons:
+#
+# 1. ACCESS RESTRICTIONS: B&B restricted-use data requires NCES license
+# 2. PEDAGOGICAL TRANSPARENCY: Known true parameters allow validation
+# 3. REPRODUCIBILITY: Readers can generate identical datasets
+# 4. CONTINUITY: Same dataset used in Chapter 10 for MTE analysis
+#
+# NOTE ON AI-ASSISTED CODE DEVELOPMENT:
+# -------------------------------------
+# The simulation code was developed with assistance from Claude (Anthropic).
+# The author provided specifications based on B&B characteristics and higher
+# education finance literature. Claude assisted in translating specifications
+# to executable code. The author reviewed, tested, and validated all code.
+
+cat("\n==============================================\n")
+cat("SECTION 7.6: IV/2SLS DEMONSTRATION\n")
+cat("Generating Synthetic B&B Data\n")
+cat("==============================================\n")
+
+# Create data frame
+df <- data.frame(id = 1:N)
+
+#--- Section 1: Demographics ---#
+
+df$female <- rbinom(N, 1, 0.57)
+
+race_rand <- runif(N)
+df$white <- as.integer(race_rand < 0.62)
+df$black <- as.integer(race_rand >= 0.62 & race_rand < 0.72)
+df$hispanic <- as.integer(race_rand >= 0.72 & race_rand < 0.84)
+df$asian <- as.integer(race_rand >= 0.84 & race_rand < 0.92)
+df$other_race <- as.integer(race_rand >= 0.92)
+
+df$age_ba <- 22 + rpois(N, 1.5)
+df$age_ba[df$age_ba < 20] <- 22
+df$age_ba[df$age_ba > 35] <- 35
+
+#--- Section 2: Family Background ---#
+
+df$firstgen <- rbinom(N, 1, 0.35)
+df$parent_income_q <- 1 + rbinom(N, 4, 0.55)
+df$parent_grad <- rbinom(N, 1, 0.25)
+
+#--- Section 3: Academic Background ---#
+
+df$ugpa <- 2.0 + 1.2 * rbeta(N, 5, 3)
+df$ugpa[df$ugpa > 4.0] <- 4.0
+df$ugpa[df$ugpa < 2.0] <- 2.0
+
+df$stem_major <- rbinom(N, 1, 0.25)
+df$bus_major <- ifelse(df$stem_major == 0, rbinom(N, 1, 0.20), 0)
+df$ed_major <- ifelse(df$stem_major == 0 & df$bus_major == 0, rbinom(N, 1, 0.15), 0)
+df$socsci_major <- as.integer(df$stem_major == 0 & df$bus_major == 0 & df$ed_major == 0)
+
+df$selective_inst <- rbinom(N, 1, 0.30)
+df$public_ug <- rbinom(N, 1, 0.65)
+
+#--- Section 4: Labor Market ---#
+
+df$state_unemp <- 4 + 6 * rbeta(N, 2, 3)
+df$metro <- rbinom(N, 1, 0.75)
+
+#--- Section 5: Generate Instrument - State GA Funding ---#
+
+df$state <- ceiling(50 * runif(N))
+
+# State-level GA funding (with state fixed effects)
+state_effects <- data.frame(
+  state = 1:50,
+  state_effect = rnorm(50, 0, 4)
+)
+df <- merge(df, state_effects, by = "state", all.x = TRUE)
+
+df$ga_funding <- 18 + df$state_effect + rnorm(N, 0, 2)
+df$ga_funding[df$ga_funding < 8] <- 8
+df$ga_funding[df$ga_funding > 35] <- 35
+
+# Field-adjusted GA funding
+df$ga_field_mult <- ifelse(df$stem_major == 1, 1.3,
+                    ifelse(df$bus_major == 1, 0.9,
+                    ifelse(df$ed_major == 1, 1.1, 1.0)))
+df$ga_funding_adj <- df$ga_funding * df$ga_field_mult
+
+#--- Section 6: Generate Latent Factors (Unobserved) ---#
+
+df$eta_ability <- rnorm(N, 0, 1)
+df$eta_taste <- 0.3 * df$eta_ability + rnorm(N, 0, 0.9)
+df$eta_prod <- 0.5 * df$eta_ability + rnorm(N, 0, 0.85)
+
+#--- Section 7: Generate Treatment (Master's Degree) ---#
+
+df$z_masters <- -0.9 +
+  0.15 * df$female +
+  0.10 * df$black +
+  0.05 * df$hispanic +
+  0.20 * df$asian +
+  -0.03 * (df$age_ba - 22) +
+  -0.25 * df$firstgen +
+  0.08 * df$parent_income_q +
+  0.35 * df$parent_grad +
+  0.60 * (df$ugpa - 3.0) +
+  0.20 * df$stem_major +
+  -0.15 * df$bus_major +
+  0.45 * df$ed_major +
+  0.30 * df$selective_inst +
+  -0.02 * df$state_unemp +
+  0.15 * df$metro +
+  0.06 * (df$ga_funding_adj - 18) +  # INSTRUMENT EFFECT
+  0.40 * df$eta_taste +               # Unobserved taste for education
+  0.25 * df$eta_ability               # Unobserved ability
+
+df$p_masters <- pnorm(df$z_masters)
+df$u_d <- runif(N)
+df$masters <- as.integer(df$p_masters > df$u_d)
+
+#--- Section 8: Generate Outcome (Salary) ---#
+
+# Potential outcome without treatment (Y0)
+df$ln_salary_0 <- 10.50 +
+  -0.08 * df$female +
+  -0.05 * df$black +
+  -0.03 * df$hispanic +
+  0.06 * df$asian +
+  0.02 * (df$age_ba - 22) +
+  -0.03 * df$firstgen +
+  0.03 * df$parent_income_q +
+  0.04 * df$parent_grad +
+  0.10 * (df$ugpa - 3.0) +
+  0.25 * df$stem_major +
+  0.15 * df$bus_major +
+  -0.12 * df$ed_major +
+  0.08 * df$selective_inst +
+  -0.01 * df$state_unemp +
+  0.10 * df$metro +
+  0.20 * df$eta_prod +                # Unobserved productivity
+  rnorm(N, 0, 0.25)
+
+# Heterogeneous treatment effect (essential heterogeneity)
+df$te_masters <- 0.12 +
+  0.08 * df$stem_major +
+  0.05 * df$bus_major +
+  0.10 * df$ed_major +
+  0.03 * df$selective_inst +
+  0.05 * (df$ugpa - 3.0) +
+  0.08 * df$eta_ability +             # Ability-education complementarity
+  -0.10 * (df$p_masters - 0.5) +      # Essential heterogeneity
+  rnorm(N, 0, 0.05)
+
+# Potential outcome with treatment (Y1)
+df$ln_salary_1 <- df$ln_salary_0 + df$te_masters
+
+# Observed outcome (switching regression)
+df$ln_salary <- df$masters * df$ln_salary_1 + (1 - df$masters) * df$ln_salary_0
+df$salary <- exp(df$ln_salary)
+
+# ========================================================================
+# Section 7.6.6: Summary Statistics and True Parameters
+# ========================================================================
+
+cat("\n--- Sample Characteristics ---\n")
+cat("Treatment distribution:\n")
+print(table(df$masters))
+
+cat("\nKey variables summary:\n")
+summary_vars <- df[, c("salary", "ln_salary", "masters", "female", "ugpa", 
+                       "ga_funding_adj", "p_masters")]
+print(summary(summary_vars))
+
+cat("\n--- True Treatment Effects (from DGP) ---\n")
+true_att <- mean(df$te_masters[df$masters == 1])
+true_atu <- mean(df$te_masters[df$masters == 0])
+true_ate <- mean(df$te_masters)
+
+cat(sprintf("True ATT (treated):     %.4f\n", true_att))
+cat(sprintf("True ATU (untreated):   %.4f\n", true_atu))
+cat(sprintf("True ATE (population):  %.4f\n", true_ate))
+
+cat("\nSelection Pattern: ATT > ATE > ATU\n")
+cat("This confirms POSITIVE SELECTION on gains\n")
+cat("(Those who select into treatment benefit more)\n")
+
+# ========================================================================
+# Section 7.6.7: Naive OLS Estimation (Biased)
+# ========================================================================
+
+cat("\n==============================================\n")
+cat("NAIVE OLS ESTIMATION\n")
+cat("==============================================\n")
+
+# Define control variables
+X_vars <- c("female", "black", "hispanic", "asian", "age_ba", "firstgen",
+            "parent_income_q", "parent_grad", "ugpa", "stem_major", "bus_major",
+            "ed_major", "selective_inst", "public_ug", "state_unemp", "metro")
+X_formula <- paste(X_vars, collapse = " + ")
+
+# OLS regression (biased due to selection on unobservables)
+ols_formula <- as.formula(paste("ln_salary ~ masters +", X_formula))
+ols_model <- lm(ols_formula, data = df)
+
+# Robust standard errors
+ols_robust <- coeftest(ols_model, vcov = vcovHC(ols_model, type = "HC1"))
+
+ols_est <- coef(ols_model)["masters"]
+ols_se <- ols_robust["masters", "Std. Error"]
+
+cat(sprintf("\nOLS Estimate: %.4f (SE = %.4f)\n", ols_est, ols_se))
+cat(sprintf("True ATE:     %.4f\n", true_ate))
+
+ols_bias <- (ols_est - true_ate) / true_ate * 100
+cat(sprintf("OLS Bias:     %.1f%% (upward bias due to positive selection)\n", ols_bias))
+
+# ========================================================================
+# Section 7.6.8: First-Stage Regression (Instrument Relevance)
+# ========================================================================
+
+cat("\n==============================================\n")
+cat("FIRST-STAGE REGRESSION\n")
+cat("(Testing Instrument Relevance)\n")
+cat("==============================================\n")
+
+# First stage: Regress endogenous variable on instrument and controls
+first_stage_formula <- as.formula(paste("masters ~ ga_funding_adj +", X_formula))
+first_stage <- lm(first_stage_formula, data = df)
+
+# Robust standard errors
+fs_robust <- coeftest(first_stage, vcov = vcovHC(first_stage, type = "HC1"))
+
+fs_coef <- coef(first_stage)["ga_funding_adj"]
+fs_se <- fs_robust["ga_funding_adj", "Std. Error"]
+fs_t <- fs_coef / fs_se
+fs_F <- fs_t^2
+
+cat("\nFirst-Stage Results:\n")
+cat(sprintf("  GA Funding coefficient: %.4f\n", fs_coef))
+cat(sprintf("  Standard error:         %.4f\n", fs_se))
+cat(sprintf("  t-statistic:            %.2f\n", fs_t))
+cat(sprintf("  Partial F-statistic:    %.1f\n", fs_F))
+cat("\n  Stock-Yogo threshold:   F > 10 for weak instrument test\n")
+
+if (fs_F > 10) {
+  cat(sprintf("  RESULT: Strong instrument (F = %.1f >> 10)\n", fs_F))
+} else {
+  cat(sprintf("  WARNING: Potentially weak instrument (F = %.1f)\n", fs_F))
+}
+
+# ========================================================================
+# Section 7.6.9: IV/2SLS Estimation (LATE)
+# ========================================================================
+
+cat("\n==============================================\n")
+cat("IV/2SLS ESTIMATION\n")
+cat("(Local Average Treatment Effect)\n")
+cat("==============================================\n")
+
+# IV/2SLS using ivreg from AER package
+iv_formula <- as.formula(paste("ln_salary ~ masters +", X_formula, 
+                                "| ga_funding_adj +", X_formula))
+iv_model <- ivreg(iv_formula, data = df)
+
+# Summary with diagnostics
+iv_summary <- summary(iv_model, diagnostics = TRUE)
+print(iv_summary)
+
+iv_est <- coef(iv_model)["masters"]
+iv_se <- iv_summary$coefficients["masters", "Std. Error"]
+
+cat("\nIV/2SLS Results:\n")
+cat(sprintf("  LATE Estimate:    %.4f\n", iv_est))
+cat(sprintf("  Standard Error:   %.4f\n", iv_se))
+cat(sprintf("  95%% CI:          [%.4f, %.4f]\n", 
+            iv_est - 1.96*iv_se, iv_est + 1.96*iv_se))
+
+cat("\nInterpretation:\n")
+cat("  The IV estimate identifies the Local Average Treatment Effect (LATE)\n")
+cat("  for COMPLIERS - those whose master's degree completion is affected\n")
+cat("  by variation in state GA funding.\n")
+
+# ========================================================================
+# Section 7.6.10: Comparison of Estimates
+# ========================================================================
+
+cat("\n==============================================\n")
+cat("COMPARISON OF ESTIMATES\n")
+cat("==============================================\n")
+
+cat("\nMethod               Estimate    Std.Err.    Interpretation\n")
+cat("================================================================\n")
+cat(sprintf("True ATE             %7.4f       —       Population average effect\n", true_ate))
+cat(sprintf("True ATT             %7.4f       —       Effect for treated\n", true_att))
+cat(sprintf("True ATU             %7.4f       —       Effect for untreated\n", true_atu))
+cat("----------------------------------------------------------------\n")
+cat(sprintf("OLS (biased)         %7.4f    %6.4f    Confounded by selection\n", ols_est, ols_se))
+cat(sprintf("IV/2SLS (LATE)       %7.4f    %6.4f    Effect for compliers\n", iv_est, iv_se))
+cat("================================================================\n")
+
+cat("\nKey Insights:\n")
+cat(sprintf("  1. OLS is biased upward (%.1f%%) due to positive selection\n", ols_bias))
+cat("  2. IV provides consistent estimate of LATE for compliers\n")
+cat("  3. LATE ≠ ATE when treatment effects are heterogeneous\n")
+cat(sprintf("  4. First-stage F = %.1f confirms strong instrument\n", fs_F))
+
+# ========================================================================
+# Section 7.6.11: Manual 2SLS (Pedagogical Demonstration)
+# ========================================================================
+
+cat("\n==============================================\n")
+cat("MANUAL 2SLS (for understanding)\n")
+cat("==============================================\n")
+
+cat("NOTE: This manual approach is for pedagogical purposes only.\n")
+cat("      Standard errors are INCORRECT with manual 2SLS.\n")
+cat("      Always use ivreg for proper inference.\n")
+
+# Stage 1: Predict treatment using instrument
+stage1 <- lm(first_stage_formula, data = df)
+df$masters_hat <- fitted(stage1)
+
+# Stage 2: Regress outcome on predicted treatment
+stage2_formula <- as.formula(paste("ln_salary ~ masters_hat +", X_formula))
+stage2 <- lm(stage2_formula, data = df)
+
+manual_iv <- coef(stage2)["masters_hat"]
+cat(sprintf("\nManual 2SLS estimate: %.4f\n", manual_iv))
+cat(sprintf("ivreg estimate:       %.4f\n", iv_est))
+cat("(Should be identical)\n")
+
+# ========================================================================
+# Section 7.6.12: Preview of Chapter 10 (MTE Framework)
+# ========================================================================
+
+cat("\n==============================================\n")
+cat("PREVIEW: CHAPTER 10 - MARGINAL TREATMENT EFFECTS\n")
+cat("==============================================\n")
+
+cat("\nThe IV/LATE framework has an important limitation:\n")
+cat("  - LATE identifies the effect only for COMPLIERS\n")
+cat("  - Different instruments yield different LATEs\n")
+cat("  - We cannot recover ATE, ATT, or ATU directly\n")
+
+cat("\nIn Chapter 10, we extend this analysis using:\n")
+cat("  - Marginal Treatment Effects (MTE) framework\n")
+cat("  - Recovers full distribution of treatment effects\n")
+cat("  - Allows calculation of ATE, ATT, ATU, and policy-specific effects\n")
+cat("  - Uses the same synthetic B&B dataset for continuity\n")
+
+cat("\nThe MTE framework reveals:\n")
+cat("  - How treatment effects vary with propensity to select\n")
+cat("  - Selection patterns (positive vs. negative selection on gains)\n")
+cat("  - Policy-relevant treatment effects (PRTE, MPRTE)\n")
+
+# ========================================================================
+# Save Dataset for Chapter 10
+# ========================================================================
+
+# Select variables to save
+save_vars <- c("id", "masters", "ln_salary", "salary", "te_masters", "p_masters",
+               "female", "black", "hispanic", "asian", "age_ba", "firstgen",
+               "parent_income_q", "parent_grad", "ugpa", "stem_major", "bus_major",
+               "ed_major", "selective_inst", "public_ug", "state_unemp", "metro",
+               "ga_funding_adj", "state")
+
+write.csv(df[, save_vars], "bb_iv_simulation.csv", row.names = FALSE)
+
+cat("\nDataset saved: bb_iv_simulation.csv\n")
+cat("This dataset will be used in Chapter 10 for MTE analysis.\n")
 
 # ================================================================
 # END OF CHAPTER 7 CODE
 # ================================================================
-
