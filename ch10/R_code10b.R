@@ -1,298 +1,523 @@
 ################################################################################
-# MTE and MPRTE Simulation: Effect of Master's Degree on Salary Outcomes
-# R VERSION - Translated from Stata v5 (BASE R ONLY - no external packages)
+# MTE and MPRTE Analysis: Effect of Master's Degree on Salary Outcomes
+# Chapter 10 - Marginal Treatment Effects
 #
 # Instrument: State-Funded Graduate Assistantship (GA) Dollar Amount
 # 
-# Based on B&B Longitudinal Study characteristics and higher education
-# finance literature (Titus 2007; Bound, Lovenheim & Turner 2010;
-# Zhang 2005; Ehrenberg et al. 2007)
+# Based on synthetic data mirroring NCES B&B Longitudinal Study characteristics
+# and higher education finance literature (Titus 2007; Bound, Lovenheim & 
+# Turner 2010; Zhang 2005; Ehrenberg et al. 2007)
 #
-# Author: [Your Name]
+# Author: Marvin A. Titus
 # Date: December 2025
 # Purpose: Demonstrate MTE/MPRTE framework for textbook Chapter 10
 #
-# NOTE: This version uses only base R - no external packages required
+# Data Source: Synthetic dataset mirroring NCES B&B
+# https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch7/Example_7_5_3.dta
+#
+# Note: Because a synthetic dataset is used in this application, the results
+# are intended to illustrate MTE/MPRTE estimation methods and should not be
+# viewed as having policy implications.
+#
+# R Translation of Stata_code10b_modified.do
+# Updated to include localIV package (R equivalent of Stata's mtefe)
 ################################################################################
 
-# Clear environment
+# Clear workspace
 rm(list = ls())
 
 # Set seed for reproducibility
 set.seed(20251130)
 
-# Sample size
-N <- 8000
+# =============================================================================
+# Load Required Packages
+# =============================================================================
+
+# Install packages if not already installed
+required_packages <- c("haven", "dplyr", "tidyr", "ggplot2", "lmtest", 
+                       "sandwich", "AER", "sampleSelection", "margins",
+                       "gridExtra", "scales", "localIV")
+
+for (pkg in required_packages) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg)
+    library(pkg, character.only = TRUE)
+  }
+}
+
+cat("\n==============================================\n")
+cat("REQUIRED PACKAGES LOADED\n")
+cat("==============================================\n")
 
 ################################################################################
-# SECTION 1: Generate Exogenous Covariates
+# SECTION 1: Load Synthetic Dataset
 ################################################################################
 
 cat("\n==============================================\n")
-cat("GENERATING SIMULATION DATA\n")
+cat("LOADING SYNTHETIC B&B DATASET\n")
 cat("==============================================\n")
 
-# Create data frame
-df <- data.frame(id = 1:N)
+# Download and load synthetic dataset
+url <- "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch7/Example_7_5_3.dta"
+temp_file <- tempfile(fileext = ".dta")
+download.file(url, temp_file, mode = "wb")
+data <- haven::read_dta(temp_file)
 
-# Demographics
-df$female <- rbinom(N, 1, 0.57)
+# Generate observation ID if not present
+if (!"id" %in% names(data)) {
+  data$id <- 1:nrow(data)
+}
 
-race_rand <- runif(N)
-df$white <- as.integer(race_rand < 0.62)
-df$black <- as.integer(race_rand >= 0.62 & race_rand < 0.72)
-df$hispanic <- as.integer(race_rand >= 0.72 & race_rand < 0.84)
-df$asian <- as.integer(race_rand >= 0.84 & race_rand < 0.92)
-df$other_race <- as.integer(race_rand >= 0.92)
+# Display dataset information
+cat("\nDataset dimensions:", nrow(data), "observations,", ncol(data), "variables\n")
+cat("Sample size:", nrow(data), "\n")
 
-df$age_ba <- 22 + rpois(N, 1.5)
-df$age_ba[df$age_ba < 20] <- 22
-df$age_ba[df$age_ba > 35] <- 35
-
-# Family Background
-df$firstgen <- rbinom(N, 1, 0.35)
-df$parent_income_q <- 1 + rbinom(N, 4, 0.55)
-df$parent_grad <- rbinom(N, 1, 0.25)
-
-# Academic Background
-df$ugpa <- 2.0 + 1.2 * rbeta(N, 5, 3)
-df$ugpa[df$ugpa > 4.0] <- 4.0
-df$ugpa[df$ugpa < 2.0] <- 2.0
-
-df$stem_major <- rbinom(N, 1, 0.25)
-df$bus_major <- ifelse(df$stem_major == 0, rbinom(N, 1, 0.20), 0)
-df$ed_major <- ifelse(df$stem_major == 0 & df$bus_major == 0, rbinom(N, 1, 0.15), 0)
-df$socsci_major <- as.integer(df$stem_major == 0 & df$bus_major == 0 & df$ed_major == 0)
-
-df$selective_inst <- rbinom(N, 1, 0.30)
-df$public_ug <- rbinom(N, 1, 0.65)
-
-# Labor Market
-df$state_unemp <- 4 + 6 * rbeta(N, 2, 3)
-df$metro <- rbinom(N, 1, 0.75)
+# Show variable names
+cat("\nVariables in dataset:\n")
+print(names(data))
 
 ################################################################################
-# SECTION 2: Generate Instrument - State GA Funding
-################################################################################
-
-df$state <- ceiling(50 * runif(N))
-
-# State-level GA funding (with state fixed effects)
-state_effects <- data.frame(
-  state = 1:50,
-  state_effect = rnorm(50, 0, 4)
-)
-df <- merge(df, state_effects, by = "state", all.x = TRUE)
-
-df$ga_funding <- 18 + df$state_effect + rnorm(N, 0, 2)
-df$ga_funding[df$ga_funding < 8] <- 8
-df$ga_funding[df$ga_funding > 35] <- 35
-
-# Field-adjusted GA funding
-df$ga_field_mult <- ifelse(df$stem_major == 1, 1.3,
-                    ifelse(df$bus_major == 1, 0.9,
-                    ifelse(df$ed_major == 1, 1.1, 1.0)))
-df$ga_funding_adj <- df$ga_funding * df$ga_field_mult
-
-################################################################################
-# SECTION 3: Generate Latent Factors
-################################################################################
-
-df$eta_ability <- rnorm(N, 0, 1)
-df$eta_taste <- 0.3 * df$eta_ability + rnorm(N, 0, 0.9)
-df$eta_prod <- 0.5 * df$eta_ability + rnorm(N, 0, 0.85)
-
-################################################################################
-# SECTION 4: Generate Treatment (Master's Degree)
-################################################################################
-
-df$z_masters <- -0.9 +
-  0.15 * df$female +
-  0.10 * df$black +
-  0.05 * df$hispanic +
-  0.20 * df$asian +
-  -0.03 * (df$age_ba - 22) +
-  -0.25 * df$firstgen +
-  0.08 * df$parent_income_q +
-  0.35 * df$parent_grad +
-  0.60 * (df$ugpa - 3.0) +
-  0.20 * df$stem_major +
-  -0.15 * df$bus_major +
-  0.45 * df$ed_major +
-  0.30 * df$selective_inst +
-  -0.02 * df$state_unemp +
-  0.15 * df$metro +
-  0.06 * (df$ga_funding_adj - 18) +  # INSTRUMENT
-  0.40 * df$eta_taste +
-  0.25 * df$eta_ability
-
-df$p_masters <- pnorm(df$z_masters)
-df$u_d <- runif(N)
-df$masters <- as.integer(df$p_masters > df$u_d)
-
-# Check treatment rate
-treat_rate <- mean(df$masters)
-cat(sprintf("Treatment rate: %.3f\n", treat_rate))
-
-################################################################################
-# SECTION 5: Generate Outcome (Salary)
-################################################################################
-
-df$ln_salary_0 <- 10.50 +
-  -0.08 * df$female +
-  -0.05 * df$black +
-  -0.03 * df$hispanic +
-  0.06 * df$asian +
-  0.02 * (df$age_ba - 22) +
-  -0.03 * df$firstgen +
-  0.03 * df$parent_income_q +
-  0.04 * df$parent_grad +
-  0.10 * (df$ugpa - 3.0) +
-  0.25 * df$stem_major +
-  0.15 * df$bus_major +
-  -0.12 * df$ed_major +
-  0.08 * df$selective_inst +
-  -0.01 * df$state_unemp +
-  0.10 * df$metro +
-  0.20 * df$eta_prod +
-  rnorm(N, 0, 0.25)
-
-# Heterogeneous treatment effect
-df$te_masters <- 0.12 +
-  0.08 * df$stem_major +
-  0.05 * df$bus_major +
-  0.10 * df$ed_major +
-  0.03 * df$selective_inst +
-  0.05 * (df$ugpa - 3.0) +
-  0.08 * df$eta_ability +
-  -0.10 * (df$p_masters - 0.5) +  # Essential heterogeneity
-  rnorm(N, 0, 0.05)
-
-df$ln_salary_1 <- df$ln_salary_0 + df$te_masters
-df$ln_salary <- df$masters * df$ln_salary_1 + (1 - df$masters) * df$ln_salary_0
-df$salary <- exp(df$ln_salary)
-
-################################################################################
-# SECTION 6: Summary Statistics
+# SECTION 2: Summary Statistics
 ################################################################################
 
 cat("\n==============================================\n")
 cat("SUMMARY STATISTICS\n")
 cat("==============================================\n")
 
-cat("\nTreatment distribution:\n")
-print(table(df$masters))
+# Treatment variable
+cat("\n--- Treatment: Master's Degree Completion ---\n")
+print(table(data$masters))
+cat("\nTreatment summary:\n")
+print(summary(data$masters))
 
-cat("\nKey variables summary:\n")
-summary_vars <- df[, c("salary", "ln_salary", "masters", "female", "ugpa", 
-                       "ga_funding_adj", "p_masters")]
-print(summary(summary_vars))
+# Store treatment rate
+treat_rate <- mean(data$masters, na.rm = TRUE)
+cat(sprintf("Treatment rate: %.3f\n", treat_rate))
 
-cat("\n--- True Treatment Effects ---\n")
-true_att <- mean(df$te_masters[df$masters == 1])
-true_atu <- mean(df$te_masters[df$masters == 0])
-true_ate <- mean(df$te_masters)
+# Key variables
+cat("\n--- Key Variables ---\n")
+key_vars <- data %>% 
+  select(ln_salary, salary, masters, ga_funding_adj) %>%
+  summary()
+print(key_vars)
 
-cat(sprintf("True ATT: %.4f\n", true_att))
-cat(sprintf("True ATU: %.4f\n", true_atu))
-cat(sprintf("True ATE: %.4f\n", true_ate))
+# Outcome by treatment status
+cat("\n--- Salary by Master's Degree Status ---\n")
+salary_by_treatment <- data %>%
+  group_by(masters) %>%
+  summarise(
+    mean_salary = mean(salary, na.rm = TRUE),
+    sd_salary = sd(salary, na.rm = TRUE),
+    mean_ln_salary = mean(ln_salary, na.rm = TRUE),
+    sd_ln_salary = sd(ln_salary, na.rm = TRUE),
+    n = n()
+  )
+print(salary_by_treatment)
 
-cat("\nSelection pattern check:\n")
-cat(sprintf("  ATT (%.4f) > ATE (%.4f) > ATU (%.4f)\n", true_att, true_ate, true_atu))
-cat("  Confirms POSITIVE SELECTION on gains\n")
+# Instrument summary
+cat("\n--- Instrument: GA Funding ---\n")
+print(summary(data$ga_funding_adj))
+cat("Standard deviation:", sd(data$ga_funding_adj, na.rm = TRUE), "\n")
+
+# Control variables
+cat("\n--- Control Variables ---\n")
+control_vars <- c("female", "black", "hispanic", "asian", "age_ba", "firstgen",
+                  "parent_income_q", "parent_grad", "ugpa", "stem_major", 
+                  "bus_major", "ed_major", "selective_inst", "public_ug", 
+                  "state_unemp", "metro")
+print(summary(data[, control_vars]))
 
 ################################################################################
-# SECTION 7: MTE ESTIMATION
+# SECTION 3: First-Stage and Instrument Relevance
+################################################################################
+
+cat("\n==============================================\n")
+cat("INSTRUMENT RELEVANCE CHECK\n")
+cat("==============================================\n")
+
+# Define control variables formula
+X_controls <- c("female", "black", "hispanic", "asian", "age_ba", "firstgen",
+                "parent_income_q", "parent_grad", "ugpa", "stem_major", 
+                "bus_major", "ed_major", "selective_inst", "public_ug", 
+                "state_unemp", "metro")
+
+# First-stage regression
+cat("\n--- First-Stage Regression ---\n")
+first_stage_formula <- as.formula(paste("masters ~ ga_funding_adj +", 
+                                         paste(X_controls, collapse = " + ")))
+first_stage <- lm(first_stage_formula, data = data)
+
+# Robust standard errors
+first_stage_robust <- coeftest(first_stage, vcov = vcovHC(first_stage, type = "HC1"))
+print(first_stage_robust)
+
+# Test instrument strength (F-test for ga_funding_adj)
+first_stage_F <- (first_stage_robust["ga_funding_adj", "t value"])^2
+cat(sprintf("\nFirst-stage F-statistic: %.2f (should be >> 10)\n", first_stage_F))
+
+if (first_stage_F > 10) {
+  cat("RESULT: Strong instrument (F > 10)\n")
+} else {
+  cat("WARNING: Potentially weak instrument\n")
+}
+
+################################################################################
+# SECTION 4: Naive OLS Estimation
+################################################################################
+
+cat("\n==============================================\n")
+cat("NAIVE OLS ESTIMATION\n")
+cat("==============================================\n")
+
+ols_formula <- as.formula(paste("ln_salary ~ masters +", 
+                                 paste(X_controls, collapse = " + ")))
+ols_naive <- lm(ols_formula, data = data)
+
+# Robust standard errors
+ols_robust <- coeftest(ols_naive, vcov = vcovHC(ols_naive, type = "HC1"))
+print(ols_robust)
+
+ols_est <- coef(ols_naive)["masters"]
+ols_se <- ols_robust["masters", "Std. Error"]
+
+cat(sprintf("\nOLS estimate: %.4f (SE = %.4f)\n", ols_est, ols_se))
+cat("Note: Likely biased upward due to positive selection on unobservables\n")
+
+################################################################################
+# SECTION 5: IV/2SLS Estimation (LATE)
+################################################################################
+
+cat("\n==============================================\n")
+cat("IV/2SLS ESTIMATION (LATE)\n")
+cat("==============================================\n")
+
+# IV regression using AER package
+iv_formula2 <- as.formula(paste("ln_salary ~ masters +", 
+                                 paste(X_controls, collapse = " + "),
+                                 "| ga_funding_adj +",
+                                 paste(X_controls, collapse = " + ")))
+
+iv_2sls <- ivreg(iv_formula2, data = data)
+
+# Summary with diagnostics
+iv_summary <- summary(iv_2sls, diagnostics = TRUE)
+print(iv_summary)
+
+iv_est <- coef(iv_2sls)["masters"]
+iv_se <- iv_summary$coefficients["masters", "Std. Error"]
+
+cat(sprintf("\nIV/LATE estimate: %.4f (SE = %.4f)\n", iv_est, iv_se))
+cat("Interpretation: Effect for compliers induced by GA funding variation\n")
+
+# First-stage diagnostics
+cat("\n--- First-Stage Diagnostics ---\n")
+cat("Weak instruments test (F-statistic):", iv_summary$diagnostics["Weak instruments", "statistic"], "\n")
+
+# Wu-Hausman endogeneity test
+cat("\n--- Endogeneity Test ---\n")
+cat("Wu-Hausman test statistic:", iv_summary$diagnostics["Wu-Hausman", "statistic"], "\n")
+cat("Wu-Hausman p-value:", iv_summary$diagnostics["Wu-Hausman", "p-value"], "\n")
+
+################################################################################
+# SECTION 6: MTE ESTIMATION
 ################################################################################
 
 cat("\n==============================================\n")
 cat("MTE ESTIMATION\n")
 cat("==============================================\n")
 
-# Define covariate formula
-X_vars <- c("female", "black", "hispanic", "asian", "age_ba", "firstgen",
-            "parent_income_q", "parent_grad", "ugpa", "stem_major", "bus_major",
-            "ed_major", "selective_inst", "public_ug", "state_unemp", "metro")
-X_formula <- paste(X_vars, collapse = " + ")
-
-# First stage regression (instrument relevance)
-cat("\n--- Instrument Relevance ---\n")
-first_stage_formula <- as.formula(paste("masters ~ ga_funding_adj +", X_formula))
-first_stage <- lm(first_stage_formula, data = df)
-
-# F-test for instrument (partial F-test)
-first_stage_summary <- summary(first_stage)
-# Extract t-statistic for ga_funding_adj and square it to get partial F
-t_stat_ga <- coef(first_stage_summary)["ga_funding_adj", "t value"]
-first_stage_F <- t_stat_ga^2
-cat(sprintf("First-stage F-statistic (partial): %.2f (should be >> 10)\n", first_stage_F))
-
-# Naive OLS
-cat("\n--- Naive OLS ---\n")
-ols_formula <- as.formula(paste("ln_salary ~ masters +", X_formula))
-ols_naive <- lm(ols_formula, data = df)
-ols_est <- coef(ols_naive)["masters"]
-cat(sprintf("OLS estimate: %.4f\n", ols_est))
-
-#------------------------------------------------------------------------------
-# Approach 1: Parametric MTE via Polynomial in Propensity Score
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Approach 1: Parametric MTE via Polynomial in Propensity Score (Manual)
+# ------------------------------------------------------------------------------
 
 cat("\n--- Approach 1: Polynomial MTE (Manual) ---\n")
 
-# Step 1: Estimate propensity score
-probit_formula <- as.formula(paste("masters ~ ga_funding_adj +", X_formula))
-probit_model <- glm(probit_formula, data = df, family = binomial(link = "probit"))
-df$phat <- predict(probit_model, type = "response")
+# Step 1: Estimate propensity score via probit
+probit_formula <- as.formula(paste("masters ~ ga_funding_adj +", 
+                                    paste(X_controls, collapse = " + ")))
+probit_model <- glm(probit_formula, data = data, family = binomial(link = "probit"))
+summary(probit_model)
+
+# Predicted probabilities (propensity scores)
+data$phat <- predict(probit_model, type = "response")
+
+# Store probit coefficient for GA funding
+ga_coef <- coef(probit_model)["ga_funding_adj"]
+cat(sprintf("GA funding coefficient in probit: %.5f\n", ga_coef))
+
+# Store linear index for policy simulations
+data$z_index <- predict(probit_model, type = "link")
 
 # Step 2: Generate polynomial terms
-df$phat2 <- df$phat^2
-df$phat3 <- df$phat^3
+data$phat2 <- data$phat^2
+data$phat3 <- data$phat^3
 
-# Step 3: Estimate switching regression with interactions
-mte_formula <- as.formula(paste("ln_salary ~ masters + masters:phat + masters:phat2 +",
-                                 X_formula, "+ phat + phat2"))
-mte_model <- lm(mte_formula, data = df)
+# Step 3: Estimate switching regression with quadratic interactions
+cat("\n--- Quadratic MTE Specification ---\n")
+quad_formula <- as.formula(paste("ln_salary ~ masters + masters:phat + masters:phat2 +",
+                                  paste(X_controls, collapse = " + "),
+                                  "+ phat + phat2"))
+quad_model <- lm(quad_formula, data = data)
+quad_robust <- coeftest(quad_model, vcov = vcovHC(quad_model, type = "HC1"))
+print(quad_robust)
 
-# Extract MTE function parameters
-b0 <- coef(mte_model)["masters"]
-b1 <- coef(mte_model)["masters:phat"]
-b2 <- coef(mte_model)["masters:phat2"]
+# Extract quadratic coefficients
+b0_quad <- coef(quad_model)["masters"]
+b1_quad <- coef(quad_model)["masters:phat"]
+b2_quad <- coef(quad_model)["masters:phat2"]
 
-cat(sprintf("\nMTE(u) = %.4f + %.4f*u + %.4f*u^2\n", b0, b1, b2))
+cat(sprintf("\nQuadratic MTE(u) = %.4f + %.4f*u + %.4f*u²\n", b0_quad, b1_quad, b2_quad))
 
-# Calculate treatment effect parameters by integration
-# ATE = integral_0^1 MTE(u) du = b0 + b1/2 + b2/3
-ate_est <- b0 + b1/2 + b2/3
-cat(sprintf("Estimated ATE (polynomial): %.4f\n", ate_est))
+# Calculate ATE (quadratic): integral from 0 to 1
+ate_est_quad <- b0_quad + b1_quad/2 + b2_quad/3
+cat(sprintf("Estimated ATE (quadratic): %.4f\n", ate_est_quad))
+
+# Step 4: Estimate cubic specification
+cat("\n--- Cubic MTE Specification ---\n")
+cubic_formula <- as.formula(paste("ln_salary ~ masters + masters:phat + masters:phat2 + masters:phat3 +",
+                                   paste(X_controls, collapse = " + "),
+                                   "+ phat + phat2 + phat3"))
+cubic_model <- lm(cubic_formula, data = data)
+cubic_robust <- coeftest(cubic_model, vcov = vcovHC(cubic_model, type = "HC1"))
+print(cubic_robust)
+
+# Extract cubic coefficients
+b0 <- coef(cubic_model)["masters"]
+b1 <- coef(cubic_model)["masters:phat"]
+b2 <- coef(cubic_model)["masters:phat2"]
+b3 <- coef(cubic_model)["masters:phat3"]
+
+cat(sprintf("\nCubic MTE(u) = %.4f + %.4f*u + %.4f*u² + %.4f*u³\n", b0, b1, b2, b3))
+
+# Calculate ATE (cubic): b0 + b1/2 + b2/3 + b3/4
+ate_est_cubic <- b0 + b1/2 + b2/3 + b3/4
+cat(sprintf("Estimated ATE (cubic): %.4f\n", ate_est_cubic))
+
+# Create MTE function variable
+data$mte_hat <- b0 + b1*data$phat + b2*data$phat2 + b3*data$phat3
 
 # ATT and ATU via numerical approximation
-df$mte_i <- b0 + b1 * df$phat + b2 * df$phat2
+att_est <- mean(data$mte_hat[data$masters == 1], na.rm = TRUE)
+cat(sprintf("Estimated ATT: %.4f\n", att_est))
 
-att_est <- mean(df$mte_i[df$masters == 1])
-atu_est <- mean(df$mte_i[df$masters == 0])
-cat(sprintf("Estimated ATT (polynomial): %.4f\n", att_est))
-cat(sprintf("Estimated ATU (polynomial): %.4f\n", atu_est))
+atu_est <- mean(data$mte_hat[data$masters == 0], na.rm = TRUE)
+cat(sprintf("Estimated ATU: %.4f\n", atu_est))
 
-#------------------------------------------------------------------------------
-# Approach 2: Heckman Selection Model (Manual Two-Step)
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Approach 2: MTE Estimation Using localIV Package (R equivalent of mtefe)
+# ------------------------------------------------------------------------------
 
-cat("\n--- Approach 2: Heckman Selection Model (Manual 2-step) ---\n")
+cat("\n--- Approach 2: localIV Package Estimation ---\n")
+cat("(R equivalent of Stata's mtefe package)\n\n")
 
-# Step 1: Probit for selection equation (already done above)
-# Step 2: Calculate inverse Mills ratio
-df$mills <- dnorm(qnorm(df$phat)) / df$phat
-df$mills[df$masters == 0] <- -dnorm(qnorm(df$phat[df$masters == 0])) / (1 - df$phat[df$masters == 0])
+# Prepare data for localIV
+# localIV requires: y (outcome), d (treatment), z (instrument), x (covariates)
 
-# Step 3: Outcome regression on treated only with Mills ratio
-heck_formula <- as.formula(paste("ln_salary ~", X_formula, "+ mills"))
-heck_treated <- df[df$masters == 1, ]
-heck_model <- lm(heck_formula, data = heck_treated)
+# Create covariate matrix
+X_matrix <- as.matrix(data[, X_controls])
 
-heck2_lambda <- coef(heck_model)["mills"]
-cat(sprintf("\nHeckman 2-step results:\n"))
+# Run localIV with polynomial approximation
+# The localIV function estimates MTE using local instrumental variables approach
+
+cat("Running localIV estimation...\n")
+
+# localIV estimation using FORMULA syntax
+# NOTE: localIV uses formula interface, NOT separate Y, D, Z, X arguments
+# - selection: treatment ~ covariates + instrument
+# - outcome: outcome ~ covariates (NO instrument)
+# - Use ace() function to extract ATE, ATT, ATU
+
+# Build selection formula (includes instrument)
+selection_formula <- as.formula(paste("masters ~ ga_funding_adj +", 
+                                       paste(X_controls, collapse = " + ")))
+
+# Build outcome formula (excludes instrument)
+outcome_formula <- as.formula(paste("ln_salary ~", 
+                                     paste(X_controls, collapse = " + ")))
+
+cat("Selection formula:", deparse(selection_formula), "\n")
+cat("Outcome formula:", deparse(outcome_formula), "\n\n")
+
+localiv_result_2 <- tryCatch({
+  mte(
+    selection = selection_formula,
+    outcome = outcome_formula,
+    data = data,
+    method = "localIV",
+    bw = 0.25
+  )
+}, error = function(e) {
+  cat("Error in localIV/mte:", e$message, "\n")
+  NULL
+})
+
+# Extract and display results if successful
+if (!is.null(localiv_result_2)) {
+  cat("\nlocalIV Results:\n")
+  print(summary(localiv_result_2$ps_model))
+  
+  # Extract treatment effect parameters using ace() function
+  # Note: localIV uses ace() function, not direct object access
+  localiv_ate_2 <- ace(localiv_result_2, "ate")
+  localiv_att_2 <- ace(localiv_result_2, "att")
+  localiv_atu_2 <- ace(localiv_result_2, "atu")
+  
+  cat(sprintf("\nlocalIV Treatment Effect Estimates:\n"))
+  cat(sprintf("  ATE:  %.4f\n", localiv_ate_2))
+  cat(sprintf("  ATT:  %.4f\n", localiv_att_2))
+  cat(sprintf("  ATU:  %.4f\n", localiv_atu_2))
+  
+  # MPRTE calculation
+  localiv_mprte <- tryCatch({
+    ace(localiv_result_2, "mprte")
+  }, error = function(e) NA)
+  
+  if (!is.na(localiv_mprte)) {
+    cat(sprintf("  MPRTE: %.4f\n", localiv_mprte))
+  }
+} else {
+  # Set defaults if localIV failed
+  localiv_ate_2 <- NA
+  localiv_att_2 <- NA
+  localiv_atu_2 <- NA
+}
+
+# localIV estimation with normal selection model for comparison
+cat("\nRunning localIV estimation (method = 'normal')...\n")
+
+localiv_result_1 <- tryCatch({
+  mte(
+    selection = selection_formula,
+    outcome = outcome_formula,
+    data = data,
+    method = "normal"            # Normal selection model (Heckman)
+  )
+}, error = function(e) {
+  cat("Error in localIV/mte (normal):", e$message, "\n")
+  NULL
+})
+
+if (!is.null(localiv_result_1)) {
+  cat("\nlocalIV Results (Normal Selection Model):\n")
+  print(summary(localiv_result_1$ps_model))
+  
+  # Extract using ace() function
+  localiv_ate_1 <- ace(localiv_result_1, "ate")
+  localiv_att_1 <- ace(localiv_result_1, "att")
+  localiv_atu_1 <- ace(localiv_result_1, "atu")
+  
+  cat(sprintf("\nlocalIV (Normal) Treatment Effect Estimates:\n"))
+  cat(sprintf("  ATE:  %.4f\n", localiv_ate_1))
+  cat(sprintf("  ATT:  %.4f\n", localiv_att_1))
+  cat(sprintf("  ATU:  %.4f\n", localiv_atu_1))
+} else {
+  localiv_ate_1 <- NA
+  localiv_att_1 <- NA
+  localiv_atu_1 <- NA
+}
+
+# Generate MTE curve plot from localIV if available
+if (!is.null(localiv_result_2)) {
+  cat("\nGenerating localIV MTE plot...\n")
+  
+  # Create MTE curve data from localIV using mte_at() function
+  u_grid <- seq(0.05, 0.95, length.out = 19)
+  
+  # Evaluate MTE at different values of u
+  mte_values <- tryCatch({
+    mte_at(u_grid, model = localiv_result_2)
+  }, error = function(e) {
+    cat("Error generating MTE values:", e$message, "\n")
+    NULL
+  })
+  
+  if (!is.null(mte_values)) {
+    # Create plot
+    mte_df <- data.frame(u = u_grid, mte = mte_values)
+    
+    p_localiv_mte <- ggplot(mte_df, aes(x = u, y = mte)) +
+      geom_line(color = "darkred", linewidth = 1.2) +
+      geom_point(color = "darkred", size = 2) +
+      labs(
+        title = "MTE Curve from localIV Package",
+        subtitle = "R equivalent of Stata's mtefe",
+        x = "u (Unobserved Resistance to Treatment)",
+        y = "Marginal Treatment Effect"
+      ) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5)
+      )
+    
+    print(p_localiv_mte)
+    ggsave("mte_curve_localiv.png", p_localiv_mte, width = 10, height = 6, dpi = 300)
+  }
+}
+
+# Comparison: Manual Polynomial vs localIV
+cat("\n--- Comparison: Manual Polynomial vs. localIV ---\n")
+cat("Parameter     Manual (Cubic)    localIV (semipar)  localIV (normal)\n")
+cat("===================================================================\n")
+cat(sprintf("ATE           %.4f            %.4f             %.4f\n", 
+            ate_est_cubic, 
+            ifelse(is.na(localiv_ate_2), NA, localiv_ate_2),
+            ifelse(is.na(localiv_ate_1), NA, localiv_ate_1)))
+cat(sprintf("ATT           %.4f            %.4f             %.4f\n", 
+            att_est, 
+            ifelse(is.na(localiv_att_2), NA, localiv_att_2),
+            ifelse(is.na(localiv_att_1), NA, localiv_att_1)))
+cat(sprintf("ATU           %.4f            %.4f             %.4f\n", 
+            atu_est, 
+            ifelse(is.na(localiv_atu_2), NA, localiv_atu_2),
+            ifelse(is.na(localiv_atu_1), NA, localiv_atu_1)))
+
+cat("\nNote: Differences between methods arise from:\n")
+cat("  - Different polynomial/smoothing specifications\n")
+cat("  - Different estimation approaches (OLS vs local IV vs normal selection)\n")
+cat("  - Different weighting schemes for ATT/ATU integration\n")
+cat("  - localIV uses formula interface: mte(selection=..., outcome=..., data=...)\n")
+
+# ------------------------------------------------------------------------------
+# Approach 3: Heckman Selection Model
+# ------------------------------------------------------------------------------
+
+cat("\n--- Approach 3: Heckman Selection Model ---\n")
+
+# Note: In R, we use sampleSelection package
+# The Heckman model treats masters as the selection variable
+
+# Prepare formulas for selection model
+selection_formula <- as.formula(paste("masters ~ ga_funding_adj +", 
+                                       paste(X_controls, collapse = " + ")))
+outcome_formula <- as.formula(paste("ln_salary ~", 
+                                     paste(X_controls, collapse = " + ")))
+
+# Two-step Heckman estimation
+heckman_2step <- heckit(selection_formula, outcome_formula, data = data, method = "2step")
+print(summary(heckman_2step))
+
+heck2_rho <- heckman_2step$rho
+heck2_sigma <- heckman_2step$sigma
+heck2_lambda <- heck2_rho * heck2_sigma
+
+cat("\nHeckman 2-step results:\n")
 cat(sprintf("  lambda (selection correction): %.4f\n", heck2_lambda))
+cat(sprintf("  rho (correlation): %.4f\n", heck2_rho))
+cat(sprintf("  sigma: %.4f\n", heck2_sigma))
+
+# Maximum likelihood estimation
+heckman_ml <- heckit(selection_formula, outcome_formula, data = data, method = "ml")
+print(summary(heckman_ml))
+
+heck_ml_rho <- heckman_ml$rho
+heck_ml_sigma <- heckman_ml$sigma
+heck_ml_lambda <- heck_ml_rho * heck_ml_sigma
+
+cat("\nHeckman ML results:\n")
+cat(sprintf("  lambda (selection correction): %.4f\n", heck_ml_lambda))
+cat(sprintf("  rho (correlation): %.4f\n", heck_ml_rho))
+cat(sprintf("  sigma: %.4f\n", heck_ml_sigma))
 
 cat("\nIMPORTANT: In Heckman selection models:\n")
 cat("  - 'masters' appears in the SELECTION equation, not outcome equation\n")
@@ -300,101 +525,114 @@ cat("  - Lambda (inverse Mills ratio) corrects for selection bias\n")
 cat("  - Lambda is NOT the treatment effect\n")
 cat("  - To get treatment effects, use MTE framework\n")
 
-#------------------------------------------------------------------------------
-# Approach 3: IV/2SLS (LATE) - Manual Implementation
-#------------------------------------------------------------------------------
-
-cat("\n--- Approach 3: IV/2SLS (Manual) ---\n")
-
-# Stage 1: Regress endogenous variable on instrument and controls
-stage1_formula <- as.formula(paste("masters ~ ga_funding_adj +", X_formula))
-stage1 <- lm(stage1_formula, data = df)
-df$masters_hat <- fitted(stage1)
-
-# Stage 2: Regress outcome on predicted treatment and controls
-stage2_formula <- as.formula(paste("ln_salary ~ masters_hat +", X_formula))
-stage2 <- lm(stage2_formula, data = df)
-iv_est <- coef(stage2)["masters_hat"]
-cat(sprintf("IV/LATE estimate: %.4f\n", iv_est))
-
 ################################################################################
-# SECTION 8: Comparison and Visualization
+# SECTION 7: Results Comparison
 ################################################################################
 
 cat("\n==============================================\n")
 cat("RESULTS COMPARISON\n")
 cat("==============================================\n")
 
-cat("\nTRUE PARAMETERS (from simulation DGP):\n")
-cat(sprintf("  ATE = %.4f\n", true_ate))
-cat(sprintf("  ATT = %.4f\n", true_att))
-cat(sprintf("  ATU = %.4f\n", true_atu))
-cat("  Selection pattern: ATT > ATE > ATU (positive selection on gains)\n")
-
 cat("\nESTIMATED PARAMETERS:\n")
-cat(sprintf("  Naive OLS:           %.4f (biased by selection)\n", ols_est))
+cat(sprintf("  Naive OLS:           %.4f (likely biased by selection)\n", ols_est))
 cat(sprintf("  IV/LATE:             %.4f (complier effect)\n", iv_est))
-cat(sprintf("  Heckman 2-step lambda: %.4f (selection correction)\n", heck2_lambda))
-cat(sprintf("  MTE-based ATE:       %.4f\n", ate_est))
-cat(sprintf("  MTE-based ATT:       %.4f\n", att_est))
-cat(sprintf("  MTE-based ATU:       %.4f\n", atu_est))
+cat(sprintf("  MTE-based ATE:       %.4f (manual polynomial)\n", ate_est_cubic))
+cat(sprintf("  MTE-based ATT:       %.4f (manual polynomial)\n", att_est))
+cat(sprintf("  MTE-based ATU:       %.4f (manual polynomial)\n", atu_est))
+
+if (!is.na(localiv_ate_2)) {
+  cat(sprintf("  localIV ATE:         %.4f (localIV package)\n", localiv_ate_2))
+  cat(sprintf("  localIV ATT:         %.4f (localIV package)\n", localiv_att_2))
+  cat(sprintf("  localIV ATU:         %.4f (localIV package)\n", localiv_atu_2))
+}
+
+# Selection pattern check
+cat("\nSelection Pattern Check:\n")
+if (att_est > ate_est_cubic & ate_est_cubic > atu_est) {
+  cat(sprintf("  ATT (%.4f) > ATE (%.4f) > ATU (%.4f)\n", att_est, ate_est_cubic, atu_est))
+  cat("  Confirms POSITIVE SELECTION on gains\n")
+} else if (att_est < ate_est_cubic & ate_est_cubic < atu_est) {
+  cat(sprintf("  ATT (%.4f) < ATE (%.4f) < ATU (%.4f)\n", att_est, ate_est_cubic, atu_est))
+  cat("  Indicates NEGATIVE SELECTION on gains\n")
+} else {
+  cat(sprintf("  ATT = %.4f, ATE = %.4f, ATU = %.4f\n", att_est, ate_est_cubic, atu_est))
+  cat("  Mixed selection pattern\n")
+}
 
 # Bias analysis
-ols_bias <- (ols_est - true_ate) / true_ate * 100
+ols_bias <- (ols_est - ate_est_cubic) / ate_est_cubic * 100
+
 cat("\nOLS BIAS ANALYSIS:\n")
 cat(sprintf("  OLS coefficient:     %.4f\n", ols_est))
-cat(sprintf("  True ATE:            %.4f\n", true_ate))
-cat(sprintf("  Percent bias:        %.1f%%\n", ols_bias))
-cat("  Direction:           Upward (positive selection)\n")
+cat(sprintf("  MTE-based ATE:       %.4f\n", ate_est_cubic))
+cat(sprintf("  Percent difference:  %.1f%%\n", ols_bias))
 
-#------------------------------------------------------------------------------
-# MTE Visualization (using base R graphics)
-#------------------------------------------------------------------------------
+################################################################################
+# SECTION 8: MTE Visualization
+################################################################################
 
-cat("\n--- Generating MTE Plots ---\n")
+cat("\n==============================================\n")
+cat("MTE VISUALIZATION\n")
+cat("==============================================\n")
 
-# Plot 1: Estimated vs True MTE curve
-u_grid <- seq(0.01, 0.99, length.out = 100)
-mte_est_curve <- b0 + b1 * u_grid + b2 * u_grid^2
-mte_true_curve <- 0.12 + 0.08*0.25 + 0.05*0.15 + 0.10*0.09 + 0.03*0.30 - 0.10*(u_grid - 0.5)
+# Calculate MTE at grid of u values
+mte_curve_data <- data.frame(
+  u = seq(0.01, 1, length.out = 100)
+)
+mte_curve_data$mte_est <- b0 + b1*mte_curve_data$u + b2*mte_curve_data$u^2 + b3*mte_curve_data$u^3
 
-# Plot 1: MTE Curve Comparison
-# Save to PNG file first
-png("mte_curve_comparison_r.png", width = 800, height = 600)
-plot(u_grid, mte_est_curve, type = "l", col = "navy", lwd = 2,
-     xlab = "u (Unobserved Resistance to Treatment)",
-     ylab = "Marginal Treatment Effect",
-     main = "Estimated vs. True MTE\nMaster's Degree Effect on Log Salary",
-     ylim = range(c(mte_est_curve, mte_true_curve)))
-lines(u_grid, mte_true_curve, col = "darkred", lwd = 2, lty = 2)
-legend("topright", legend = c("Estimated MTE", "True MTE"),
-       col = c("navy", "darkred"), lty = c(1, 2), lwd = 2)
-mtext("Declining MTE indicates positive selection on gains", side = 1, line = 4, cex = 0.8)
-# Store plot for later viewing (in interactive sessions)
-plot_mte_curve <- recordPlot()
-dev.off()
+# Plot MTE curve
+p_mte_curve <- ggplot(mte_curve_data, aes(x = u, y = mte_est)) +
+  geom_line(color = "navy", linewidth = 1.2) +
+  labs(
+    title = "Estimated MTE Curve (Manual Polynomial)",
+    subtitle = "Master's Degree Effect on Log Salary",
+    x = "u (Unobserved Resistance to Treatment)",
+    y = "Marginal Treatment Effect",
+    caption = "Declining MTE indicates positive selection on gains\nATT > ATE > ATU when MTE is decreasing in u"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
 
-# Plot 2: Treatment Effect by Propensity Score Decile
-df$p_decile <- cut(df$p_masters, breaks = quantile(df$p_masters, probs = seq(0, 1, 0.1)),
-                   include.lowest = TRUE, labels = 1:10)
-df$p_decile <- as.numeric(df$p_decile)
+print(p_mte_curve)
+ggsave("mte_curve.png", p_mte_curve, width = 10, height = 6, dpi = 300)
 
-te_by_decile <- aggregate(te_masters ~ p_decile, data = df, FUN = mean)
-names(te_by_decile) <- c("decile", "te_mean")
+# MTE by propensity score decile
+data$p_decile <- ntile(data$phat, 10)
 
-# Plot 2: TE by Propensity Score Decile
-png("te_by_decile_r.png", width = 800, height = 600)
-plot(te_by_decile$decile, te_by_decile$te_mean, type = "b", 
-     col = "navy", pch = 19, cex = 1.5, lwd = 2,
-     xlab = "Propensity Score Decile",
-     ylab = "Mean Treatment Effect",
-     main = "True Treatment Effect by Propensity Score Decile\nEvidence of Essential Heterogeneity")
-mtext("Increasing TE with higher propensity indicates positive selection", side = 1, line = 4, cex = 0.8)
-# Store plot for later viewing (in interactive sessions)
-plot_te_decile <- recordPlot()
-dev.off()
+mte_by_decile <- data %>%
+  group_by(p_decile) %>%
+  summarise(
+    mte_mean = mean(mte_hat, na.rm = TRUE),
+    mte_sd = sd(mte_hat, na.rm = TRUE),
+    n = n()
+  )
 
-cat("Plots saved: mte_curve_comparison_r.png, te_by_decile_r.png\n")
+cat("\nEstimated MTE by Propensity Score Decile:\n")
+print(mte_by_decile)
+
+p_mte_decile <- ggplot(mte_by_decile, aes(x = p_decile, y = mte_mean)) +
+  geom_point(color = "navy", size = 4) +
+  geom_line(color = "navy", linewidth = 1) +
+  labs(
+    title = "Estimated MTE by Propensity Score Decile",
+    subtitle = "Evidence of Treatment Effect Heterogeneity",
+    x = "Propensity Score Decile",
+    y = "Mean Estimated MTE",
+    caption = "Increasing MTE with lower decile indicates positive selection"
+  ) +
+  scale_x_continuous(breaks = 1:10) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+print(p_mte_decile)
+ggsave("mte_by_decile.png", p_mte_decile, width = 10, height = 6, dpi = 300)
 
 ################################################################################
 # SECTION 9: Basic Policy Simulation (PRTE)
@@ -404,199 +642,200 @@ cat("\n==============================================\n")
 cat("POLICY SIMULATION: INCREASE GA FUNDING\n")
 cat("==============================================\n")
 
-ga_current <- mean(df$ga_funding_adj)
+ga_current <- mean(data$ga_funding_adj, na.rm = TRUE)
 ga_new <- ga_current * 1.2
 
-df$p_new <- pnorm(df$z_masters + 0.06 * (ga_new - df$ga_funding_adj))
-df$delta_p <- df$p_new - df$p_masters
+cat(sprintf("Current mean GA funding: $%.2fk\n", ga_current))
+cat(sprintf("Proposed GA funding (20%% increase): $%.2fk\n", ga_new))
 
-cat(sprintf("Average increase in Pr(Master's): %.4f\n", mean(df$delta_p)))
+# Calculate new propensity scores under policy
+data$p_new <- pnorm(data$z_index + ga_coef * (ga_new - data$ga_funding_adj))
+data$delta_p <- data$p_new - data$phat
 
-# Approximate PRTE
-df$mte_at_p <- b0 + b1 * df$p_masters + b2 * df$phat2
-prte_20pct <- weighted.mean(df$mte_at_p[df$delta_p > 0], 
-                             df$delta_p[df$delta_p > 0])
+delta_p_mean <- mean(data$delta_p, na.rm = TRUE)
+cat(sprintf("Average increase in Pr(Master's): %.4f\n", delta_p_mean))
+
+# PRTE calculation
+data$complier_weight <- ifelse(data$delta_p > 0, data$delta_p / delta_p_mean, NA)
+prte_20pct <- weighted.mean(data$mte_hat[data$delta_p > 0], 
+                             data$complier_weight[data$delta_p > 0], 
+                             na.rm = TRUE)
 cat(sprintf("Approximate PRTE (20%% GA increase): %.4f\n", prte_20pct))
 
-################################################################################
-# SECTION 10: Save Dataset
-################################################################################
-
-write.csv(df[, c("id", "masters", "ln_salary", "salary", "te_masters", "p_masters",
-                 "female", "black", "hispanic", "asian", "ugpa", "stem_major",
-                 "bus_major", "ed_major", "ga_funding_adj", "phat", "mte_i")],
-          "bb_mte_simulation_r.csv", row.names = FALSE)
+# Clean up
+data$p_new <- NULL
+data$delta_p <- NULL
+data$complier_weight <- NULL
 
 ################################################################################
-# PART 2: MARGINAL POLICY-RELEVANT TREATMENT EFFECTS (MPRTE)
-################################################################################
-
-cat("\n==============================================\n")
-cat("PART 2: MPRTE ANALYSIS\n")
-cat("==============================================\n")
-
-#------------------------------------------------------------------------------
-# Estimate Cubic MTE Function for MPRTE
-#------------------------------------------------------------------------------
-
-# Cubic MTE
-mte_cubic_formula <- as.formula(paste("ln_salary ~ masters + masters:phat + masters:phat2 + masters:phat3 +",
-                                       X_formula, "+ phat + phat2 + phat3"))
-mte_cubic <- lm(mte_cubic_formula, data = df)
-
-b0 <- coef(mte_cubic)["masters"]
-b1 <- coef(mte_cubic)["masters:phat"]
-b2 <- coef(mte_cubic)["masters:phat2"]
-b3 <- coef(mte_cubic)["masters:phat3"]
-
-cat("\n==============================================\n")
-cat("ESTIMATED MTE FUNCTION (Cubic)\n")
-cat("==============================================\n")
-cat(sprintf("MTE(u) = %.4f + %.4f*u + %.4f*u² + %.4f*u³\n", b0, b1, b2, b3))
-
-# Create MTE hat variable
-df$mte_hat <- b0 + b1 * df$phat + b2 * df$phat2 + b3 * df$phat3
-
-################################################################################
-# SECTION 12: MPRTE FOR DIFFERENT POLICY SCENARIOS
+# SECTION 10: MARGINAL POLICY-RELEVANT TREATMENT EFFECTS (MPRTE)
 ################################################################################
 
 cat("\n==============================================\n")
 cat("MARGINAL POLICY-RELEVANT TREATMENT EFFECTS\n")
 cat("==============================================\n")
 
-# GA coefficient from probit
-ga_coef <- coef(probit_model)["ga_funding_adj"]
-
-#------------------------------------------------------------------------------
-# MPRTE Calculation Function
-#------------------------------------------------------------------------------
-
-calculate_mprte <- function(df, ga_coef, policy_intensity, target_group = NULL) {
-  if (is.null(target_group)) {
-    target <- rep(TRUE, nrow(df))
-  } else {
-    target <- target_group
-  }
-  
-  response <- dnorm(qnorm(df$p_masters)) * ga_coef * policy_intensity * target
-  mte_weighted <- df$mte_hat * response
-  
-  mprte <- sum(mte_weighted[target]) / sum(response[target])
-  return(mprte)
-}
-
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # Scenario 1: Uniform GA Funding Increase
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
 cat("\n--- Scenario 1: Uniform $1,000 GA Funding Increase ---\n")
 
-mprte_unif <- calculate_mprte(df, ga_coef, 1)
+data$p_new_unif <- pnorm(data$z_index + ga_coef * 1)
+data$delta_p_unif <- data$p_new_unif - data$phat
+data$response_unif <- dnorm(qnorm(data$phat)) * ga_coef
+data$mte_weighted_unif <- data$mte_hat * data$response_unif
+
+mprte_unif_num <- sum(data$mte_weighted_unif, na.rm = TRUE)
+mprte_unif_den <- sum(data$response_unif, na.rm = TRUE)
+mprte_unif <- mprte_unif_num / mprte_unif_den
+
 cat(sprintf("MPRTE (uniform $1k increase): %.4f\n", mprte_unif))
 
-# Average MTE for marginal region
-marginal_region <- df$p_masters > 0.25 & df$p_masters < 0.40
-cat(sprintf("Average MTE for marginal region (p=0.25-0.40): %.4f\n", 
-            mean(df$mte_hat[marginal_region])))
+marginal_region_mte <- mean(data$mte_hat[data$phat > 0.25 & data$phat < 0.40], na.rm = TRUE)
+cat(sprintf("Average MTE for marginal region (p=0.25-0.40): %.4f\n", marginal_region_mte))
 
-#------------------------------------------------------------------------------
+prte_discrete <- weighted.mean(data$mte_hat[data$delta_p_unif > 0],
+                                data$delta_p_unif[data$delta_p_unif > 0],
+                                na.rm = TRUE)
+cat(sprintf("PRTE (discrete $1k increase): %.4f\n", prte_discrete))
+
+# Clean up
+data$p_new_unif <- NULL
+data$delta_p_unif <- NULL
+data$response_unif <- NULL
+data$mte_weighted_unif <- NULL
+
+# ------------------------------------------------------------------------------
 # Scenario 2: Targeted Funding for Low-Income Students
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
 cat("\n--- Scenario 2: Targeted $2,000 Increase for Low-Income (Q1-Q2) ---\n")
 
-targeted_lowinc <- df$parent_income_q <= 2
-mprte_lowinc <- calculate_mprte(df, ga_coef, 2, targeted_lowinc)
+data$targeted_lowinc <- as.numeric(data$parent_income_q <= 2)
+data$p_new_lowinc <- pnorm(data$z_index + ga_coef * 2 * data$targeted_lowinc)
+data$delta_p_lowinc <- data$p_new_lowinc - data$phat
+data$response_lowinc <- dnorm(qnorm(data$phat)) * ga_coef * 2 * data$targeted_lowinc
+data$mte_weighted_lowinc <- data$mte_hat * data$response_lowinc
+
+mprte_lowinc_num <- sum(data$mte_weighted_lowinc[data$targeted_lowinc == 1], na.rm = TRUE)
+mprte_lowinc_den <- sum(data$response_lowinc[data$targeted_lowinc == 1], na.rm = TRUE)
+mprte_lowinc <- mprte_lowinc_num / mprte_lowinc_den
+
 cat(sprintf("MPRTE (targeted low-income): %.4f\n", mprte_lowinc))
 
-lowinc_marginal <- targeted_lowinc & df$p_masters > 0.15 & df$p_masters < 0.35
-if (sum(lowinc_marginal) > 0) {
-  cat(sprintf("True TE for low-income marginal region: %.4f\n", 
-              mean(df$te_masters[lowinc_marginal])))
-}
+# Clean up
+data$targeted_lowinc <- NULL
+data$p_new_lowinc <- NULL
+data$delta_p_lowinc <- NULL
+data$response_lowinc <- NULL
+data$mte_weighted_lowinc <- NULL
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # Scenario 3: Enhanced STEM GA Funding
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
 cat("\n--- Scenario 3: Enhanced $3,000 STEM GA Funding ---\n")
 
-targeted_stem <- df$stem_major == 1
-mprte_stem <- calculate_mprte(df, ga_coef, 3, targeted_stem)
-cat(sprintf("MPRTE (STEM enhancement): %.4f\n", mprte_stem))
-cat(sprintf("True ATE for STEM majors: %.4f\n", mean(df$te_masters[targeted_stem])))
+data$p_new_stem <- pnorm(data$z_index + ga_coef * 3 * data$stem_major)
+data$delta_p_stem <- data$p_new_stem - data$phat
+data$response_stem <- dnorm(qnorm(data$phat)) * ga_coef * 3 * data$stem_major
+data$mte_weighted_stem <- data$mte_hat * data$response_stem
 
-#------------------------------------------------------------------------------
-# Scenario 4: Education Major Support
-#------------------------------------------------------------------------------
+mprte_stem_num <- sum(data$mte_weighted_stem[data$stem_major == 1], na.rm = TRUE)
+mprte_stem_den <- sum(data$response_stem[data$stem_major == 1], na.rm = TRUE)
+mprte_stem <- mprte_stem_num / mprte_stem_den
+
+cat(sprintf("MPRTE (STEM enhancement): %.4f\n", mprte_stem))
+
+# Clean up
+data$p_new_stem <- NULL
+data$delta_p_stem <- NULL
+data$response_stem <- NULL
+data$mte_weighted_stem <- NULL
+
+# ------------------------------------------------------------------------------
+# Scenario 4: Education Major Support (Teacher Pipeline)
+# ------------------------------------------------------------------------------
 
 cat("\n--- Scenario 4: Education Major GA Support ($2,500) ---\n")
 
-targeted_ed <- df$ed_major == 1
-mprte_ed <- calculate_mprte(df, ga_coef, 2.5, targeted_ed)
+data$p_new_ed <- pnorm(data$z_index + ga_coef * 2.5 * data$ed_major)
+data$delta_p_ed <- data$p_new_ed - data$phat
+data$response_ed <- dnorm(qnorm(data$phat)) * ga_coef * 2.5 * data$ed_major
+data$mte_weighted_ed <- data$mte_hat * data$response_ed
+
+mprte_ed_num <- sum(data$mte_weighted_ed[data$ed_major == 1], na.rm = TRUE)
+mprte_ed_den <- sum(data$response_ed[data$ed_major == 1], na.rm = TRUE)
+mprte_ed <- mprte_ed_num / mprte_ed_den
+
 cat(sprintf("MPRTE (education major support): %.4f\n", mprte_ed))
-cat(sprintf("Mean propensity for ed majors: %.4f\n", mean(df$p_masters[targeted_ed])))
-cat(sprintf("True ATE for ed majors: %.4f\n", mean(df$te_masters[targeted_ed])))
+
+ed_mean_phat <- mean(data$phat[data$ed_major == 1], na.rm = TRUE)
+cat(sprintf("Mean propensity for ed majors: %.4f\n", ed_mean_phat))
+
+# Clean up
+data$p_new_ed <- NULL
+data$delta_p_ed <- NULL
+data$response_ed <- NULL
+data$mte_weighted_ed <- NULL
 
 ################################################################################
-# SECTION 13: MPRTE BY POLICY INTENSITY
+# SECTION 11: MPRTE BY POLICY INTENSITY
 ################################################################################
 
 cat("\n==============================================\n")
 cat("MPRTE BY POLICY INTENSITY\n")
 cat("==============================================\n")
 
-ga_increase <- seq(0.5, 10, by = 0.5)
-p_margin <- 0.33 + ga_increase * 0.015
-mprte_approx <- b0 + b1 * p_margin + b2 * p_margin^2 + b3 * p_margin^3
+# Create grid for policy intensity analysis
+p_baseline <- mean(data$phat, na.rm = TRUE)
 
-intensity_data <- data.frame(
-  ga_increase = ga_increase,
-  p_margin = p_margin,
-  mprte_approx = mprte_approx
+mprte_intensity_data <- data.frame(
+  ga_increase = seq(0.5, 10, by = 0.5)
 )
+mprte_intensity_data$p_margin <- p_baseline + mprte_intensity_data$ga_increase * 0.015
+mprte_intensity_data$mprte_approx <- b0 + b1*mprte_intensity_data$p_margin + 
+                                      b2*mprte_intensity_data$p_margin^2 + 
+                                      b3*mprte_intensity_data$p_margin^3
 
-print(intensity_data)
+print(mprte_intensity_data)
 
-# Plot MPRTE by intensity
-# Plot 3: MPRTE by intensity
-png("mprte_by_intensity_r.png", width = 800, height = 600)
-plot(intensity_data$ga_increase, intensity_data$mprte_approx, type = "l", 
-     col = "navy", lwd = 2,
-     xlab = "GA Funding Increase ($1000s)",
-     ylab = "MPRTE",
-     main = "MPRTE by Policy Intensity\nMarginal returns to GA funding expansion")
-mtext("MPRTE pattern reflects MTE curve shape", side = 1, line = 4, cex = 0.8)
-# Store plot for later viewing (in interactive sessions)
-plot_mprte_intensity <- recordPlot()
-dev.off()
+p_mprte_intensity <- ggplot(mprte_intensity_data, aes(x = ga_increase, y = mprte_approx)) +
+  geom_line(color = "navy", linewidth = 1.2) +
+  labs(
+    title = "MPRTE by Policy Intensity",
+    subtitle = "Marginal returns to GA funding expansion",
+    x = "GA Funding Increase ($1000s)",
+    y = "MPRTE",
+    caption = "MPRTE pattern depends on selection mechanism\nand where policy operates on MTE curve"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+print(p_mprte_intensity)
+ggsave("mprte_by_intensity.png", p_mprte_intensity, width = 10, height = 6, dpi = 300)
 
 ################################################################################
-# SECTION 14: COMPARING TREATMENT EFFECT PARAMETERS
+# SECTION 12: COMPARING TREATMENT EFFECT PARAMETERS
 ################################################################################
 
 cat("\n==============================================\n")
 cat("COMPARISON OF TREATMENT EFFECT PARAMETERS\n")
 cat("==============================================\n")
 
-# True LATE approximation
-p_med <- median(df$p_masters)
-complier_region <- (df$masters == 1 & df$p_masters < p_med) | 
-                   (df$masters == 0 & df$p_masters > p_med)
-true_late_approx <- mean(df$te_masters[complier_region])
-
-# Cubic MTE estimates
-ate_est_cubic <- b0 + b1/2 + b2/3 + b3/4
-att_est_cubic <- mean(df$mte_hat[df$masters == 1])
-atu_est_cubic <- mean(df$mte_hat[df$masters == 0])
-
-cat("Parameter          True      Estimated\n")
+cat("\nParameter          Manual       localIV\n")
 cat("===========================================\n")
-cat(sprintf("ATE                %.4f    %.4f\n", true_ate, ate_est_cubic))
-cat(sprintf("ATT                %.4f    %.4f\n", true_att, att_est_cubic))
-cat(sprintf("ATU                %.4f    %.4f\n", true_atu, atu_est_cubic))
-cat(sprintf("LATE (approx)      %.4f    %.4f (IV)\n", true_late_approx, iv_est))
+cat(sprintf("ATE                %.4f      %.4f\n", ate_est_cubic, 
+            ifelse(is.na(localiv_ate_2), NA, localiv_ate_2)))
+cat(sprintf("ATT                %.4f      %.4f\n", att_est, 
+            ifelse(is.na(localiv_att_2), NA, localiv_att_2)))
+cat(sprintf("ATU                %.4f      %.4f\n", atu_est, 
+            ifelse(is.na(localiv_atu_2), NA, localiv_atu_2)))
+cat(sprintf("LATE (IV)          %.4f\n", iv_est))
 cat("-------------------------------------------\n")
 cat(sprintf("MPRTE (uniform)              %.4f\n", mprte_unif))
 cat(sprintf("MPRTE (low-income)           %.4f\n", mprte_lowinc))
@@ -611,45 +850,79 @@ cat("  - LATE: Effect for those induced by instrument variation\n")
 cat("  - MPRTE: Effect for those at the MARGIN of a specific policy\n")
 
 ################################################################################
-# SECTION 15: MPRTE VISUALIZATION
+# SECTION 13: MPRTE VISUALIZATION
 ################################################################################
 
 cat("\n--- Generating MPRTE Visualizations ---\n")
 
-# MTE curve with policy regions
-mte_curve <- b0 + b1*u_grid + b2*u_grid^2 + b3*u_grid^3
-mte_true <- 0.12 + 0.08*0.25 + 0.05*0.15 + 0.10*0.09 + 0.03*0.30 - 0.10*(u_grid - 0.5)
+# MTE curve with policy-relevant regions
+mte_curve_data$region_lowinc <- mte_curve_data$u >= 0.10 & mte_curve_data$u <= 0.25
+mte_curve_data$region_uniform <- mte_curve_data$u >= 0.25 & mte_curve_data$u <= 0.40
 
-# Plot 4: MTE curve with policy regions
-png("mte_policy_regions_r.png", width = 800, height = 600)
-plot(u_grid, mte_curve, type = "l", col = "navy", lwd = 2,
-     xlab = "u (Unobserved Resistance to Treatment)",
-     ylab = "Marginal Treatment Effect",
-     main = "MTE Curve with Policy-Relevant Regions\nDifferent policies target different margins",
-     ylim = range(c(mte_curve, mte_true)))
-lines(u_grid, mte_true, col = "darkgreen", lwd = 2, lty = 2)
+p_mte_regions <- ggplot(mte_curve_data, aes(x = u, y = mte_est)) +
+  geom_ribbon(data = subset(mte_curve_data, region_lowinc),
+              aes(ymin = min(mte_est) - 0.5, ymax = mte_est), 
+              fill = "darkred", alpha = 0.3) +
+  geom_ribbon(data = subset(mte_curve_data, region_uniform),
+              aes(ymin = min(mte_est) - 0.5, ymax = mte_est), 
+              fill = "navy", alpha = 0.3) +
+  geom_line(color = "navy", linewidth = 1.2) +
+  labs(
+    title = "MTE Curve with Policy-Relevant Regions",
+    subtitle = "Different policies target different margins",
+    x = "u (Unobserved Resistance to Treatment)",
+    y = "Marginal Treatment Effect",
+    caption = "MPRTE = MTE evaluated at the policy-specific margin"
+  ) +
+  annotate("text", x = 0.175, y = max(mte_curve_data$mte_est) * 0.9, 
+           label = "Low-income\nmargin", color = "darkred", size = 3) +
+  annotate("text", x = 0.325, y = max(mte_curve_data$mte_est) * 0.7, 
+           label = "Uniform policy\nmargin", color = "navy", size = 3) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
 
-# Shade policy regions
-lowinc_region <- u_grid >= 0.10 & u_grid <= 0.25
-uniform_region <- u_grid >= 0.25 & u_grid <= 0.40
-polygon(c(u_grid[lowinc_region], rev(u_grid[lowinc_region])),
-        c(mte_curve[lowinc_region], rep(0, sum(lowinc_region))),
-        col = rgb(0.8, 0.2, 0.2, 0.3), border = NA)
-polygon(c(u_grid[uniform_region], rev(u_grid[uniform_region])),
-        c(mte_curve[uniform_region], rep(0, sum(uniform_region))),
-        col = rgb(0, 0, 0.5, 0.3), border = NA)
+print(p_mte_regions)
+ggsave("mte_policy_regions.png", p_mte_regions, width = 10, height = 6, dpi = 300)
 
-legend("topright", 
-       legend = c("Estimated MTE", "True MTE", "Low-income margin", "Uniform policy margin"),
-       col = c("navy", "darkgreen", rgb(0.8, 0.2, 0.2, 0.5), rgb(0, 0, 0.5, 0.5)),
-       lty = c(1, 2, NA, NA), lwd = c(2, 2, NA, NA),
-       pch = c(NA, NA, 15, 15), pt.cex = 2)
-# Store plot for later viewing (in interactive sessions)
-plot_mte_regions <- recordPlot()
-dev.off()
+# MTE by propensity score with distribution
+data$p_bin <- floor(data$phat * 20) / 20
+
+mte_by_pbin <- data %>%
+  group_by(p_bin) %>%
+  summarise(
+    mean_mte = mean(mte_hat, na.rm = TRUE),
+    n_bin = n()
+  )
+
+p_mte_propensity <- ggplot(mte_by_pbin, aes(x = p_bin)) +
+  geom_col(aes(y = n_bin / max(n_bin) * max(mean_mte)), 
+           fill = "gray70", alpha = 0.5, width = 0.04) +
+  geom_point(aes(y = mean_mte), color = "navy", size = 3, shape = 18) +
+  geom_line(aes(y = mean_mte), color = "navy", linewidth = 1) +
+  scale_y_continuous(
+    name = "Estimated MTE",
+    sec.axis = sec_axis(~ . / max(mte_by_pbin$mean_mte) * max(mte_by_pbin$n_bin), 
+                        name = "Frequency")
+  ) +
+  labs(
+    title = "MTE by Propensity Score",
+    subtitle = "MPRTE depends on where policy operates",
+    x = "Propensity Score"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+print(p_mte_propensity)
+ggsave("mte_by_propensity.png", p_mte_propensity, width = 10, height = 6, dpi = 300)
 
 ################################################################################
-# SECTION 16: POLICY COST-BENEFIT ANALYSIS
+# SECTION 14: POLICY COST-BENEFIT ANALYSIS
 ################################################################################
 
 cat("\n==============================================\n")
@@ -664,139 +937,182 @@ base_salary <- 47000
 pv_factor <- (1 - (1 + discount_rate)^(-career_years)) / discount_rate
 cat(sprintf("Present value factor (30 years, 3%%): %.2f\n", pv_factor))
 
-# Calculate cost-benefit for each scenario
-policy_names <- c("Uniform", "Low-income", "STEM", "Education")
-mprte_values <- c(mprte_unif, mprte_lowinc, mprte_stem, mprte_ed)
-annual_gains <- base_salary * (exp(mprte_values) - 1)
-pv_gains <- annual_gains * pv_factor
-bc_ratios <- pv_gains / cost_per_degree
-
-policy_cb <- data.frame(
-  Policy = policy_names,
-  MPRTE = mprte_values,
-  Annual_Gain = annual_gains,
-  PV_Gain = pv_gains,
-  BC_Ratio = bc_ratios
-)
-
 cat("\nPolicy               MPRTE    Annual Gain   PV Gain    B/C Ratio\n")
 cat("==================================================================\n")
-for (i in 1:nrow(policy_cb)) {
-  cat(sprintf("%-20s %.4f   $%6.0f    $%8.0f   %.2f\n",
-              policy_cb$Policy[i], policy_cb$MPRTE[i], policy_cb$Annual_Gain[i],
-              policy_cb$PV_Gain[i], policy_cb$BC_Ratio[i]))
+
+scenarios <- list(
+  list(name = "Uniform", mprte = mprte_unif),
+  list(name = "Low-income", mprte = mprte_lowinc),
+  list(name = "STEM", mprte = mprte_stem),
+  list(name = "Education", mprte = mprte_ed)
+)
+
+for (scen in scenarios) {
+  annual_gain <- base_salary * (exp(scen$mprte) - 1)
+  pv_gain <- annual_gain * pv_factor
+  bc_ratio <- pv_gain / cost_per_degree
+  
+  cat(sprintf("%-20s %.4f   $%6.0f    $%8.0f   %5.2f\n", 
+              scen$name, scen$mprte, annual_gain, pv_gain, bc_ratio))
 }
 
 cat("\nNote: B/C ratio > 1 suggests policy expansion is beneficial\n")
-cat("      These calculations ignore externalities, taxes, and general equilibrium\n")
+cat("      These calculations are illustrative only (synthetic data)\n")
+cat("      Real analysis would require actual cost and outcome data\n")
 
 ################################################################################
-# SECTION 17: FINAL SUMMARY AND SAVE OUTPUTS
+# SECTION 15: Save Results
+################################################################################
+
+# Save analysis dataset
+saveRDS(data, "bb_mte_analysis.rds")
+
+# Export summary statistics by field
+mte_summary <- data %>%
+  group_by(stem_major, ed_major) %>%
+  summarise(
+    masters = mean(masters, na.rm = TRUE),
+    ln_salary = mean(ln_salary, na.rm = TRUE),
+    phat = mean(phat, na.rm = TRUE),
+    mte_hat = mean(mte_hat, na.rm = TRUE),
+    sd_mte = sd(mte_hat, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  )
+
+write.csv(mte_summary, "mte_summary_by_field.csv", row.names = FALSE)
+
+################################################################################
+# SECTION 16: FINAL SUMMARY
 ################################################################################
 
 cat("\n==============================================\n")
-cat("SIMULATION COMPLETE\n")
+cat("ANALYSIS COMPLETE\n")
 cat("==============================================\n")
 cat("Key findings:\n")
-cat(sprintf("  1. Treatment rate: %.3f (target ~25-30%%)\n", treat_rate))
-cat(sprintf("  2. True ATE: %.4f\n", true_ate))
-cat(sprintf("  3. True ATT: %.4f (ATT > ATE confirms positive selection)\n", true_att))
-cat(sprintf("  4. True ATU: %.4f (ATU < ATE confirms positive selection)\n", true_atu))
-cat(sprintf("  5. OLS is upward biased (%.1f%%) due to selection\n", ols_bias))
-cat(sprintf("  6. IV/LATE (%.4f) provides consistent estimate for compliers\n", iv_est))
-cat("  7. MTE approach recovers full distribution of treatment effects\n")
-cat(sprintf("  8. First-stage F = %.1f (strong instrument)\n", first_stage_F))
-cat(sprintf("  9. MPRTE varies by policy scenario (range: %.3f to %.3f)\n", 
-            min(mprte_values), max(mprte_values)))
+cat(sprintf("  1. Treatment rate: %.3f\n", treat_rate))
+cat(sprintf("  2. OLS estimate: %.4f (likely biased)\n", ols_est))
+cat(sprintf("  3. IV/LATE estimate: %.4f\n", iv_est))
+cat(sprintf("  4. MTE-based ATE: %.4f (manual polynomial)\n", ate_est_cubic))
+cat(sprintf("  5. MTE-based ATT: %.4f (manual polynomial)\n", att_est))
+cat(sprintf("  6. MTE-based ATU: %.4f (manual polynomial)\n", atu_est))
 
-cat("\nMPRTE KEY INSIGHTS:\n")
+if (!is.na(localiv_ate_2)) {
+  cat(sprintf("  7. localIV ATE: %.4f (localIV package)\n", localiv_ate_2))
+  cat(sprintf("  8. localIV ATT: %.4f (localIV package)\n", localiv_att_2))
+  cat(sprintf("  9. localIV ATU: %.4f (localIV package)\n", localiv_atu_2))
+}
+
+cat(sprintf("  10. First-stage F = %.1f (strong instrument)\n", first_stage_F))
+cat("  11. MPRTE varies by policy scenario\n")
+
+cat("\nMPRTE SUMMARY:\n")
+cat(sprintf("  - Uniform policy:    %.4f\n", mprte_unif))
+cat(sprintf("  - Low-income target: %.4f\n", mprte_lowinc))
+cat(sprintf("  - STEM enhancement:  %.4f\n", mprte_stem))
+cat(sprintf("  - Education support: %.4f\n", mprte_ed))
+
+cat("\nKEY INSIGHTS:\n")
 cat("  - PRTE averages over all compliers induced by policy change\n")
 cat("  - MPRTE is the effect at the margin (infinitesimal change)\n")
-cat("  - With positive selection: expanding policy has INCREASING returns\n")
+cat("  - Selection pattern determines how returns change with expansion\n")
 cat("  - Cost-effectiveness depends on WHERE policy operates on MTE curve\n")
 
-# Save summary tables
-write.csv(te_by_decile, "te_by_decile_r.csv", row.names = FALSE)
-write.csv(intensity_data, "mprte_by_intensity_r.csv", row.names = FALSE)
-write.csv(policy_cb, "policy_costbenefit_r.csv", row.names = FALSE)
-
 cat("\nFiles saved:\n")
-cat("  - bb_mte_simulation_r.csv (full dataset)\n")
-cat("  - mte_curve_comparison_r.png\n")
-cat("  - te_by_decile_r.png / .csv\n")
-cat("  - mprte_by_intensity_r.png / .csv\n")
-cat("  - mte_policy_regions_r.png\n")
-cat("  - policy_costbenefit_r.csv\n")
+cat("  - bb_mte_analysis.rds (analysis dataset)\n")
+cat("  - mte_summary_by_field.csv (summary statistics)\n")
+cat("  - mte_curve.png (MTE curve - manual polynomial)\n")
+cat("  - mte_by_decile.png (MTE by propensity decile)\n")
+cat("  - mprte_by_intensity.png (MPRTE by policy intensity)\n")
+cat("  - mte_policy_regions.png (MTE with policy regions)\n")
+cat("  - mte_by_propensity.png (MTE by propensity score)\n")
 
-cat("\n==============================================\n")
-cat("DISPLAYING GRAPHS\n")
-cat("==============================================\n")
-
-# Re-create plots for interactive viewing
-# (In interactive R/RStudio, these will display in the graphics window)
-
-cat("\nDisplaying: MTE Curve Comparison\n")
-plot(u_grid, mte_est_curve, type = "l", col = "navy", lwd = 2,
-     xlab = "u (Unobserved Resistance to Treatment)",
-     ylab = "Marginal Treatment Effect",
-     main = "Estimated vs. True MTE\nMaster's Degree Effect on Log Salary",
-     ylim = range(c(mte_est_curve, mte_true_curve)))
-lines(u_grid, mte_true_curve, col = "darkred", lwd = 2, lty = 2)
-legend("topright", legend = c("Estimated MTE", "True MTE"),
-       col = c("navy", "darkred"), lty = c(1, 2), lwd = 2)
-mtext("Declining MTE indicates positive selection on gains", side = 1, line = 4, cex = 0.8)
-plot_mte_curve <- recordPlot()
-
-cat("Displaying: Treatment Effect by Decile\n")
-plot(te_by_decile$decile, te_by_decile$te_mean, type = "b", 
-     col = "navy", pch = 19, cex = 1.5, lwd = 2,
-     xlab = "Propensity Score Decile",
-     ylab = "Mean Treatment Effect",
-     main = "True Treatment Effect by Propensity Score Decile\nEvidence of Essential Heterogeneity")
-mtext("Increasing TE with higher propensity indicates positive selection", side = 1, line = 4, cex = 0.8)
-plot_te_decile <- recordPlot()
-
-cat("Displaying: MPRTE by Policy Intensity\n")
-plot(intensity_data$ga_increase, intensity_data$mprte_approx, type = "l", 
-     col = "navy", lwd = 2,
-     xlab = "GA Funding Increase ($1000s)",
-     ylab = "MPRTE",
-     main = "MPRTE by Policy Intensity\nMarginal returns to GA funding expansion")
-mtext("MPRTE pattern reflects MTE curve shape", side = 1, line = 4, cex = 0.8)
-plot_mprte_intensity <- recordPlot()
-
-cat("Displaying: MTE with Policy Regions\n")
-plot(u_grid, mte_curve, type = "l", col = "navy", lwd = 2,
-     xlab = "u (Unobserved Resistance to Treatment)",
-     ylab = "Marginal Treatment Effect",
-     main = "MTE Curve with Policy-Relevant Regions\nDifferent policies target different margins",
-     ylim = range(c(mte_curve, mte_true)))
-lines(u_grid, mte_true, col = "darkgreen", lwd = 2, lty = 2)
-lowinc_region <- u_grid >= 0.10 & u_grid <= 0.25
-uniform_region <- u_grid >= 0.25 & u_grid <= 0.40
-polygon(c(u_grid[lowinc_region], rev(u_grid[lowinc_region])),
-        c(mte_curve[lowinc_region], rep(0, sum(lowinc_region))),
-        col = rgb(0.8, 0.2, 0.2, 0.3), border = NA)
-polygon(c(u_grid[uniform_region], rev(u_grid[uniform_region])),
-        c(mte_curve[uniform_region], rep(0, sum(uniform_region))),
-        col = rgb(0, 0, 0.5, 0.3), border = NA)
-legend("topright", 
-       legend = c("Estimated MTE", "True MTE", "Low-income margin", "Uniform policy margin"),
-       col = c("navy", "darkgreen", rgb(0.8, 0.2, 0.2, 0.5), rgb(0, 0, 0.5, 0.5)),
-       lty = c(1, 2, NA, NA), lwd = c(2, 2, NA, NA),
-       pch = c(NA, NA, 15, 15), pt.cex = 2)
-plot_mte_regions <- recordPlot()
-
-cat("\nAll graphs displayed. To view individual graphs, use:\n")
-cat("  replayPlot(plot_mte_curve)       # MTE curve comparison\n")
-cat("  replayPlot(plot_te_decile)       # TE by propensity decile\n")
-cat("  replayPlot(plot_mprte_intensity) # MPRTE by policy intensity\n")
-cat("  replayPlot(plot_mte_regions)     # MTE with policy regions\n")
+if (!is.na(localiv_ate_2)) {
+  cat("  - mte_curve_localiv.png (MTE curve from localIV)\n")
+}
 
 cat("\n==============================================\n")
 cat("END OF MTE/MPRTE ANALYSIS\n")
 cat("==============================================\n")
 
+cat("\nIMPORTANT NOTE:\n")
+cat("Because a synthetic dataset is used in this application, the results\n")
+cat("are intended to illustrate MTE/MPRTE estimation methods and should\n")
+cat("not be viewed as having policy implications.\n")
+
 ################################################################################
-# END
+# APPENDIX: Create Summary Results Table
+################################################################################
+
+# Create comprehensive results table
+results_table <- data.frame(
+  Parameter = c("OLS", "IV/LATE", "ATE (manual)", "ATT (manual)", "ATU (manual)",
+                "ATE (localIV)", "ATT (localIV)", "ATU (localIV)",
+                "MPRTE (uniform)", "MPRTE (low-income)", "MPRTE (STEM)", "MPRTE (education)"),
+  Estimate = c(ols_est, iv_est, ate_est_cubic, att_est, atu_est,
+               ifelse(is.na(localiv_ate_2), NA, localiv_ate_2),
+               ifelse(is.na(localiv_att_2), NA, localiv_att_2),
+               ifelse(is.na(localiv_atu_2), NA, localiv_atu_2),
+               mprte_unif, mprte_lowinc, mprte_stem, mprte_ed),
+  Interpretation = c(
+    "Biased by positive selection",
+    "Effect for compliers",
+    "Population average effect (manual)",
+    "Effect for treated (manual)",
+    "Effect for untreated (manual)",
+    "Population average effect (localIV)",
+    "Effect for treated (localIV)",
+    "Effect for untreated (localIV)",
+    "Marginal effect, uniform policy",
+    "Marginal effect, low-income target",
+    "Marginal effect, STEM enhancement",
+    "Marginal effect, education support"
+  )
+)
+
+cat("\n==============================================\n")
+cat("SUMMARY RESULTS TABLE\n")
+cat("==============================================\n")
+print(results_table)
+
+# Save results table
+write.csv(results_table, "mte_results_summary.csv", row.names = FALSE)
+
+################################################################################
+# APPENDIX: Command Mapping - Stata mtefe vs R localIV
+################################################################################
+
+cat("\n==============================================\n")
+cat("COMMAND MAPPING: Stata mtefe vs R localIV\n")
+cat("==============================================\n")
+
+cat("
++----------------------------------+------------------------------------------+
+| Stata (mtefe)                    | R (localIV package)                      |
++----------------------------------+------------------------------------------+
+| mtefe y x (d = z), pol(2)        | mte(selection=d~x+z, outcome=y~x, data)  |
+| _b[effects:ate]                  | ace(mod, 'ate')                          |
+| _b[effects:att]                  | ace(mod, 'att')                          |
+| _b[effects:atut]                 | ace(mod, 'atu')                          |
+| _b[effects:late]                 | (use ivreg for LATE)                     |
+| mtefe ..., bootreps(50)          | (bootstrap not built-in; use boot pkg)   |
+| mtefe ..., mte                   | mte_at(u_grid, model=mod)                |
+| MPRTE                            | ace(mod, 'mprte', policy=...)            |
++----------------------------------+------------------------------------------+
+
+IMPORTANT: 
+- Package name is 'localIV' but main function is 'mte()'
+- Uses FORMULA interface: selection = d ~ x + z, outcome = y ~ x
+- Instrument goes in selection formula, NOT outcome formula
+- Extract effects using ace() function, not object$ATE
+- method = 'localIV' for semiparametric, 'normal' for Heckman
+
+Notes:
+- localIV uses local polynomial regression; mtefe uses global polynomial
+- Bootstrap inference requires additional coding in R
+- Both packages estimate MTE curve and integrate for ATE/ATT/ATU
+")
+
+################################################################################
+# END OF SCRIPT
 ################################################################################
