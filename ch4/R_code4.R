@@ -17,6 +17,32 @@
 # setwd(ch4data)
 
 # ----------------------------------------------------------------
+# OUTPUT DIRECTORY AND LOG FILE
+# ----------------------------------------------------------------
+
+log_dir  <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 4/Output/logs"
+log_file <- file.path(log_dir, "Chapter4_R_output.log")
+
+if (!dir.exists(log_dir)) dir.create(log_dir, recursive = TRUE, showWarnings = TRUE)
+stopifnot("Log directory could not be created — check path and permissions:" =
+            dir.exists(log_dir))
+
+# Suppress ANSI colour/cursor escape codes from crayon and cli (used by
+# tidyverse). Without these, message() output in the log contains raw
+# escape sequences (e.g. "G3;" fragments) instead of plain text.
+options(crayon.enabled    = FALSE)
+options(cli.num_ansi_colors = 0)
+
+log_con <- file(log_file, open = "wt")
+sink(log_con, split = TRUE)
+sink(log_con, type = "message", append = TRUE)
+
+cat("Chapter 4 R log\n")
+cat("Log file:", log_file, "\n")
+cat("Opened: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat(strrep("-", 60), "\n")
+
+# ----------------------------------------------------------------
 # REQUIRED PACKAGES
 # ----------------------------------------------------------------
 required_packages <- c(
@@ -25,15 +51,17 @@ required_packages <- c(
 
 new_pkgs <- required_packages[!(required_packages %in% installed.packages()[, "Package"])]
 if (length(new_pkgs) > 0) {
-  message("Installing missing packages: ", paste(new_pkgs, collapse = ", "))
+  cat("Installing missing packages: ", paste(new_pkgs, collapse = ", "), "\n")
   install.packages(new_pkgs, dependencies = TRUE)
 }
 
-library(tidyverse)
-library(haven)
-library(readxl)
-library(plm)
-library(writexl)
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(haven)
+  library(readxl)
+  library(plm)
+  library(writexl)
+})
 
 # ----------------------------------------------------------------
 # HELPER FUNCTIONS
@@ -93,7 +121,7 @@ add_state_identifiers <- function(df, state_col = "State") {
 # Section 4.2.1: Primary Data
 # ----------------------------------------------------------------
 
-message("\n=== Section 4.2.1: Primary Data ===")
+cat("\n=== Section 4.2.1: Primary Data ===", "\n")
 
 # Example 4.2.1: Creating a dataset using manual input
 # R equivalent of Stata's 'input' command
@@ -105,7 +133,7 @@ example_4_2_1 <- data.frame(
 )
 
 # Display the data
-message("Example 4.2.1 - Manually created dataset:")
+cat("Example 4.2.1 - Manually created dataset:", "\n")
 print(example_4_2_1)
 
 # In R, you can use View() to see data in spreadsheet-like format (interactive)
@@ -122,7 +150,7 @@ print(example_4_2_1)
 # Section 4.2.2: Secondary Data - Cross-Sectional Dataset
 # ----------------------------------------------------------------
 
-message("\n=== Section 4.2.2: Cross-Sectional Dataset ===")
+cat("\n=== Section 4.2.2: Cross-Sectional Dataset ===", "\n")
 
 # Example: Creating a cross-sectional dataset from NCES Digest Table
 # Data source: NCES Digest of Education Statistics, Table 302.50
@@ -136,7 +164,7 @@ download.file(url_302_50, dest_302_50, mode = "wb")
 tab302_50 <- read_excel(dest_302_50, sheet = "reformatted")
 
 # View the data structure
-message("Structure of Table 302.50 data:")
+cat("Structure of Table 302.50 data:", "\n")
 str(tab302_50)
 
 # Add FIPS codes and state abbreviations
@@ -183,10 +211,10 @@ if ("homerate" %in% names(tab302_50)) {
 # Apply downcast to appropriate columns
 tab302_50 <- tab302_50 %>% mutate(across(where(is.double), ~ downcast_double(.x)))
 
-message("Cross-sectional dataset created: rows=", nrow(tab302_50), " cols=", ncol(tab302_50))
+cat("Cross-sectional dataset created: rows=", nrow(tab302_50), " cols=", ncol(tab302_50), "\n")
 
 # Verify the structure with labels
-message("Final structure:")
+cat("Final structure:", "\n")
 str(tab302_50)
 
 # Save the dataset with a descriptive name
@@ -197,7 +225,7 @@ str(tab302_50)
 # Section 4.2.2 (continued): Time-Series Dataset
 # ----------------------------------------------------------------
 
-message("\n=== Section 4.2.2: Time-Series Dataset ===")
+cat("\n=== Section 4.2.2: Time-Series Dataset ===", "\n")
 
 # Example: Creating a time-series dataset (1960-2016)
 # Data source: NCES Digest of Education Statistics, Table 302.10
@@ -226,9 +254,9 @@ if ("totalpct" %in% names(tab302_10)) {
   attr(tab302_10$totalpct, "label") <- "Percent of HS graduates enrolled in PSE"
 }
 
-message("Time-series dataset created: rows=", nrow(tab302_10), " cols=", ncol(tab302_10))
-message("Year range: ", min(tab302_10$year, na.rm = TRUE), " to ", 
-        max(tab302_10$year, na.rm = TRUE))
+cat("Time-series dataset created: rows=", nrow(tab302_10), " cols=", ncol(tab302_10), "\n")
+cat("Year range:", min(tab302_10$year, na.rm = TRUE), "to",
+    max(tab302_10$year, na.rm = TRUE), "\n")
 
 # Save the time-series dataset
 # write_dta(tab302_10, "Percent of US high school graduates in PSE, 1960 to 2016.dta")
@@ -239,7 +267,7 @@ message("Year range: ", min(tab302_10$year, na.rm = TRUE), " to ",
 # Section 4.2.2 (continued): Panel Dataset (Cross-Sectional Time-Series)
 # ----------------------------------------------------------------
 
-message("\n=== Section 4.2.2: Panel Dataset ===")
+cat("\n=== Section 4.2.2: Panel Dataset ===", "\n")
 
 # Example: Creating a panel dataset of undergraduate enrollment by state
 # Data source: NCES Digest of Education Statistics, Table 304.70
@@ -251,7 +279,7 @@ download.file(url_304_70, dest_304_70, mode = "wb")
 
 # Check available sheets
 available_sheets <- excel_sheets(dest_304_70)
-message("Available sheets: ", paste(available_sheets, collapse = ", "))
+cat("Available sheets: ", paste(available_sheets, collapse = ", "), "\n")
 
 # Import the undergraduate enrollment worksheet
 # Try multiple possible sheet names
@@ -268,13 +296,13 @@ for (sheet_name in possible_names) {
 if (is.null(undergrad_sheet)) {
   # If no expected sheet found, use first sheet
   undergrad_sheet <- available_sheets[1]
-  message("Using first available sheet: ", undergrad_sheet)
+  cat("Using first available sheet: ", undergrad_sheet, "\n")
 }
 
 tab304_70_wide <- read_excel(dest_304_70, sheet = undergrad_sheet)
 
-message("Sheet '", undergrad_sheet, "' - wide format: rows=", nrow(tab304_70_wide), 
-        " cols=", ncol(tab304_70_wide))
+cat("Sheet '", undergrad_sheet, "' - wide format: rows=", nrow(tab304_70_wide),
+    " cols=", ncol(tab304_70_wide), "\n", sep = "")
 
 # Save the dataset in wide format (optional)
 # write_dta(tab304_70_wide, "Undergraduate enrollment data - Wide.dta")
@@ -286,7 +314,7 @@ year_cols <- grep("^(Ugrad|HSGrad|X)[0-9]", names(tab304_70_wide), value = TRUE)
 if (length(year_cols) == 0) {
   # Fallback: look for any numeric columns
   year_cols <- names(tab304_70_wide)[sapply(tab304_70_wide, is.numeric)]
-  message("Using numeric columns for reshaping: ", paste(year_cols, collapse = ", "))
+  cat("Using numeric columns for reshaping: ", paste(year_cols, collapse = ", "), "\n")
 }
 
 # Determine the value name and prefix based on column names
@@ -318,18 +346,18 @@ if ("id" %in% names(tab304_70_long)) {
   tab304_70_long <- tab304_70_long %>% mutate(id = as.integer(id))
 }
 
-message("Data in long format (from '", undergrad_sheet, "' sheet): rows=", 
-        nrow(tab304_70_long), " cols=", ncol(tab304_70_long))
+cat("Data in long format (from '", undergrad_sheet, "' sheet): rows=",
+    nrow(tab304_70_long), " cols=", ncol(tab304_70_long), "\n", sep = "")
 
 # Declare the dataset as panel data using plm
 if (all(c("id", "year") %in% names(tab304_70_long))) {
   pdata_ugrad <- pdata.frame(tab304_70_long, index = c("id", "year"))
   
   # Display panel data structure summary
-  message("\nPanel data structure (", undergrad_sheet, " sheet):")
-  message("Number of unique units (states): ", pdim(pdata_ugrad)$nT$n)
-  message("Time periods: ", pdim(pdata_ugrad)$nT$T)
-  message("Balanced panel: ", pdim(pdata_ugrad)$balanced)
+  cat("\nPanel data structure (", undergrad_sheet, " sheet):", "\n")
+  cat("Number of unique units (states): ", pdim(pdata_ugrad)$nT$n, "\n")
+  cat("Time periods: ", pdim(pdata_ugrad)$nT$T, "\n")
+  cat("Balanced panel: ", pdim(pdata_ugrad)$balanced, "\n")
 } else {
   pdata_ugrad <- NULL
   warning("Cannot create panel data structure: 'id' and/or 'year' columns missing")
@@ -342,7 +370,7 @@ if (all(c("id", "year") %in% names(tab304_70_long))) {
 # Section 4.2.2 (continued): Merging Multiple Variables into Panel Dataset
 # ----------------------------------------------------------------
 
-message("\n=== Section 4.2.2: Merging Multiple Variables ===")
+cat("\n=== Section 4.2.2: Merging Multiple Variables ===", "\n")
 
 # Example: Adding high school graduates data to the panel
 
@@ -361,8 +389,8 @@ if (!is.null(hsgrad_sheet) && hsgrad_sheet != undergrad_sheet) {
   # Load separate HSGrad sheet
   tab304_70_hsgrad_wide <- read_excel(dest_304_70, sheet = hsgrad_sheet)
   
-  message("High school graduates data (wide format): rows=", nrow(tab304_70_hsgrad_wide), 
-          " cols=", ncol(tab304_70_hsgrad_wide))
+  cat("High school graduates data (wide format): rows=", nrow(tab304_70_hsgrad_wide),
+      " cols=", ncol(tab304_70_hsgrad_wide), "\n", sep = "")
   
   # Save in wide format (optional)
   # write_dta(tab304_70_hsgrad_wide, "HSGrad - Wide.dta")
@@ -381,7 +409,7 @@ if (!is.null(hsgrad_sheet) && hsgrad_sheet != undergrad_sheet) {
   
 } else {
   # If HSGrad is the only sheet or same as undergrad sheet, use the already loaded data
-  message("Note: Using data from '", undergrad_sheet, "' sheet for high school graduates")
+  cat("Note: Using data from '", undergrad_sheet, "' sheet for high school graduates", "\n")
   tab304_70_hsgrad_wide <- tab304_70_wide
   tab304_70_hsgrad_long <- tab304_70_long
   
@@ -402,10 +430,10 @@ if ("id" %in% names(tab304_70_hsgrad_long)) {
 }
 
 if (!is.null(hsgrad_sheet) && hsgrad_sheet != undergrad_sheet) {
-  message("High school graduates data (long format): rows=", nrow(tab304_70_hsgrad_long), 
-          " cols=", ncol(tab304_70_hsgrad_long))
+  cat("High school graduates data (long format): rows=", nrow(tab304_70_hsgrad_long),
+      " cols=", ncol(tab304_70_hsgrad_long), "\n", sep = "")
 } else {
-  message("Using same data structure for both enrollment and HS graduates")
+  cat("Using same data structure for both enrollment and HS graduates", "\n")
 }
 
 # Declare as panel data
@@ -422,7 +450,7 @@ if (all(c("id", "year") %in% names(tab304_70_hsgrad_long))) {
 # Merge multiple variables
 # ----------------------------------------------------------------
 
-message("\nMerging multiple datasets...")
+cat("\nMerging multiple datasets...", "\n")
 
 # Start with the primary data
 complete_panel <- tab304_70_long
@@ -446,9 +474,9 @@ if (!is.null(hsgrad_sheet) && hsgrad_sheet != undergrad_sheet &&
       suffix = c("", "_hsgrad")
     )
   
-  message("Merged high school graduates data from separate sheet")
+  cat("Merged high school graduates data from separate sheet", "\n")
 } else if (is.null(hsgrad_sheet) || hsgrad_sheet == undergrad_sheet) {
-  message("Single sheet contains all data - no separate merge needed")
+  cat("Single sheet contains all data - no separate merge needed", "\n")
 }
 
 # Note: The following datasets need to be downloaded separately:
@@ -459,12 +487,12 @@ if (!is.null(hsgrad_sheet) && hsgrad_sheet != undergrad_sheet &&
 # need_aid <- read_dta("Undergraduate state financial aid - need.dta")
 # complete_panel <- complete_panel %>%
 #   left_join(need_aid, by = c("id", "year"))
-# message("Merged need-based financial aid data")
+# cat("Merged need-based financial aid data", "\n")
 
 # merit_aid <- read_dta("Undergraduate state financial aid - merit.dta")
 # complete_panel <- complete_panel %>%
 #   left_join(merit_aid, by = c("id", "year"))
-# message("Merged merit-based financial aid data")
+# cat("Merged merit-based financial aid data", "\n")
 
 # Apply downcast to final merged dataset
 complete_panel <- complete_panel %>% mutate(across(where(is.double), ~ downcast_double(.x)))
@@ -474,17 +502,17 @@ if (all(c("id", "year") %in% names(complete_panel))) {
   pdata_complete <- pdata.frame(complete_panel, index = c("id", "year"))
   
   # Display panel data structure summary
-  message("\nComplete panel data structure:")
-  message("Number of unique units (states): ", pdim(pdata_complete)$nT$n)
-  message("Time periods: ", pdim(pdata_complete)$nT$T)
-  message("Total observations: ", nrow(complete_panel))
-  message("Balanced panel: ", pdim(pdata_complete)$balanced)
+  cat("\nComplete panel data structure:", "\n")
+  cat("Number of unique units (states): ", pdim(pdata_complete)$nT$n, "\n")
+  cat("Time periods: ", pdim(pdata_complete)$nT$T, "\n")
+  cat("Total observations: ", nrow(complete_panel), "\n")
+  cat("Balanced panel: ", pdim(pdata_complete)$balanced, "\n")
 } else {
   pdata_complete <- NULL
 }
 
 # View the first few observations
-message("\nFirst 10 observations of merged dataset:")
+cat("\nFirst 10 observations of merged dataset:", "\n")
 print(head(complete_panel, 10))
 
 # Save the complete panel dataset (optional)
@@ -495,21 +523,21 @@ print(head(complete_panel, 10))
 # Summary and Cleanup
 # ----------------------------------------------------------------
 
-message("\n=== Chapter 4 Processing Complete ===")
-message("\nKey objects created:")
-message("- example_4_2_1: Manually created dataset (Example 4.2.1)")
-message("- tab302_50: Cross-sectional HS graduates data (Table 302.50)")
-message("- tab302_10: Time-series enrollment percentages (Table 302.10)")
-message("- tab304_70_wide: Undergraduate enrollment, wide format")
-message("- tab304_70_long: Undergraduate enrollment, long format")
-message("- pdata_ugrad: Panel data frame for undergraduate enrollment")
-message("- tab304_70_hsgrad_long: High school graduates, long format")
-message("- complete_panel: Merged panel dataset")
-message("- pdata_complete: Panel data frame for complete merged data")
+cat("\n=== Chapter 4 Processing Complete ===", "\n")
+cat("\nKey objects created:", "\n")
+cat("- example_4_2_1: Manually created dataset (Example 4.2.1)", "\n")
+cat("- tab302_50: Cross-sectional HS graduates data (Table 302.50)", "\n")
+cat("- tab302_10: Time-series enrollment percentages (Table 302.10)", "\n")
+cat("- tab304_70_wide: Undergraduate enrollment, wide format", "\n")
+cat("- tab304_70_long: Undergraduate enrollment, long format", "\n")
+cat("- pdata_ugrad: Panel data frame for undergraduate enrollment", "\n")
+cat("- tab304_70_hsgrad_long: High school graduates, long format", "\n")
+cat("- complete_panel: Merged panel dataset", "\n")
+cat("- pdata_complete: Panel data frame for complete merged data", "\n")
 
-message("\nNote: All datasets referenced in this code are available at:")
-message("https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch4")
-message("\nFor detailed documentation, see the README.md file in the code repository.")
+cat("\nNote: All datasets referenced in this code are available at:", "\n")
+cat("https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch4", "\n")
+cat("\nFor detailed documentation, see the README.md file in the code repository.", "\n")
 
 # ----------------------------------------------------------------
 # Optional: Clean up temporary files
@@ -517,6 +545,14 @@ message("\nFor detailed documentation, see the README.md file in the code reposi
 # unlink(dest_302_50)
 # unlink(dest_302_10)
 # unlink(dest_304_70)
+
+# ----------------------------------------------------------------
+# CLOSE LOG
+# ----------------------------------------------------------------
+cat("\nChapter 4 log closed:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+sink(type = "message")
+sink()
+close(log_con)
 
 # ================================================================
 # END OF CHAPTER
