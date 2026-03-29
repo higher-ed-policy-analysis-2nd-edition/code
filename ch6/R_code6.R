@@ -1,446 +1,608 @@
 # ================================================================
 # Chapter 6 - Using Descriptive Statistics and Graphs
-# Complete R translation of Stata_Code6.do
-# Higher Education Policy Analysis Using Quantitative Techniques 
+# R Translation of Complete Stata Code
+# Higher Education Policy Analysis Using Quantitative Techniques
 # (2nd Edition)
-# Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/ch6
-# Author: Marvin A. Titus (original Stata)
-# Date: November 16, 2025
+# Source: https://github.com/higher-ed-policy-analysis-2nd-
+#         edition/tree/main/code/ch6
+# Author: Marvin A. Titus
+# Date: November 14, 2025
 # ================================================================
 
-# Script tested in R >= 4.0
-# NOTE: Set working directory if you want to save .dta/.xlsx files persistently:
-# ch6data <- "C:/Users/YourName/Documents/book-materials/ch6/data"
-# dir.create(ch6data, recursive = TRUE, showWarnings = FALSE)
-# setwd(ch6data)
+# Script tested in R 4.4.x
+# Required packages: readxl, haven, dplyr, tidyr, psych,
+#                    plm, ggplot2, scales, patchwork
 
 # ----------------------------------------------------------------
-# REQUIRED PACKAGES
+# Install any missing packages (run once)
 # ----------------------------------------------------------------
-required_packages <- c(
-  "tidyverse", "haven", "readxl", "psych", "plm",
-  "car", "DescTools", "lmtest", "sandwich", "ggplot2"
-)
+required_pkgs <- c("readxl", "haven", "dplyr", "tidyr", "psych",
+                   "plm", "ggplot2", "scales", "patchwork")
+new_pkgs <- required_pkgs[!required_pkgs %in% installed.packages()[, "Package"]]
+if (length(new_pkgs)) install.packages(new_pkgs)
 
-new_pkgs <- required_packages[!(required_packages %in% installed.packages()[, "Package"])]
-if (length(new_pkgs) > 0) {
-  message("Installing missing packages: ", paste(new_pkgs, collapse = ", "))
-  install.packages(new_pkgs, dependencies = TRUE)
+library(readxl)    # read_excel()        — replaces: import excel
+library(haven)     # read_dta()          — replaces: use *.dta
+library(dplyr)     # data manipulation   — replaces: gen, replace, tabstat
+library(tidyr)     # pivot_longer/wider  — used for summary tables
+library(psych)     # describe(), geometric.mean(), harmonic.mean()
+library(plm)       # pdata.frame()       — replaces: xtset / xtdescribe
+library(ggplot2)   # all graphs          — replaces: histogram, graph box, twoway
+library(scales)    # percent_format()    — axis formatting
+library(patchwork) # plot composition    — side-by-side panels
+
+# ================================================================
+# WORKING DIRECTORY AND OUTPUT PATHS
+# Paths switch automatically by username, mirroring the Stata logic.
+# ================================================================
+
+user <- Sys.info()[["user"]]
+
+if (user == "marvi") {
+  graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output/graphs"
+  log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output/logs/Chapter6_R_output.log"
+  dir.create(dirname(log_path),   showWarnings = FALSE, recursive = TRUE)
+  dir.create(graphs_dir,          showWarnings = FALSE, recursive = TRUE)
+} else {
+  graphs_dir <- "Output/graphs"
+  log_path   <- "Output/logs/Chapter6_R_output.log"
+  dir.create("Output/logs",   showWarnings = FALSE, recursive = TRUE)
+  dir.create("Output/graphs", showWarnings = FALSE, recursive = TRUE)
 }
 
-library(tidyverse)
-library(haven)
-library(readxl)
-library(psych)
-library(plm)
-library(car)
-library(DescTools)
-library(lmtest)
-library(sandwich)
-library(ggplot2)
+# Open log — sink() captures all console output to a text file
+# Equivalent to: log using "...", replace text
+sink(log_path, split = TRUE)   # split=TRUE also prints to console
+cat("Chapter 6 log opened:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n")
+cat("Graphs directory:", graphs_dir, "\n\n")
 
-# Helper: safe check for variable existence
-have_vars <- function(df, vars) {
-  missing <- vars[!(vars %in% names(df))]
-  list(ok = length(missing) == 0, missing = missing)
+# Helper: save ggplot to graphs_dir at 1200px wide (matches Stata width(1200))
+save_fig <- function(plot, filename, width_px = 1200, height_px = 900, dpi = 150) {
+  filepath <- file.path(graphs_dir, filename)
+  ggsave(filepath, plot = plot,
+         width  = width_px  / dpi,
+         height = height_px / dpi,
+         dpi    = dpi)
+  cat("file", filepath, "saved as PNG format\n")
 }
 
-# ----------------------------------------------------------------
+# ================================================================
 # Section 6.2.1: Measures of Central Tendency
-# ----------------------------------------------------------------
+# ================================================================
+cat("\n")
+cat("*========================================================================\n")
+cat("* Section 6.2.1: Measures of Central Tendency\n")
+cat("*========================================================================\n\n")
 
-# Download or read tabn302_50.xlsx (reformatted sheet)
-url_tabn <- "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch4/tabn302_50.xlsx"
-dest_tabn <- file.path(tempdir(), "tabn302_50.xlsx")
-download.file(url_tabn, dest_tabn, mode = "wb")
-data_6_1 <- read_excel(dest_tabn, sheet = "reformatted")
+# Method 1: Import from local file (if previously downloaded)
+# df_621 <- read_excel("tabn302_50.xlsx", sheet = "reformatted")
 
-message("Loaded tabn302_50.xlsx (reformatted): rows=", nrow(data_6_1), " cols=", ncol(data_6_1))
+# Method 2: Download from GitHub and import
+# Equivalent to: copy "..." + import excel
+url_621 <- paste0("https://raw.githubusercontent.com/higher-ed-policy-analysis-",
+                  "2nd-edition/data/main/ch4/tabn302_50.xlsx")
+download.file(url_621, "tabn302_50.xlsx", mode = "wb", quiet = TRUE)
+df_621 <- read_excel("tabn302_50.xlsx", sheet = "reformatted")
 
-# Arithmetic, geometric, harmonic means for Public and Private
-means_6_1 <- data_6_1 %>%
-  summarise(
-    Public_arith = mean(Public, na.rm = TRUE),
-    Private_arith = mean(Private, na.rm = TRUE),
-    Public_geom = exp(mean(log(Public), na.rm = TRUE)),
-    Private_geom = exp(mean(log(Private), na.rm = TRUE)),
-    Public_harm = 1 / mean(1 / Public, na.rm = TRUE),
-    Private_harm = 1 / mean(1 / Private, na.rm = TRUE)
-  )
+# --- Arithmetic, geometric, and harmonic means ---
+# Equivalent to: ameans Public Private
+# Note: psych::describe() gives arithmetic mean; geometric.mean() and
+#       harmonic.mean() from psych give the other two.
+cat(". ameans Public Private\n\n")
+for (var in c("Public", "Private")) {
+  x   <- df_621[[var]]
+  cat(sprintf("  Variable: %-10s\n", var))
+  cat(sprintf("    Arithmetic mean: %12.4f\n", mean(x, na.rm = TRUE)))
+  cat(sprintf("    Geometric  mean: %12.4f\n", psych::geometric.mean(x)))
+  cat(sprintf("    Harmonic   mean: %12.4f\n", psych::harmonic.mean(x)))
+  cat("\n")
+}
 
-print(means_6_1)
+# --- Arithmetic mean with 95% CI ---
+# Equivalent to: mean Public Private
+cat(". mean Public Private\n\n")
+for (var in c("Public", "Private")) {
+  x   <- df_621[[var]]
+  n   <- sum(!is.na(x))
+  m   <- mean(x, na.rm = TRUE)
+  se  <- sd(x, na.rm = TRUE) / sqrt(n)
+  ci  <- m + qt(c(0.025, 0.975), df = n - 1) * se
+  cat(sprintf("  %-10s  Mean: %10.4f  Std.Err.: %10.4f  95%% CI: [%10.4f, %10.4f]\n",
+              var, m, se, ci[1], ci[2]))
+}
+cat("\n")
 
-# Equivalent of Stata's mean (mean and standard error)
-mean_se_6_1 <- data_6_1 %>%
-  summarise(
-    Public_mean = mean(Public, na.rm = TRUE),
-    Private_mean = mean(Private, na.rm = TRUE),
-    Public_se = sd(Public, na.rm = TRUE) / sqrt(sum(!is.na(Public))),
-    Private_se = sd(Private, na.rm = TRUE) / sqrt(sum(!is.na(Private)))
-  )
-print(mean_se_6_1)
+# --- Detailed summary statistics including median ---
+# Equivalent to: sum, detail
+cat(". summarize, detail\n\n")
+print(psych::describe(df_621[, c("Public", "Private")],
+                      quant = c(.01, .05, .10, .25, .50, .75, .90, .95, .99)))
+cat("\n")
 
-# Detailed summary (equivalent to sum, detail)
-message("Detailed summary (psych::describe):")
-print(describe(data_6_1 %>% select(where(is.numeric))))
-
-# Additional detailed stats similar to Stata 'sum, detail'
-detailed_public <- data_6_1 %>%
-  summarise(
-    n = sum(!is.na(Public)),
-    mean = mean(Public, na.rm = TRUE),
-    sd = sd(Public, na.rm = TRUE),
-    min = min(Public, na.rm = TRUE),
-    p25 = quantile(Public, 0.25, na.rm = TRUE),
-    median = median(Public, na.rm = TRUE),
-    p75 = quantile(Public, 0.75, na.rm = TRUE),
-    max = max(Public, na.rm = TRUE),
-    skew = DescTools::Skew(Public),
-    kurtosis = DescTools::Kurt(Public) # Note: DescTools reports regular kurtosis (not excess)
-  )
-print(detailed_public)
-
-# ----------------------------------------------------------------
+# ================================================================
 # Section 6.2.2: Measures of Dispersion
-# ----------------------------------------------------------------
+# ================================================================
+cat("*========================================================================\n")
+cat("* Section 6.2.2: Measures of Dispersion\n")
+cat("*========================================================================\n\n")
 
 # Download SHEEO finance dataset
-url_6_2_2 <- "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch6/Example_6_2_2.dta"
-dest_6_2_2 <- file.path(tempdir(), "Example_6_2_2.dta")
-download.file(url_6_2_2, dest_6_2_2, mode = "wb")
-data_6_2_2 <- read_dta(dest_6_2_2)
+# Equivalent to: copy "..." + use "Example_6_2_2.dta"
+url_622 <- paste0("https://raw.githubusercontent.com/higher-ed-policy-analysis-",
+                  "2nd-edition/data/main/ch6/Example_6_2_2.dta")
+download.file(url_622, "Example_6_2_2.dta", mode = "wb", quiet = TRUE)
+df_622 <- read_dta("Example_6_2_2.dta")
 
-message("Loaded Example_6_2_2.dta: rows=", nrow(data_6_2_2), " cols=", ncol(data_6_2_2))
+# --- Coefficient of variation ---
+# Equivalent to: tabstat NetTuition FTEStudents, stat(cv)
+cat(". tabstat NetTuition FTEStudents, stat(cv)\n\n")
+cv_tbl <- data.frame(
+  Variable = c("NetTuition", "FTEStudents"),
+  CV       = c(sd(df_622$NetTuition,  na.rm = TRUE) / mean(df_622$NetTuition,  na.rm = TRUE),
+               sd(df_622$FTEStudents, na.rm = TRUE) / mean(df_622$FTEStudents, na.rm = TRUE))
+)
+print(cv_tbl, row.names = FALSE)
+cat("\n")
 
-# Coefficient of variation for NetTuition and FTEStudents
-cv_6_2 <- data_6_2_2 %>%
-  summarise(
-    NetTuition_cv = sd(NetTuition, na.rm = TRUE) / mean(NetTuition, na.rm = TRUE),
-    FTEStudents_cv = sd(FTEStudents, na.rm = TRUE) / mean(FTEStudents, na.rm = TRUE)
-  )
-print(cv_6_2)
-
-# Descriptive statistics by State
-desc_by_state <- data_6_2_2 %>%
-  group_by(State) %>%
-  summarise(
-    NetTuition_mean = mean(NetTuition, na.rm = TRUE),
-    NetTuition_median = median(NetTuition, na.rm = TRUE),
-    NetTuition_sd = sd(NetTuition, na.rm = TRUE),
-    NetTuition_min = min(NetTuition, na.rm = TRUE),
-    NetTuition_max = max(NetTuition, na.rm = TRUE),
-    NetTuition_cv = sd(NetTuition, na.rm = TRUE) / mean(NetTuition, na.rm = TRUE),
-    FTEStudents_mean = mean(FTEStudents, na.rm = TRUE),
-    FTEStudents_median = median(FTEStudents, na.rm = TRUE),
-    FTEStudents_sd = sd(FTEStudents, na.rm = TRUE),
-    FTEStudents_min = min(FTEStudents, na.rm = TRUE),
-    FTEStudents_max = max(FTEStudents, na.rm = TRUE),
-    FTEStudents_cv = sd(FTEStudents, na.rm = TRUE) / mean(FTEStudents, na.rm = TRUE),
-    .groups = "drop"
-  )
-print(head(desc_by_state, 10))
-
-# Descriptive statistics by FY (year)
-desc_by_year <- data_6_2_2 %>%
-  group_by(FY) %>%
-  summarise(
-    NetTuition_mean = mean(NetTuition, na.rm = TRUE),
-    NetTuition_median = median(NetTuition, na.rm = TRUE),
-    NetTuition_sd = sd(NetTuition, na.rm = TRUE),
-    NetTuition_min = min(NetTuition, na.rm = TRUE),
-    NetTuition_max = max(NetTuition, na.rm = TRUE),
-    NetTuition_cv = sd(NetTuition, na.rm = TRUE) / mean(NetTuition, na.rm = TRUE),
-    FTEStudents_mean = mean(FTEStudents, na.rm = TRUE),
-    FTEStudents_median = median(FTEStudents, na.rm = TRUE),
-    FTEStudents_sd = sd(FTEStudents, na.rm = TRUE),
-    FTEStudents_min = min(FTEStudents, na.rm = TRUE),
-    FTEStudents_max = max(FTEStudents, na.rm = TRUE),
-    FTEStudents_cv = sd(FTEStudents, na.rm = TRUE) / mean(FTEStudents, na.rm = TRUE),
-    .groups = "drop"
-  )
-print(desc_by_year)
-
-# ----------------------------------------------------------------
-# Section 6.2.3: Distributions
-# ----------------------------------------------------------------
-
-# Download HSLS:09 condensed dataset with earnings variable
-url_6_2_3 <- "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch6/Example_6_2_3.dta"
-dest_6_2_3 <- file.path(tempdir(), "Example_6_2_3.dta")
-download.file(url_6_2_3, dest_6_2_3, mode = "wb")
-data_6_2_3 <- read_dta(dest_6_2_3)
-
-message("Loaded Example_6_2_3.dta: rows=", nrow(data_6_2_3), " cols=", ncol(data_6_2_3))
-
-# Examine race variable codebook / labels
-if (is.labelled(data_6_2_3$X1RACE)) {
-  message("X1RACE is labelled; levels and counts:")
-  print(table(data_6_2_3$X1RACE))
-} else {
-  print(table(data_6_2_3$X1RACE))
+# Helper: descriptive stats table (mean, median, sd, min, max, cv) by group
+# Equivalent to: tabstat ..., stat(mean median sd min max cv) by() ...
+tabstat_by <- function(data, vars, group_var) {
+  data |>
+    group_by(across(all_of(group_var))) |>
+    summarise(across(all_of(vars), list(
+      mean   = \(x) mean(x,   na.rm = TRUE),
+      median = \(x) median(x, na.rm = TRUE),
+      sd     = \(x) sd(x,     na.rm = TRUE),
+      min    = \(x) min(x,    na.rm = TRUE),
+      max    = \(x) max(x,    na.rm = TRUE),
+      cv     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE)
+    ), .names = "{.col}_{.fn}"), .groups = "drop") |>
+    pivot_longer(-all_of(group_var),
+                 names_to  = c("variable", "stat"),
+                 names_sep = "_(?=[^_]+$)") |>
+    pivot_wider(names_from = "stat", values_from = "value")
 }
 
-# Recode race/ethnicity to simpler factor RaceEthnic
-data_6_2_3 <- data_6_2_3 %>%
+# --- Descriptive statistics by state (Fig. 6.1) ---
+# Equivalent to: tabstat NetTuition FTEStudents, ... by(State)
+cat(". tabstat NetTuition FTEStudents, stat(mean median sd min max cv) by(State)\n\n")
+tbl_state <- tabstat_by(df_622, c("NetTuition", "FTEStudents"), "State")
+print(as.data.frame(tbl_state), digits = 4, row.names = FALSE)
+cat("\n")
+
+# --- Descriptive statistics by fiscal year (Fig. 6.2) ---
+# Equivalent to: tabstat NetTuition FTEStudents, ... by(FY)
+cat(". tabstat NetTuition FTEStudents, stat(mean median sd min max cv) by(FY)\n\n")
+tbl_fy <- tabstat_by(df_622, c("NetTuition", "FTEStudents"), "FY")
+print(as.data.frame(tbl_fy), digits = 4, row.names = FALSE)
+cat("\n")
+
+# ================================================================
+# Section 6.2.3: Distributions
+# ================================================================
+cat("*========================================================================\n")
+cat("* Section 6.2.3: Distributions\n")
+cat("*========================================================================\n\n")
+
+# Download HSLS:09 condensed dataset with earnings variable
+# Equivalent to: copy "..." + use "Example_6_2_3.dta"
+url_623 <- paste0("https://raw.githubusercontent.com/higher-ed-policy-analysis-",
+                  "2nd-edition/data/main/ch6/Example_6_2_3.dta")
+download.file(url_623, "Example_6_2_3.dta", mode = "wb", quiet = TRUE)
+df_623 <- read_dta("Example_6_2_3.dta")
+
+# --- Examine race/ethnicity variable ---
+# Equivalent to: codebook X1RACE
+cat(". codebook X1RACE\n\n")
+cat("  Type:", class(df_623$X1RACE), "\n")
+cat("  Range:", range(df_623$X1RACE, na.rm = TRUE), "\n")
+cat("  Unique values:", length(unique(df_623$X1RACE)), "\n")
+cat("  Missing:", sum(is.na(df_623$X1RACE)), "/", nrow(df_623), "\n")
+cat("  Value labels:\n")
+if (!is.null(attr(df_623$X1RACE, "labels"))) {
+  lbl <- attr(df_623$X1RACE, "labels")
+  for (i in seq_along(lbl)) cat(sprintf("    %d  %s\n", lbl[i], names(lbl)[i]))
+}
+cat("\n")
+
+# --- Recode race/ethnicity ---
+# Equivalent to: gen RaceEthnic + replace ... + label define + label values
+df_623 <- df_623 |>
   mutate(
     RaceEthnic = case_when(
-      X1RACE == 2 ~ 1,                    # Asian
-      X1RACE == 3 ~ 2,                    # Black
-      X1RACE %in% c(4,5) ~ 3,             # Hispanic
-      X1RACE == 6 ~ 4,                    # Multiracial
-      X1RACE %in% c(1,7) ~ 5,             # Other
-      X1RACE == 8 ~ 6,                    # White
-      TRUE ~ NA_real_
+      X1RACE == 2            ~ 1L,   # Asian
+      X1RACE == 3            ~ 2L,   # Black
+      X1RACE %in% c(4, 5)   ~ 3L,   # Hispanic
+      X1RACE == 6            ~ 4L,   # Multiracial
+      X1RACE %in% c(1, 7)   ~ 5L,   # Other
+      X1RACE == 8            ~ 6L,   # White
+      TRUE                   ~ 0L
     ),
     RaceEthnic = factor(RaceEthnic,
                         levels = 1:6,
-                        labels = c("Asian","Black","Hispanic","Multiracial","Other","White"))
+                        labels = c("Asian", "Black", "Hispanic",
+                                   "Multiracial", "Other", "White"))
   )
 
-# Frequency distribution (proportions)
-prop_table <- prop.table(table(data_6_2_3$X1RACE))
-print(prop_table)
+# --- Frequency distribution using original variable (Fig. 6.3) ---
+# Equivalent to: prop X1RACE
+cat(". prop X1RACE\n\n")
+prop_tbl <- df_623 |>
+  count(X1RACE) |>
+  mutate(proportion = n / sum(n),
+         pct        = proportion * 100) |>
+  arrange(X1RACE)
+print(as.data.frame(prop_tbl), row.names = FALSE)
+cat("\n")
 
-# Sorted counts and percentages (equivalent to tab, sort)
-freq_sorted <- data_6_2_3 %>%
-  count(X1RACE) %>%
-  mutate(percent = n / sum(n) * 100) %>%
+# --- Tabulate with frequencies and percentages, sorted (Fig. 6.4) ---
+# Equivalent to: tab X1RACE, sort
+cat(". tab X1RACE, sort\n\n")
+tab_race <- df_623 |>
+  count(X1RACE) |>
+  mutate(percent    = n / sum(n) * 100,
+         cumulative = cumsum(percent)) |>
   arrange(desc(n))
-print(freq_sorted)
+print(as.data.frame(tab_race), digits = 2, row.names = FALSE)
+cat("\n")
 
-# One-way table summarizing EarnHr by X1RACE
-earn_by_race <- data_6_2_3 %>%
-  group_by(X1RACE) %>%
-  summarise(n = n(), mean_EarnHr = mean(EarnHr, na.rm = TRUE), sd_EarnHr = sd(EarnHr, na.rm = TRUE), .groups = "drop")
-print(earn_by_race)
+# --- One-way table with mean earnings by race (Fig. 6.5) ---
+# Equivalent to: tab X1RACE, summarize(EarnHr)
+cat(". tab X1RACE, summarize(EarnHr)\n\n")
+tab_earn <- df_623 |>
+  group_by(X1RACE) |>
+  summarise(mean   = mean(EarnHr,   na.rm = TRUE),
+            sd     = sd(EarnHr,     na.rm = TRUE),
+            n      = n(),
+            .groups = "drop")
+print(as.data.frame(tab_earn), digits = 4, row.names = FALSE)
+cat("\n")
 
-# Two-way table: means by race and sex
-two_way <- data_6_2_3 %>%
-  group_by(X1RACE, X1SEX) %>%
-  summarise(n = n(), mean_EarnHr = mean(EarnHr, na.rm = TRUE), .groups = "drop") %>%
-  pivot_wider(names_from = X1SEX, values_from = c(mean_EarnHr, n), names_prefix = "Sex_")
-print(two_way)
+# --- Two-way table of mean earnings by race and sex (Fig. 6.6) ---
+# Equivalent to: tab X1RACE X1SEX, sum(EarnHr) means
+cat(". tab X1RACE X1SEX, sum(EarnHr) means\n\n")
+tab_2way <- df_623 |>
+  group_by(X1RACE, X1SEX) |>
+  summarise(mean_EarnHr = mean(EarnHr, na.rm = TRUE), .groups = "drop") |>
+  pivot_wider(names_from = X1SEX, values_from = mean_EarnHr,
+              names_prefix = "Sex_")
+print(as.data.frame(tab_2way), digits = 4, row.names = FALSE)
+cat("\n")
 
-# Alternative: use recoded RaceEthnic
-two_way_recoded <- data_6_2_3 %>%
-  group_by(RaceEthnic, X1SEX) %>%
-  summarise(n = n(), mean_EarnHr = mean(EarnHr, na.rm = TRUE), .groups = "drop") %>%
-  pivot_wider(names_from = X1SEX, values_from = c(mean_EarnHr, n), names_prefix = "Sex_")
-print(two_way_recoded)
-
-# Panel data: Download Example_6_3.dta and examine panel structure
-url_6_3 <- "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch6/Example_6_3.dta"
-dest_6_3 <- file.path(tempdir(), "Example_6_3.dta")
-download.file(url_6_3, dest_6_3, mode = "wb")
-data_6_3 <- read_dta(dest_6_3)
-
-# Declare panel using plm::pdata.frame
-pdata_6_3 <- pdata.frame(data_6_3, index = c("fips", "year"))
-message("Panel dimensions (pdim):")
-print(pdim(pdata_6_3)) # Balanced panel expected: n = 50, T = 27, N = 1350
-
-# Summarize panel structure by fips
-panel_summary <- data_6_3 %>%
-  group_by(fips) %>%
-  summarise(n_years = n(), min_year = min(year), max_year = max(year), .groups = "drop")
-print(summary(panel_summary))
-
-# Cross-tabulation for region_compact (time-invariant)
-region_tab <- data_6_3 %>%
-  group_by(fips) %>%
-  summarise(region_compact = first(region_compact), .groups = "drop") %>%
-  count(region_compact) %>%
-  mutate(percent = n / sum(n) * 100)
-print(region_tab)
+# --- Two-way table using recoded variable (Fig. 6.7) ---
+# Equivalent to: tabulate RaceEthnic X1SEX, sum(EarnHr) means
+cat(". tabulate RaceEthnic X1SEX, sum(EarnHr) means\n\n")
+tab_2way_re <- df_623 |>
+  group_by(RaceEthnic, X1SEX) |>
+  summarise(mean_EarnHr = mean(EarnHr, na.rm = TRUE), .groups = "drop") |>
+  pivot_wider(names_from = X1SEX, values_from = mean_EarnHr,
+              names_prefix = "Sex_")
+print(as.data.frame(tab_2way_re), digits = 4, row.names = FALSE)
+cat("\n")
 
 # ----------------------------------------------------------------
-# Section 6.2.4: ANOVA (Testing Differences in Means Across Groups)
+# Panel data — state-level dataset
+# Equivalent to: use "Example_6_3.dta" + xtset fips year, yearly
 # ----------------------------------------------------------------
 
-# One-way ANOVA: EarnHr by RaceEthnic
-anova_model <- aov(EarnHr ~ RaceEthnic, data = data_6_2_3)
-message("One-way ANOVA (EarnHr ~ RaceEthnic):")
-print(summary(anova_model))
+# Download state-level panel dataset
+url_63 <- paste0("https://raw.githubusercontent.com/higher-ed-policy-analysis-",
+                 "2nd-edition/data/main/ch6/Example_6_3.dta")
+download.file(url_63, "Example_6_3.dta", mode = "wb", quiet = TRUE)
+df_63 <- read_dta("Example_6_3.dta")
 
-# Alternative: Welch's one-way test (does not assume equal variances)
-message("Welch's ANOVA (oneway.test):")
-print(oneway.test(EarnHr ~ RaceEthnic, data = data_6_2_3))
+# Declare as panel data (plm equivalent of xtset fips year)
+# Equivalent to: xtset fips year, yearly
+pdf_63 <- pdata.frame(df_63, index = c("fips", "year"))
 
-# Group means and sample sizes
-group_summary <- data_6_2_3 %>%
-  group_by(RaceEthnic) %>%
-  summarise(n = n(), mean = mean(EarnHr, na.rm = TRUE), sd = sd(EarnHr, na.rm = TRUE),
-            se = sd(EarnHr, na.rm = TRUE) / sqrt(n()), .groups = "drop")
-print(group_summary)
+# --- Check panel structure ---
+# Equivalent to: xtdescribe
+cat(". xtdescribe\n\n")
+cat("  Panel variable: fips\n")
+cat("  Time variable:  year,", min(df_63$year), "to", max(df_63$year), "\n")
+cat("  Delta: 1 year\n")
+cat("  n =", length(unique(df_63$fips)), "panels\n")
+cat("  T =", length(unique(df_63$year)), "periods\n")
+cat("  N =", nrow(df_63), "observations\n\n")
+cat("  Balance:\n")
+t_per_panel <- df_63 |> count(fips, name = "T_i")
+cat("    min T =", min(t_per_panel$T_i),
+    " max T =", max(t_per_panel$T_i), "\n")
+cat("  Panels with all", length(unique(df_63$year)),
+    "periods:", sum(t_per_panel$T_i == length(unique(df_63$year))), "\n\n")
 
-# Post-hoc pairwise comparisons with Bonferroni correction
-pairwise_bonf <- pairwise.t.test(data_6_2_3$EarnHr, data_6_2_3$RaceEthnic, p.adjust.method = "bonferroni")
-message("Pairwise comparisons (Bonferroni):")
-print(pairwise_bonf)
+# --- Cross-tabulation for time-invariant categorical variable ---
+# Equivalent to: xttab region_compact
+# xttab reports overall, between (# of panels), and within (always 100% for
+# time-invariant variables) frequencies.
+cat(". xttab region_compact\n\n")
+overall <- df_63 |> count(region_compact, name = "overall_freq")
+between <- df_63 |>
+  distinct(fips, region_compact) |>
+  count(region_compact, name = "between_freq")
+xttab <- overall |>
+  left_join(between, by = "region_compact") |>
+  mutate(overall_pct = overall_freq / sum(overall_freq) * 100,
+         between_pct = between_freq / sum(between_freq) * 100,
+         within_pct  = 100)
+print(as.data.frame(xttab), digits = 2, row.names = FALSE)
+cat("\n")
 
-# Tukey HSD for all pairwise comparisons
-tukey_res <- TukeyHSD(anova_model)
-message("Tukey HSD results:")
-print(tukey_res)
+# --- Transition probabilities for time-variant categorical variable ---
+# Equivalent to: xttrans ugradmerit
+# xttrans computes year-on-year transition probabilities within panels.
+cat(". xttrans ugradmerit\n\n")
+trans <- df_63 |>
+  arrange(fips, year) |>
+  group_by(fips) |>
+  mutate(ugradmerit_cur  = as.numeric(ugradmerit),
+         ugradmerit_next = dplyr::lead(ugradmerit_cur)) |>
+  ungroup() |>
+  filter(!is.na(ugradmerit_next))
 
-# Two-way ANOVA: EarnHr by RaceEthnic × X1SEX
-anova_twoway <- aov(EarnHr ~ RaceEthnic * factor(X1SEX), data = data_6_2_3)
-message("Two-way ANOVA (RaceEthnic * X1SEX):")
-print(summary(anova_twoway))
-
-# Type III tests (car::Anova) for marginal tests (similar to Stata's anova with interactions)
-message("Type III tests (Anova from car):")
-print(Anova(anova_twoway, type = "III"))
-
-# Test for interaction effect (equivalent to Stata testparm)
-# In R, the summary or Anova above shows the interaction. For a joint test:
-interaction_terms <- grep("RaceEthnic:factor\\(X1SEX\\)", names(coef(lm(EarnHr ~ RaceEthnic * factor(X1SEX), data = data_6_2_3))), value = TRUE)
-if (length(interaction_terms) > 0) {
-  message("Testing interaction terms jointly using linearHypothesis (car):")
-  print(linearHypothesis(lm(EarnHr ~ RaceEthnic * factor(X1SEX), data = data_6_2_3), interaction_terms))
-} else {
-  message("Could not identify interaction term names for joint test; check model terms.")
-}
-
-# ----------------------------------------------------------------
-# Section 6.3.1: Graphs—Exploratory Data Analysis (EDA)
-# ----------------------------------------------------------------
-
-# Use the panel dataset (data_6_3) loaded earlier
-# Create stapr_fte variable
-if (!"stapr" %in% names(data_6_3) || !"fte" %in% names(data_6_3)) {
-  stop("data_6_3 must contain 'stapr' and 'fte' variables to compute stapr_fte.")
-}
-data_6_3 <- data_6_3 %>% mutate(stapr_fte = stapr / fte)
-
-# Histogram with normal curve overlay
-p_hist <- ggplot(data_6_3, aes(x = stapr_fte)) +
-  geom_histogram(aes(y = after_stat(density)), bins = 30, fill = "lightblue", color = "black") +
-  stat_function(fun = dnorm,
-                args = list(mean = mean(data_6_3$stapr_fte, na.rm = TRUE),
-                            sd = sd(data_6_3$stapr_fte, na.rm = TRUE)),
-                color = "red", size = 1) +
-  labs(title = "Distribution of State Appropriations per FTE",
-       x = "State Appropriations per FTE", y = "Density") +
-  theme_minimal()
-print(p_hist)
-
-# Boxplot
-p_box <- ggplot(data_6_3, aes(y = stapr_fte)) +
-  geom_boxplot(fill = "lightblue") +
-  labs(title = "Box Plot of State Appropriations per FTE", y = "State Appropriations per FTE") +
-  theme_minimal()
-print(p_box)
-
-# Histogram of categorical variable (region_compact) as percent with labels
-if ("region_compact" %in% names(data_6_3)) {
-  p_cat_hist <- ggplot(data_6_3, aes(x = factor(region_compact))) +
-    geom_bar(aes(y = after_stat(count) / sum(after_stat(count)) * 100),
-             fill = "lightblue", color = "black") +
-    geom_text(stat = "count", aes(label = after_stat(count),
-                                  y = after_stat(count) / sum(after_stat(count)) * 100),
-              vjust = -0.5) +
-    scale_x_discrete(labels = function(x) x) +
-    labs(title = "Distribution of Regional Compact Membership",
-         x = "Regional Compact", y = "Percent") +
-    theme_minimal()
-  print(p_cat_hist)
-} else {
-  message("region_compact not present in data_6_3; skipping categorical histogram.")
-}
-
-# Faceted histograms by region_compact
-if ("region_compact" %in% names(data_6_3)) {
-  p_facet <- ggplot(data_6_3, aes(x = stapr_fte)) +
-    geom_histogram(bins = 30, fill = "lightblue", color = "black") +
-    facet_wrap(~ region_compact, ncol = 2) +
-    labs(title = "State Appropriations per FTE by Regional Compact",
-         x = "State Appropriations per FTE", y = "Frequency") +
-    theme_minimal()
-  print(p_facet)
-}
-
-# Boxplot by region_compact
-if ("region_compact" %in% names(data_6_3)) {
-  p_box_region <- ggplot(data_6_3, aes(x = factor(region_compact), y = stapr_fte)) +
-    geom_boxplot(fill = "lightblue") +
-    labs(title = "State Appropriations per FTE by Regional Compact",
-         x = "Regional Compact", y = "State Appropriations per FTE") +
-    theme_minimal()
-  print(p_box_region)
-}
-
-# Create netuit_fte for scatter plots
-if (!("netuit" %in% names(data_6_3) && "fte" %in% names(data_6_3))) {
-  stop("data_6_3 must contain 'netuit' and 'fte' to compute netuit_fte.")
-}
-data_6_3 <- data_6_3 %>% mutate(netuit_fte = netuit / fte)
-
-# Scatter plot (2016)
-scatter_2016 <- ggplot(data_6_3 %>% filter(year == 2016), aes(x = netuit_fte, y = stapr_fte)) +
-  geom_point(color = "blue", alpha = 0.6) +
-  labs(title = "State Appropriations vs. Net Tuition per FTE (2016)",
-       x = "Net Tuition per FTE", y = "State Appropriations per FTE") +
-  theme_minimal()
-print(scatter_2016)
-
-# Scatter plot with fitted regression line
-scatter_with_fit <- ggplot(data_6_3 %>% filter(year == 2016), aes(x = netuit_fte, y = stapr_fte)) +
-  geom_point(color = "blue", alpha = 0.6) +
-  geom_smooth(method = "lm", color = "red", se = TRUE) +
-  labs(title = "State Appropriations vs. Net Tuition per FTE (2016) - with fit",
-       x = "Net Tuition per FTE", y = "State Appropriations per FTE") +
-  theme_minimal()
-print(scatter_with_fit)
-
-# Scatter with fitted line and labels (may overlap; ggrepel recommended)
-# If ggrepel is available, use it; otherwise use geom_text with check_overlap
-if (requireNamespace("ggrepel", quietly = TRUE)) {
-  library(ggrepel)
-  scatter_labels <- ggplot(data_6_3 %>% filter(year == 2016), aes(x = netuit_fte, y = stapr_fte, label = state)) +
-    geom_point(color = "blue", alpha = 0.6) +
-    geom_smooth(method = "lm", color = "red", se = TRUE) +
-    geom_text_repel(size = 2.5) +
-    labs(title = "State Appropriations vs. Net Tuition per FTE (2016) - labeled",
-         x = "Net Tuition per FTE", y = "State Appropriations per FTE") +
-    theme_minimal()
-  print(scatter_labels)
-} else {
-  scatter_labels <- ggplot(data_6_3 %>% filter(year == 2016), aes(x = netuit_fte, y = stapr_fte, label = state)) +
-    geom_point(color = "blue", alpha = 0.6) +
-    geom_smooth(method = "lm", color = "red", se = TRUE) +
-    geom_text(size = 2, hjust = 0, vjust = 0, check_overlap = TRUE) +
-    labs(title = "State Appropriations vs. Net Tuition per FTE (2016) - labeled (basic)",
-         x = "Net Tuition per FTE", y = "State Appropriations per FTE") +
-    theme_minimal()
-  print(scatter_labels)
-}
-
-# Scatter fit for 1990
-scatter_1990 <- ggplot(data_6_3 %>% filter(year == 1990), aes(x = stapr_fte, y = netuit_fte)) +
-  geom_point(color = "blue", alpha = 0.6) +
-  geom_smooth(method = "lm", color = "red", se = TRUE, formula = y ~ x) +
-  labs(title = "Net Tuition vs. State Appropriations per FTE (1990)",
-       x = "State Appropriations per FTE", y = "Net Tuition per FTE") +
-  theme_minimal()
-print(scatter_1990)
-
-# Scatter fit for 2016 (stapr_fte -> netuit_fte)
-scatter_fit_2016 <- ggplot(data_6_3 %>% filter(year == 2016), aes(x = stapr_fte, y = netuit_fte)) +
-  geom_point(color = "blue", alpha = 0.6) +
-  geom_smooth(method = "lm", color = "red", se = TRUE, formula = y ~ x) +
-  labs(title = "Net Tuition vs. State Appropriations per FTE (2016)",
-       x = "State Appropriations per FTE", y = "Net Tuition per FTE") +
-  theme_minimal()
-print(scatter_fit_2016)
-
-# ----------------------------------------------------------------
-# Clean up (optional)
-# ----------------------------------------------------------------
-# If you want to remove large objects from the workspace uncomment:
-# rm(list = ls())
-# gc()
+trans_tbl <- trans |>
+  group_by(ugradmerit_cur, ugradmerit_next) |>
+  summarise(n = n(), .groups = "drop") |>
+  group_by(ugradmerit_cur) |>
+  mutate(pct = n / sum(n) * 100) |>
+  ungroup() |>
+  select(ugradmerit_cur, ugradmerit_next, pct) |>
+  pivot_wider(names_from = ugradmerit_next, values_from = pct,
+              names_prefix = "to_")
+print(as.data.frame(trans_tbl), digits = 2, row.names = FALSE)
+cat("\n")
 
 # ================================================================
-# END OF CHAPTER
+# Section 6.2.4: Testing Differences in Means Across Groups (ANOVA)
+# ================================================================
+cat("*========================================================================\n")
+cat("* Section 6.2.4: Testing Differences in Means Across Groups (ANOVA)\n")
+cat("*========================================================================\n\n")
+
+# Reload HSLS:09 dataset (df_623 is still in memory — recreating RaceEthnic
+# mirrors the Stata reload to keep the workflow identical)
+df_anova <- read_dta("Example_6_2_3.dta") |>
+  mutate(
+    RaceEthnic = case_when(
+      X1RACE == 2            ~ 1L,
+      X1RACE == 3            ~ 2L,
+      X1RACE %in% c(4, 5)   ~ 3L,
+      X1RACE == 6            ~ 4L,
+      X1RACE %in% c(1, 7)   ~ 5L,
+      X1RACE == 8            ~ 6L,
+      TRUE                   ~ 0L
+    ),
+    RaceEthnic = factor(RaceEthnic,
+                        levels = 1:6,
+                        labels = c("Asian", "Black", "Hispanic",
+                                   "Multiracial", "Other", "White")),
+    X1SEX = factor(X1SEX)
+  )
+
+# --- One-way ANOVA: earnings by race/ethnicity ---
+# Equivalent to: anova EarnHr RaceEthnic
+cat(". anova EarnHr RaceEthnic\n\n")
+aov1 <- aov(EarnHr ~ RaceEthnic, data = df_anova)
+print(summary(aov1))
+cat("\n")
+
+# --- Alternative: oneway with group means and Bartlett test ---
+# Equivalent to: oneway EarnHr RaceEthnic, tabulate
+cat(". oneway EarnHr RaceEthnic, tabulate\n\n")
+oneway_tbl <- df_anova |>
+  group_by(RaceEthnic) |>
+  summarise(mean = mean(EarnHr, na.rm = TRUE),
+            sd   = sd(EarnHr,   na.rm = TRUE),
+            n    = n(), .groups = "drop")
+print(as.data.frame(oneway_tbl), digits = 4, row.names = FALSE)
+cat("\n")
+cat("Bartlett's equal-variances test:\n")
+print(bartlett.test(EarnHr ~ RaceEthnic, data = df_anova))
+cat("\n")
+
+# --- Post-hoc pairwise comparisons with Bonferroni correction ---
+# Equivalent to: pwmean EarnHr, over(RaceEthnic) mcompare(bonferroni) effects
+cat(". pwmean EarnHr, over(RaceEthnic) mcompare(bonferroni) effects\n\n")
+pw_bonf <- pairwise.t.test(df_anova$EarnHr, df_anova$RaceEthnic,
+                            p.adjust.method = "bonferroni",
+                            pool.sd         = TRUE)
+print(pw_bonf)
+cat("\n")
+
+# --- Two-way ANOVA: earnings by race/ethnicity and sex ---
+# Equivalent to: anova EarnHr RaceEthnic##X1SEX
+cat(". anova EarnHr RaceEthnic##X1SEX\n\n")
+aov2 <- aov(EarnHr ~ RaceEthnic * X1SEX, data = df_anova)
+print(summary(aov2))
+cat("\n")
+
+# --- Test for interaction effect ---
+# Equivalent to: testparm RaceEthnic#X1SEX
+# In R, drop() on the full model vs. the additive model gives the F-test
+# for the interaction term, which is equivalent to testparm.
+cat(". testparm RaceEthnic#X1SEX\n\n")
+aov2_add <- aov(EarnHr ~ RaceEthnic + X1SEX, data = df_anova)
+interaction_test <- anova(aov2_add, aov2)
+print(interaction_test)
+cat("\n")
+
+# ================================================================
+# Section 6.3.1: Graphs — Exploratory Data Analysis (EDA)
+# ================================================================
+cat("*========================================================================\n")
+cat("* Section 6.3.1: Graphs — Exploratory Data Analysis (EDA)\n")
+cat("*========================================================================\n\n")
+
+# Load panel dataset and create derived variables
+df_graphs <- read_dta("Example_6_3.dta") |>
+  mutate(
+    stapr_fte  = stapr  / fte,
+    netuit_fte = netuit / fte,
+    region_compact = haven::as_factor(region_compact)
+  )
+
+# --- Fig. 6.8: Histogram of State Appropriations per FTE Student ---
+# Equivalent to: histogram stapr_fte, normal
+cat("* --- Fig. 6.8: Histogram of State Appropriations per FTE Student ---\n")
+fig6_8 <- ggplot(df_graphs, aes(x = stapr_fte)) +
+  geom_histogram(aes(y = after_stat(density)),
+                 bins  = 31,
+                 fill  = "steelblue", colour = "white", alpha = 0.8) +
+  stat_function(fun  = dnorm,
+                args = list(mean = mean(df_graphs$stapr_fte, na.rm = TRUE),
+                            sd   = sd(df_graphs$stapr_fte,   na.rm = TRUE)),
+                colour = "black", linewidth = 0.8) +
+  labs(title = "Fig. 6.8  Histogram of State Appropriations per FTE Student",
+       x = "State Appropriations per FTE Student ($)",
+       y = "Density") +
+  theme_bw()
+save_fig(fig6_8, "fig6_8_histogram_stapr_fte.png")
+
+# --- Fig. 6.9: Box Chart of State Appropriations per FTE Student ---
+# Equivalent to: graph box stapr_fte
+cat("* --- Fig. 6.9: Box Chart of State Appropriations per FTE Student ---\n")
+fig6_9 <- ggplot(df_graphs, aes(y = stapr_fte)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.7, width = 0.4,
+               outlier.shape = 16, outlier.colour = "firebrick") +
+  labs(title = "Fig. 6.9  Box Chart of State Appropriations per FTE Student",
+       y = "State Appropriations per FTE Student ($)") +
+  theme_bw() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+save_fig(fig6_9, "fig6_9_box_stapr_fte.png")
+
+# --- Fig. 6.10: Histogram of Membership in Regional Compacts ---
+# Equivalent to: histogram region_compact, discrete addlabels ylabel(,grid) percent
+cat("* --- Fig. 6.10: Histogram of Membership in Regional Compacts ---\n")
+rc_pct <- df_graphs |>
+  distinct(fips, region_compact) |>     # one row per state (time-invariant)
+  count(region_compact) |>
+  mutate(pct = n / sum(n) * 100)
+
+fig6_10 <- ggplot(rc_pct, aes(x = region_compact, y = pct,
+                               label = sprintf("%.1f%%", pct))) +
+  geom_col(fill = "steelblue", alpha = 0.8) +
+  geom_text(vjust = -0.4, size = 3.5) +
+  scale_y_continuous(labels = function(x) paste0(x, "%"),
+                     expand = expansion(mult = c(0, 0.12))) +
+  labs(title = "Fig. 6.10  Histogram of Membership in Regional Compacts",
+       x = "Regional Compact",
+       y = "Percent") +
+  theme_bw() +
+  theme(panel.grid.major.x = element_blank())
+save_fig(fig6_10, "fig6_10_histogram_region_compact.png")
+
+# --- Fig. 6.11: State Appropriations per FTE Student by Regional Compact ---
+# Equivalent to: histogram stapr_fte, by(region_compact)
+cat("* --- Fig. 6.11: State Appropriations per FTE by Regional Compact ---\n")
+fig6_11 <- ggplot(df_graphs, aes(x = stapr_fte)) +
+  geom_histogram(bins = 20, fill = "steelblue", colour = "white", alpha = 0.8) +
+  facet_wrap(~ region_compact, scales = "free_y") +
+  labs(title = "Fig. 6.11  State Appropriations per FTE Student by Regional Compact",
+       x = "State Appropriations per FTE Student ($)",
+       y = "Frequency") +
+  theme_bw()
+save_fig(fig6_11, "fig6_11_histogram_stapr_fte_by_region.png")
+
+# --- Fig. 6.12: Box Chart of State Appropriations per FTE by Regional Compact ---
+# Equivalent to: graph box stapr_fte, by(region_compact)
+cat("* --- Fig. 6.12: Box Chart of State Appropriations per FTE by Regional Compact ---\n")
+fig6_12 <- ggplot(df_graphs, aes(x = region_compact, y = stapr_fte,
+                                  fill = region_compact)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.colour = "firebrick") +
+  facet_wrap(~ region_compact, scales = "free_x", nrow = 1) +
+  labs(title = "Fig. 6.12  Box Chart of State Appropriations per FTE by Regional Compact",
+       x = NULL, y = "State Appropriations per FTE Student ($)") +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x     = element_blank(),
+        axis.ticks.x    = element_blank())
+save_fig(fig6_12, "fig6_12_box_stapr_fte_by_region.png")
+
+# Data subset for 2016 scatter plots
+df_2016 <- df_graphs |> filter(year == 2016)
+
+# --- Fig. 6.13: Scatter Plot — State Appropriations vs Net Tuition (2016) ---
+# Equivalent to: graph twoway scatter stapr_fte netuit_fte if year==2016
+cat("* --- Fig. 6.13: Scatter Plot (2016) ---\n")
+fig6_13 <- ggplot(df_2016, aes(x = netuit_fte, y = stapr_fte)) +
+  geom_point(colour = "steelblue", size = 2) +
+  labs(title = "Fig. 6.13  State Appropriations and Net Tuition Revenue per FTE Student, FY2016",
+       x = "Net Tuition Revenue per FTE Student ($)",
+       y = "State Appropriations per FTE Student ($)") +
+  theme_bw()
+save_fig(fig6_13, "fig6_13_scatter_2016.png")
+
+# --- Fig. 6.14: Scatter Plot with Fitted Regression Line (Method 1) ---
+# Equivalent to: twoway (scatter) (lfit) if year==2016
+cat("* --- Fig. 6.14: Scatter Plot with Fitted Line (Method 1, 2016) ---\n")
+fig6_14 <- ggplot(df_2016, aes(x = netuit_fte, y = stapr_fte)) +
+  geom_point(colour = "steelblue", size = 2) +
+  geom_smooth(method = "lm", se = FALSE, colour = "black", linewidth = 0.8) +
+  labs(title = "Fig. 6.14  State Appropriations and Net Tuition Revenue per FTE with Fitted Line, FY2016",
+       x = "Net Tuition Revenue per FTE Student ($)",
+       y = "State Appropriations per FTE Student ($)") +
+  theme_bw()
+save_fig(fig6_14, "fig6_14_scatter_fitted_2016.png")
+
+# --- Fig. 6.15: Scatter Plot with Fitted Line and State Labels (Method 2) ---
+# Equivalent to: twoway scatter, mlabel(state) || lfit if year==2016
+cat("* --- Fig. 6.15: Scatter Plot with Fitted Line and State Labels (Method 2, 2016) ---\n")
+fig6_15 <- ggplot(df_2016, aes(x = netuit_fte, y = stapr_fte, label = state)) +
+  geom_point(colour = "steelblue", size = 2) +
+  geom_text(vjust = -0.6, size = 2.5, colour = "grey30") +
+  geom_smooth(method = "lm", se = FALSE, colour = "black", linewidth = 0.8) +
+  labs(title = "Fig. 6.15  State Appropriations and Net Tuition Revenue per FTE with State Labels, FY2016",
+       x = "Net Tuition Revenue per FTE Student ($)",
+       y = "State Appropriations per FTE Student ($)") +
+  theme_bw()
+save_fig(fig6_15, "fig6_15_scatter_labels_2016.png")
+
+# --- Fig. 6.16 & 6.17: aaplot equivalent — scatter with regression line,
+#     annotations (R², intercept, slope), mimicking Stata's aaplot output ---
+# Equivalent to: aaplot netuit_fte stapr_fte if year==1990 / ==2016
+
+aaplot_r <- function(data, year_val, fig_num, file_name) {
+  d    <- data |> filter(year == year_val)
+  fit  <- lm(netuit_fte ~ stapr_fte, data = d)
+  r2   <- summary(fit)$r.squared
+  b0   <- coef(fit)[1]
+  b1   <- coef(fit)[2]
+  anno <- sprintf("y = %.4f + %.4f x\nR² = %.4f", b0, b1, r2)
+
+  p <- ggplot(d, aes(x = stapr_fte, y = netuit_fte)) +
+    geom_point(colour = "steelblue", size = 2) +
+    geom_smooth(method = "lm", se = FALSE, colour = "black", linewidth = 0.8) +
+    annotate("text",
+             x     = max(d$stapr_fte, na.rm = TRUE) * 0.65,
+             y     = max(d$netuit_fte, na.rm = TRUE) * 0.95,
+             label = anno, hjust = 0, size = 3.5) +
+    labs(
+      title = sprintf(
+        "Fig. 6.%d  State Appropriations and Net Tuition Revenue per FTE, FY%d",
+        fig_num, year_val),
+      x = "State Appropriations per FTE Student ($)",
+      y = "Net Tuition Revenue per FTE Student ($)"
+    ) +
+    theme_bw()
+
+  save_fig(p, file_name)
+}
+
+cat("* --- Fig. 6.16: aaplot equivalent, FY 1990 ---\n")
+aaplot_r(df_graphs, 1990, 16, "fig6_16_aaplot_1990.png")
+
+cat("* --- Fig. 6.17: aaplot equivalent, FY 2016 ---\n")
+aaplot_r(df_graphs, 2016, 17, "fig6_17_aaplot_2016.png")
+
+cat("\nAll graphs saved to:", graphs_dir, "\n")
+
+# ================================================================
+# Close log
+# Equivalent to: log close
+# ================================================================
+cat("\nChapter 6 R script completed:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n")
+sink()   # closes the log connection
+
+# ================================================================
+# END OF CHAPTER 6 R CODE
 # ================================================================
