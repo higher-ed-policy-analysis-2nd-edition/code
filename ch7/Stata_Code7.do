@@ -28,6 +28,36 @@
 * cd "$ch7data"
 
 *========================================================================
+* OUTPUT DIRECTORIES AND LOG FILE
+* Paths switch automatically based on the OS username (c(username)).
+* The instructor's personal paths are used when username == "marvi";
+* all other users get the generic relative paths.
+*========================================================================
+
+* Close any stale log silently, then open a fresh one
+capture log close
+
+if c(username) == "marvi" {
+    global graphs_dir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 7/Output/graphs"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 7/Output"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 7/Output/graphs"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 7/Output/logs"
+    log using ///
+        "C:\\Users\\marvi\\Dropbox\\Book\\2nd Edition\\Chapter 7\\Output\\logs\\Chapter7_Stata_output.log", ///
+        replace text
+}
+else {
+    global graphs_dir "Output/graphs"
+    capture mkdir "Output"
+    capture mkdir "Output/graphs"
+    capture mkdir "Output/logs"
+    log using "Output/logs/Chapter7_Stata_output.log", replace text
+}
+
+di "Chapter 7 log opened: " c(current_date) " " c(current_time)
+di "Graphs directory: $graphs_dir"
+
+*========================================================================
 * REQUIRED USER-WRITTEN PACKAGE
 *========================================================================
 
@@ -136,6 +166,7 @@ quietly: margins, at(stapr_fte=(0 10000) state_needFTE=(0(3000)10000)) vsquish
 
 /* Create visualization showing how relationship changes */
 marginsplot, noci x(stapr_fte) recast(line) xlabel(0(3000)10000)
+graph export "$graphs_dir/fig7_1_marginsplot_Stata.png", replace
 
 *------------------------------------------------------------------------
 * Testing Regression Assumptions
@@ -145,6 +176,7 @@ marginsplot, noci x(stapr_fte) recast(line) xlabel(0(3000)10000)
    Funnel shape indicates violation of constant variance assumption */
 quietly: reg netuit_fte stapr_fte stapr_fte2 pc_income i.region_compact
 rvfplot
+graph export "$graphs_dir/fig7_2_rvfplot_Stata.png", replace
 
 /* Information matrix test for heteroscedasticity, skewness, and kurtosis */
 estat imtest
@@ -523,5 +555,8 @@ drop masters_hat
 *================================================================
 
 clear all
+
+* Close log
+capture log close
 
 exit
