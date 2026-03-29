@@ -410,7 +410,7 @@ graph display xtmis_combined
 * Export all xtmispanel graphs to the graphs output directory
 * width(1200) produces 1200-pixel-wide PNGs suitable for publication
 foreach gname in heatmap barvar barpanel bartime pattern timeline combined {
-    capture graph export "$graphs_dir/xtmis_`gname'.png", ///
+    capture graph export "$graphs_dir/xtmis_`gname'_Stata.png", ///
         name(xtmis_`gname') replace width(1200)
 }
 
