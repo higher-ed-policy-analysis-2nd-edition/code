@@ -21,6 +21,36 @@
 * cd "$ch6data"
 
 *========================================================================
+* OUTPUT DIRECTORIES AND LOG FILE
+* Paths switch automatically based on the OS username (c(username)).
+* The instructor's personal paths are used when username == "marvi";
+* all other users get the generic relative paths.
+*========================================================================
+
+* Close any stale log silently, then open a fresh one
+capture log close
+
+if c(username) == "marvi" {
+    global graphs_dir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output/graphs"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output/graphs"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output/logs"
+    log using ///
+        "C:\Users\marvi\Dropbox\Book\2nd Edition\Chapter 6\Output\logs\Chapter6_Stata_output.log", ///
+        replace text
+}
+else {
+    global graphs_dir "Output/graphs"
+    capture mkdir "Output"
+    capture mkdir "Output/graphs"
+    capture mkdir "Output/logs"
+    log using "Output/logs/Chapter6_Stata_output.log", replace text
+}
+
+di "Chapter 6 log opened: " c(current_date) " " c(current_time)
+di "Graphs directory: $graphs_dir"
+
+*========================================================================
 * Section 6.2.1: Measures of Central Tendency
 *========================================================================
 
@@ -34,6 +64,9 @@ copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/da
 import excel "tabn302_50.xlsx", sheet("reformatted") firstrow clear
 
 * Calculate arithmetic, geometric, and harmonic means
+* Note: the chapter appendix shows 'ameans public private' (lowercase), but
+* Stata variable names are case-sensitive. The Excel column headers are
+* 'Public' and 'Private' (capitalised), so uppercase is required here.
 ameans Public Private
 
 * Calculate arithmetic mean only
@@ -55,11 +88,11 @@ use "Example_6_2_2.dta", clear
 * Calculate coefficient of variation (CV)
 tabstat NetTuition FTEStudents, stat(cv)
 
-* Calculate descriptive statistics by state
+* Calculate descriptive statistics by state (Fig. 6.1)
 tabstat NetTuition FTEStudents, stat(mean median sd min max ///
         cv) labelwidth(30) long format by(State) col(stat) nototal
 
-* Calculate descriptive statistics by year
+* Calculate descriptive statistics by fiscal year (Fig. 6.2)
 tabstat NetTuition FTEStudents, stat(mean median sd min max ///
         cv) labelwidth(30) long format by(FY) col(stat) nototal
 
@@ -91,19 +124,19 @@ label define RaceEthnic1 1 "Asian" 2 "Black" 3 "Hispanic" ///
                          4 "Multiracial" 5 "Other" 6 "White"
 label values RaceEthnic RaceEthnic1
 
-* Frequency distribution using original variable
+* Frequency distribution using original variable (Fig. 6.3)
 prop X1RACE
 
-* Tabulate with frequencies and percentages (sorted)
+* Tabulate with frequencies and percentages (sorted) (Fig. 6.4)
 tab X1RACE, sort
 
-* One-way table with summary statistics
+* One-way table with summary statistics (Fig. 6.5)
 tab X1RACE, summarize(EarnHr)
 
-* Two-way table showing means by race/ethnicity and sex
+* Two-way table showing means by race/ethnicity and sex (Fig. 6.6)
 tab X1RACE X1SEX, sum(EarnHr) means
 
-* Alternative: Two-way table using recoded variable
+* Alternative: Two-way table using recoded variable (Fig. 6.7)
 tabulate RaceEthnic X1SEX, sum(EarnHr) means
 
 * Panel data: Download state-level panel dataset
@@ -112,24 +145,28 @@ copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/da
 
 use "Example_6_3.dta", clear
 
-* declare a panel dataset
-xtset fips year
+* Declare panel dataset — fips = panel variable; year = time variable
+xtset fips year, yearly
 
 * Check panel structure
-xtdescribe 
+xtdescribe
 
 * Cross-tabulation for panel data with time-invariant categorical variable
 xttab region_compact
+
+* Transition probabilities for time-variant categorical variable
+* Shows probability of states changing merit aid policy year-to-year
+xttrans ugradmerit
 
 *========================================================================
 * Section 6.2.4: Testing Differences in Means Across Groups (ANOVA)
 *========================================================================
 
-* Using the HSLS:09 dataset with earnings variable (loaded above)
-* If not already loaded:
+* Reload HSLS:09 dataset — necessary because Example_6_3.dta was loaded
+* above for the panel data section (xttab/xttrans)
 use "Example_6_2_3.dta", clear
 
-* Create recoded race/ethnicity variable
+* Recreate RaceEthnic variable (required after reloading)
 gen RaceEthnic = 0
 replace RaceEthnic = 1 if X1RACE==2
 replace RaceEthnic = 2 if X1RACE==3
@@ -138,7 +175,6 @@ replace RaceEthnic = 4 if X1RACE==6
 replace RaceEthnic = 5 if X1RACE==1 | X1RACE==7
 replace RaceEthnic = 6 if X1RACE==8
 
-* Label variable and values
 lab var RaceEthnic "Race/Ethnicity"
 label define RaceEthnic1 1 "Asian" 2 "Black" 3 "Hispanic" ///
                          4 "Multiracial" 5 "Other" 6 "White"
@@ -157,6 +193,7 @@ pwmean EarnHr, over(RaceEthnic) mcompare(bonferroni) effects
 anova EarnHr RaceEthnic##X1SEX
 
 * Test for interaction effect
+* Note: anova is re-run here so that testparm uses the correct stored results
 anova EarnHr RaceEthnic##X1SEX
 testparm RaceEthnic#X1SEX
 
@@ -164,56 +201,70 @@ testparm RaceEthnic#X1SEX
 * Section 6.3.1: Graphs—Exploratory Data Analysis (EDA)
 *========================================================================
 
-* Using panel dataset (if not already loaded)
+* Load panel dataset
 use "Example_6_3.dta", clear
 
 * Create state appropriations per FTE variable
 gen stapr_fte = stapr/fte
 
-* Histogram with normal curve overlay
+* --- Fig. 6.8: Histogram of State Appropriations per FTE Student ---
 histogram stapr_fte, normal
+graph export "$graphs_dir/fig6_8_histogram_stapr_fte.png", replace width(1200)
 
-* Box chart
+* --- Fig. 6.9: Box Chart of State Appropriations per FTE Student ---
 graph box stapr_fte
+graph export "$graphs_dir/fig6_9_box_stapr_fte.png", replace width(1200)
 
-* Histogram of categorical variable (regional compact)
+* --- Fig. 6.10: Histogram of Membership in Regional Compacts ---
 histogram region_compact, discrete addlabels ylabel(,grid) ///
           xlabel(0 1 2 3 4, valuelabel) percent
+graph export "$graphs_dir/fig6_10_histogram_region_compact.png", replace width(1200)
 
-* Histogram by categories
+* --- Fig. 6.11: State Appropriations per FTE Student by Regional Compact ---
 histogram stapr_fte, by(region_compact)
+graph export "$graphs_dir/fig6_11_histogram_stapr_fte_by_region.png", replace width(1200)
 
-* Box chart by categories
+* --- Fig. 6.12: Box Chart of State Appropriations per FTE Student by Regional Compact ---
 graph box stapr_fte, by(region_compact)
+graph export "$graphs_dir/fig6_12_box_stapr_fte_by_region.png", replace width(1200)
 
 * Create net tuition per FTE variable
 gen netuit_fte = netuit/fte
 
-* Scatter plot for a specific year
+* --- Fig. 6.13: Scatter Plot of State Appropriations and Net Tuition Revenue per FTE Student ---
 graph twoway scatter stapr_fte netuit_fte if year==2016
+graph export "$graphs_dir/fig6_13_scatter_2016.png", replace width(1200)
 
-* Scatter plot with fitted regression line (Method 1)
+* --- Fig. 6.14: Scatter Plot with Fitted Regression Line (Method 1) ---
 twoway (scatter stapr_fte netuit_fte) (lfit stapr_fte netuit_fte) ///
        if year==2016
+graph export "$graphs_dir/fig6_14_scatter_fitted_2016.png", replace width(1200)
 
-* Scatter plot with fitted line and state labels (Method 2)
+* --- Fig. 6.15: Scatter Plot with Fitted Line and State Labels (Method 2) ---
 twoway scatter stapr_fte netuit_fte, mlabel(state) ///
        || lfit stapr_fte netuit_fte || if year==2016
+graph export "$graphs_dir/fig6_15_scatter_labels_2016.png", replace width(1200)
 
 * Install user-written aaplot command (run once)
 ssc install aaplot, replace
 
-* Scatter plot with regression line for 1990
+* --- Fig. 6.16: State Appropriations and Net Tuition per FTE Student, FY 1990 ---
 aaplot netuit_fte stapr_fte if year==1990
+graph export "$graphs_dir/fig6_16_aaplot_1990.png", replace width(1200)
 
-* Scatter plot with regression line for 2016
+* --- Fig. 6.17: State Appropriations and Net Tuition per FTE Student, FY 2016 ---
 aaplot netuit_fte stapr_fte if year==2016
+graph export "$graphs_dir/fig6_17_aaplot_2016.png", replace width(1200)
+
+di "All graphs saved to: $graphs_dir"
 
 clear all
+
+* Close log
+capture log close
 
 exit
 
 *================================================================
 * END OF CHAPTER 6 CODE
 *================================================================
-
