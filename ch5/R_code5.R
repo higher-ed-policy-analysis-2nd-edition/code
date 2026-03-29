@@ -38,19 +38,10 @@ suppressPackageStartupMessages({
 # Paths switch automatically by username — mirrors the Stata logic.
 # ================================================================
 
-user <- Sys.info()[["user"]]
-
-if (user == "marvi") {
-  graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 5/Output/graphs"
-  log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 5/Output/logs/Chapter5_R_output.log"
-  dir.create(graphs_dir,        showWarnings = FALSE, recursive = TRUE)
-  dir.create(dirname(log_path), showWarnings = FALSE, recursive = TRUE)
-} else {
-  graphs_dir <- "Output/graphs"
-  log_path   <- "Output/logs/Chapter5_R_output.log"
-  dir.create("Output/graphs", showWarnings = FALSE, recursive = TRUE)
-  dir.create("Output/logs",   showWarnings = FALSE, recursive = TRUE)
-}
+graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 5/Output/graphs"
+log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 5/Output/logs/Chapter5_R_output.log"
+dir.create(graphs_dir,        showWarnings = FALSE, recursive = TRUE)
+dir.create(dirname(log_path), showWarnings = FALSE, recursive = TRUE)
 
 # Open log — equivalent to: log using "...", replace text
 sink(log_path, split = TRUE)
@@ -72,14 +63,33 @@ safe_download <- function(url, dest) {
 
 # ----------------------------------------------------------------
 # Helper: save ggplot to graphs_dir
+# Saves to tempdir() first then copies to Dropbox to avoid sync-lock
+# overwrite failures. print() sends plot to RStudio Plots pane.
 # ----------------------------------------------------------------
 save_fig <- function(plot, filename, width_px = 1200, height_px = 900, dpi = 150) {
-  filepath <- file.path(graphs_dir, filename)
-  ggsave(filepath, plot = plot,
-         width  = width_px  / dpi,
-         height = height_px / dpi,
-         dpi    = dpi)
-  cat("file", filepath, "saved as PNG format\n")
+  final_path <- file.path(graphs_dir, filename)
+  dir.create(graphs_dir, showWarnings = FALSE, recursive = TRUE)
+
+  # 1. Print to RStudio Plots pane (screen device)
+  print(plot)
+
+  # 2. Save to local temp file first — avoids Dropbox file-lock blocking overwrite
+  tmp_path <- file.path(tempdir(), filename)
+  ggplot2::ggsave(filename = tmp_path,
+                  plot     = plot,
+                  width    = width_px / dpi,
+                  height   = height_px / dpi,
+                  dpi      = dpi,
+                  device   = "png")
+
+  # 3. Copy from temp to Dropbox destination, overwriting any locked file
+  ok <- file.copy(from = tmp_path, to = final_path, overwrite = TRUE)
+  if (ok) {
+    cat("file", final_path, "saved as PNG format\n")
+  } else {
+    cat("WARNING: temp file created but copy to Dropbox failed:", final_path, "\n")
+    cat("  Temp file available at:", tmp_path, "\n")
+  }
 }
 
 # ================================================================
@@ -733,7 +743,7 @@ fig_heat <- ggplot(heatmap_data, aes(x = factor(FY), y = state_fips,
   theme_bw(base_size = 9) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 7),
         axis.text.y = element_text(size = 6))
-save_fig(fig_heat, "xtmis_heatmap.png", height_px = 1100)
+save_fig(fig_heat, "xtmis_heatmap_R.png", height_px = 1100)
 
 # --- xtmis_barvar: % missing per variable ---
 fig_barvar <- ggplot(
@@ -747,7 +757,7 @@ fig_barvar <- ggplot(
   labs(title = "xtmis_barvar  — % Missing by Variable",
        x = NULL, y = "Percent missing") +
   theme_bw()
-save_fig(fig_barvar, "xtmis_barvar.png")
+save_fig(fig_barvar, "xtmis_barvar_R.png")
 
 # --- xtmis_barpanel: % missing per panel ---
 fig_barpanel <- panel_miss |>
@@ -759,7 +769,7 @@ fig_barpanel <- panel_miss |>
   labs(title = "xtmis_barpanel  — % Missing by Panel Unit (top 20 states)",
        x = "State FIPS", y = "Percent missing") +
   theme_bw()
-save_fig(fig_barpanel, "xtmis_barpanel.png")
+save_fig(fig_barpanel, "xtmis_barpanel_R.png")
 
 # --- xtmis_bartime: % missing per fiscal year ---
 fig_bartime <- ggplot(time_miss, aes(x = FY, y = Pct)) +
@@ -768,7 +778,7 @@ fig_bartime <- ggplot(time_miss, aes(x = FY, y = Pct)) +
   labs(title = "xtmis_bartime  — % Missing by Fiscal Year",
        x = "Fiscal Year", y = "Percent missing") +
   theme_bw()
-save_fig(fig_bartime, "xtmis_bartime.png")
+save_fig(fig_bartime, "xtmis_bartime_R.png")
 
 # --- xtmis_combined: 2×2 dashboard ---
 library(patchwork)   # lightweight combination; install if needed
@@ -782,7 +792,7 @@ fig_combined <- (fig_heat | fig_barvar) / (fig_barpanel | fig_bartime) +
     subtitle = paste("Variables:", paste(panel_vars, collapse=", ")),
     theme    = theme(plot.title = element_text(size = 12, face = "bold"))
   )
-save_fig(fig_combined, "xtmis_combined.png", width_px = 1800, height_px = 1200)
+save_fig(fig_combined, "xtmis_combined_R.png", width_px = 1800, height_px = 1200)
 
 cat("\nAll graphs saved to:", graphs_dir, "\n\n")
 
