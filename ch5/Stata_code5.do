@@ -11,35 +11,43 @@
 * Script tested in Stata 19.5
 * Compatible with Stata version 19 or later
 
-*===============================================================================
+*========================================================================
 * IMPORTANT: Set working directory (customize this for your system)
-*===============================================================================
+*========================================================================
 
 * Use a global path to make it easy to update in one place
 * global ch5data "C:/Users/YourName/Documents/book-materials/ch5/data"
 * cd "$ch5data"
 
-* Or use the cd command directly:
-* cd "C:/Users/YourName/Documents/book-materials/ch5/data"
-
-* Verify your working directory
-* pwd
-
-*===============================================================================
+*========================================================================
 * OUTPUT DIRECTORIES AND LOG FILE
-*===============================================================================
+* Paths switch automatically based on the OS username (c(username)).
+* The instructor's personal paths are used when username == "marvi";
+* all other users get the generic relative paths.
+*========================================================================
 
-* Create output directories if they do not already exist
-* Adjust paths to match your working directory structure
-capture mkdir "output"
-capture mkdir "output/logs"
-capture mkdir "output/graphs"
+* Close any stale log silently, then open a fresh one
+capture log close
 
-* Open log — captures all Results-window output as plain text
-* Replace overwrites any previous run; text avoids Stata-only .smcl format
-log using "output/logs/Chapter5_output.log", replace text
+if c(username) == "marvi" {
+    global graphs_dir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 5/Output/graphs"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 5/Output"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 5/Output/graphs"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 5/Output/logs"
+    log using ///
+        "C:\\Users\\marvi\\Dropbox\\Book\\2nd Edition\\Chapter 5\\Output\\logs\\Chapter5_Stata_output.log", ///
+        replace text
+}
+else {
+    global graphs_dir "Output/graphs"
+    capture mkdir "Output"
+    capture mkdir "Output/graphs"
+    capture mkdir "Output/logs"
+    log using "Output/logs/Chapter5_Stata_output.log", replace text
+}
 
 di "Chapter 5 log opened: " c(current_date) " " c(current_time)
+di "Graphs directory: $graphs_dir"
 
 *===============================================================================
 * Section 5.2: Getting to Know the Structure of Our Datasets
@@ -402,7 +410,7 @@ graph display xtmis_combined
 * Export all xtmispanel graphs to the graphs output directory
 * width(1200) produces 1200-pixel-wide PNGs suitable for publication
 foreach gname in heatmap barvar barpanel bartime pattern timeline combined {
-    capture graph export "output/graphs/xtmis_`gname'.png", ///
+    capture graph export "$graphs_dir/xtmis_`gname'.png", ///
         name(xtmis_`gname') replace width(1200)
 }
 
@@ -472,6 +480,6 @@ KEY RECOMMENDATIONS FOR GETTING TO KNOW THY DATA:
 */
 
 * Close log
-log close
+capture log close
 
 exit
