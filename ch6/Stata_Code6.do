@@ -209,52 +209,52 @@ gen stapr_fte = stapr/fte
 
 * --- Fig. 6.8: Histogram of State Appropriations per FTE Student ---
 histogram stapr_fte, normal
-graph export "$graphs_dir/fig6_8_histogram_stapr_fte.png", replace width(1200)
+graph export "$graphs_dir/fig6_8_histogram_stapr_fte_Stata.png", replace width(1200)
 
 * --- Fig. 6.9: Box Chart of State Appropriations per FTE Student ---
 graph box stapr_fte
-graph export "$graphs_dir/fig6_9_box_stapr_fte.png", replace width(1200)
+graph export "$graphs_dir/fig6_9_box_stapr_fte_Stata.png", replace width(1200)
 
 * --- Fig. 6.10: Histogram of Membership in Regional Compacts ---
 histogram region_compact, discrete addlabels ylabel(,grid) ///
           xlabel(0 1 2 3 4, valuelabel) percent
-graph export "$graphs_dir/fig6_10_histogram_region_compact.png", replace width(1200)
+graph export "$graphs_dir/fig6_10_histogram_region_compact_Stata.png", replace width(1200)
 
 * --- Fig. 6.11: State Appropriations per FTE Student by Regional Compact ---
 histogram stapr_fte, by(region_compact)
-graph export "$graphs_dir/fig6_11_histogram_stapr_fte_by_region.png", replace width(1200)
+graph export "$graphs_dir/fig6_11_histogram_stapr_fte_by_region_Stata.png", replace width(1200)
 
 * --- Fig. 6.12: Box Chart of State Appropriations per FTE Student by Regional Compact ---
 graph box stapr_fte, by(region_compact)
-graph export "$graphs_dir/fig6_12_box_stapr_fte_by_region.png", replace width(1200)
+graph export "$graphs_dir/fig6_12_box_stapr_fte_by_region_Stata.png", replace width(1200)
 
 * Create net tuition per FTE variable
 gen netuit_fte = netuit/fte
 
 * --- Fig. 6.13: Scatter Plot of State Appropriations and Net Tuition Revenue per FTE Student ---
 graph twoway scatter stapr_fte netuit_fte if year==2016
-graph export "$graphs_dir/fig6_13_scatter_2016.png", replace width(1200)
+graph export "$graphs_dir/fig6_13_scatter_2016_Stata.png", replace width(1200)
 
 * --- Fig. 6.14: Scatter Plot with Fitted Regression Line (Method 1) ---
 twoway (scatter stapr_fte netuit_fte) (lfit stapr_fte netuit_fte) ///
        if year==2016
-graph export "$graphs_dir/fig6_14_scatter_fitted_2016.png", replace width(1200)
+graph export "$graphs_dir/fig6_14_scatter_fitted_2016_Stata.png", replace width(1200)
 
 * --- Fig. 6.15: Scatter Plot with Fitted Line and State Labels (Method 2) ---
 twoway scatter stapr_fte netuit_fte, mlabel(state) ///
        || lfit stapr_fte netuit_fte || if year==2016
-graph export "$graphs_dir/fig6_15_scatter_labels_2016.png", replace width(1200)
+graph export "$graphs_dir/fig6_15_scatter_labels_2016_Stata.png", replace width(1200)
 
 * Install user-written aaplot command (run once)
 ssc install aaplot, replace
 
 * --- Fig. 6.16: State Appropriations and Net Tuition per FTE Student, FY 1990 ---
 aaplot netuit_fte stapr_fte if year==1990
-graph export "$graphs_dir/fig6_16_aaplot_1990.png", replace width(1200)
+graph export "$graphs_dir/fig6_16_aaplot_1990_Stata.png", replace width(1200)
 
 * --- Fig. 6.17: State Appropriations and Net Tuition per FTE Student, FY 2016 ---
 aaplot netuit_fte stapr_fte if year==2016
-graph export "$graphs_dir/fig6_17_aaplot_2016.png", replace width(1200)
+graph export "$graphs_dir/fig6_17_aaplot_2016_Stata.png", replace width(1200)
 
 di "All graphs saved to: $graphs_dir"
 
