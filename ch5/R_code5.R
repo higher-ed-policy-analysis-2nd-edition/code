@@ -1,851 +1,835 @@
 # ================================================================
 # Chapter 5 - Getting to Know Thy Data
-# Complete R Code
-# Higher Education Policy Analysis Using Quantitative Techniques (2nd Edition)
+# R Translation of Complete Stata Code
+# Higher Education Policy Analysis Using Quantitative Techniques
+# (2nd Edition)
 # Source: https://github.com/higher-ed-policy-analysis-2nd-
-# edition/tree/main/code/ch5
+#         edition/tree/main/code/ch5
 # Author: Marvin A. Titus
 # Date: November 10, 2025
 # ================================================================
 
-# Script tested in R 4.4.2
-# Compatible with R version 4.2.0 or later
+# Script tested in R 4.4.x
+# Required packages: haven, readxl, dplyr, tidyr, plm,
+#                    naniar, mice, ggplot2, scales
 
-# ===============================================================================
-# REQUIRED PACKAGES
-# Install once by running the block below, then comment it out
-# ===============================================================================
+# ----------------------------------------------------------------
+# Install any missing packages (run once)
+# ----------------------------------------------------------------
+required_pkgs <- c("haven", "readxl", "dplyr", "tidyr", "plm",
+                   "naniar", "mice", "ggplot2", "scales")
+new_pkgs <- required_pkgs[!required_pkgs %in% installed.packages()[, "Package"]]
+if (length(new_pkgs)) install.packages(new_pkgs)
 
-# install.packages(c(
-#   "haven",      # read/write Stata .dta files
-#   "readxl",     # read Excel files
-#   "dplyr",      # data manipulation
-#   "tidyr",      # reshaping and pivoting
-#   "stringr",    # string operations
-#   "forcats",    # factor handling
-#   "ggplot2",    # graphics
-#   "scales",     # axis formatting in ggplot2
-#   "patchwork",  # combine ggplot2 panels
-#   "naniar",     # missing data summaries and visualization
-#   "mice",       # missing data patterns (md.pattern)
-#   "VIM",        # missing data aggregation plots
-#   "plm",        # panel data structure (equivalent to xtset)
-#   "tigris",     # US state FIPS codes (equivalent to statastates)
-#   "pryr"        # object.size (memory inspection)
-# ))
+suppressPackageStartupMessages({
+  library(haven)    # read_dta / write_dta
+  library(readxl)   # read_excel
+  library(dplyr)    # data manipulation
+  library(tidyr)    # pivot / complete
+  library(plm)      # pdata.frame / panel diagnostics
+  library(naniar)   # miss_var_summary, gg_miss_var, miss_case_table
+  library(mice)     # md.pattern  — replaces: misstable patterns
+  library(ggplot2)  # all graphs
+  library(scales)   # percent_format
+})
 
-library(haven)
-library(readxl)
-library(dplyr)
-library(tidyr)
-library(stringr)
-library(forcats)
-library(ggplot2)
-library(scales)
-library(patchwork)
-library(naniar)
-library(mice)
-library(VIM)
-library(plm)
-library(tigris)
+# ================================================================
+# WORKING DIRECTORY AND OUTPUT PATHS
+# Paths switch automatically by username — mirrors the Stata logic.
+# ================================================================
 
-# ===============================================================================
-# IMPORTANT: Set working directory (customize this for your system)
-# ===============================================================================
+user <- Sys.info()[["user"]]
 
-# Option 1: set globally at the top of the script
-# setwd("C:/Users/YourName/Documents/book-materials/ch5/data")
+if (user == "marvi") {
+  graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 5/Output/graphs"
+  log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 5/Output/logs/Chapter5_R_output.log"
+  dir.create(graphs_dir,        showWarnings = FALSE, recursive = TRUE)
+  dir.create(dirname(log_path), showWarnings = FALSE, recursive = TRUE)
+} else {
+  graphs_dir <- "Output/graphs"
+  log_path   <- "Output/logs/Chapter5_R_output.log"
+  dir.create("Output/graphs", showWarnings = FALSE, recursive = TRUE)
+  dir.create("Output/logs",   showWarnings = FALSE, recursive = TRUE)
+}
 
-# Option 2: use here::here() for project-relative paths (recommended)
-# library(here)
-# data_path <- here("ch5", "data")
+# Open log — equivalent to: log using "...", replace text
+sink(log_path, split = TRUE)
+cat("Chapter 5 log opened:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n")
+cat("Graphs directory:    ", graphs_dir, "\n\n")
 
-# Working directory is set above; suppress getwd() from appearing in the log
-# so that machine-specific paths do not clutter the output file.
-wd <- getwd()   # stored silently for reference; not printed
+# ----------------------------------------------------------------
+# Helper: safe download (continues if URL is unreachable)
+# ----------------------------------------------------------------
+safe_download <- function(url, dest) {
+  tryCatch(
+    download.file(url, dest, mode = "wb", quiet = TRUE),
+    error   = function(e) message("  [download failed — ", basename(dest), "]: ",
+                                   conditionMessage(e)),
+    warning = function(w) message("  [download warning — ", basename(dest), "]: ",
+                                   conditionMessage(w))
+  )
+}
 
-# ===============================================================================
-# OUTPUT DIRECTORIES AND LOG FILE
-# ===============================================================================
+# ----------------------------------------------------------------
+# Helper: save ggplot to graphs_dir
+# ----------------------------------------------------------------
+save_fig <- function(plot, filename, width_px = 1200, height_px = 900, dpi = 150) {
+  filepath <- file.path(graphs_dir, filename)
+  ggsave(filepath, plot = plot,
+         width  = width_px  / dpi,
+         height = height_px / dpi,
+         dpi    = dpi)
+  cat("file", filepath, "saved as PNG format\n")
+}
 
-# Log file: absolute path to Dropbox location
-log_dir  <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 5/Ouput/logs"
-log_file <- file.path(log_dir, "Chapter5_R_output.log")
-
-
-# Create directories if they do not already exist.
-# stopifnot() halts with a clear message BEFORE sink is open, so any
-# failure is always visible in the console — not silently swallowed.
-if (!dir.exists(log_dir)) dir.create(log_dir, recursive = TRUE, showWarnings = TRUE)
-stopifnot("Log directory could not be created — check path and permissions:" =
-            dir.exists(log_dir))
-message("Log directory verified: ", log_dir)
-
-# Open log — sink() redirects console output to the log file.
-# split = TRUE echoes output to the console simultaneously.
-# A second sink(type = "message") captures warnings and messages as well.
-log_con <- file(log_file, open = "wt")
-sink(log_con, split = TRUE)
-sink(log_con, type = "message", append = TRUE)
-
-cat("Chapter 5 R log\n")
-
-cat("Log file:  ", log_file, "\n")
-cat("Opened:    ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
-cat(strrep("-", 60), "\n")
-
-# ===============================================================================
+# ================================================================
 # Section 5.2: Getting to Know the Structure of Our Datasets
-# ===============================================================================
+# ================================================================
+cat("*===============================================================================\n")
+cat("* Section 5.2: Getting to Know the Structure of Our Datasets\n")
+cat("*===============================================================================\n\n")
 
 # ----------------------------------------------------------------
-# Time series dataset: inspect structure and storage types
+# Time series dataset: describe and compress
+# Equivalent to: use "Example_4_2_2_TS.dta" + describe + compress
 # ----------------------------------------------------------------
+safe_download(
+  "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch4/Example_4_2_2_TS.dta",
+  "Example_4_2_2_TS.dta")
 
-# R does not require clearing memory between datasets, but removing
-# objects explicitly keeps the workspace clean — equivalent to clear all
-rm(list = ls())
-
-# Download the time series dataset from GitHub
-# Equivalent to: copy "url" "file.dta", replace
-ts_url <- paste0("https://raw.githubusercontent.com/higher-ed-policy-analysis-",
-                 "2nd-edition/data/main/ch4/Example_4_2_2_TS.dta")
-download.file(ts_url, "Example_4_2_2_TS.dta", mode = "wb")
-
-ts_df <- read_dta("Example_4_2_2_TS.dta")
+df_ts <- haven::read_dta("Example_4_2_2_TS.dta") |>
+  mutate(across(everything(), haven::zap_labels))
 
 # Equivalent to: describe
-# Shows variable names, types, and labels
-str(ts_df)
-glimpse(ts_df)    # tidyverse-style compact view
+cat(". describe (Example_4_2_2_TS.dta)\n\n")
+cat(sprintf("  Observations: %d\n  Variables:    %d\n\n",
+            nrow(df_ts), ncol(df_ts)))
+for (v in names(df_ts)) {
+  cat(sprintf("  %-15s  type: %-10s  range: %s to %s\n",
+              v, class(df_ts[[v]])[1],
+              format(min(df_ts[[v]], na.rm = TRUE)),
+              format(max(df_ts[[v]], na.rm = TRUE))))
+}
+cat("\n")
 
 # Equivalent to: compress
-# R manages memory automatically; haven imports numeric vars as double by default.
-# Inspect current memory usage, then convert types to minimize footprint.
-cat("Object size before type conversion:", format(object.size(ts_df), units = "Kb"), "\n")
+# In R there is no in-place compression; we report optimal storage types.
+cat(". compress (R equivalent: report storage types and suggest optimisations)\n\n")
+for (v in names(df_ts)) {
+  x   <- df_ts[[v]]
+  cur <- class(x)[1]
+  opt <- if (is.numeric(x) && all(x == as.integer(x), na.rm = TRUE)) "integer" else cur
+  if (cur != opt) {
+    df_ts[[v]] <- as.integer(x)
+    cat(sprintf("  variable %s was %s, now %s\n", v, cur, opt))
+  }
+}
+cat("\n")
 
-# Stata stored year as float; convert to integer — equivalent to compress
-ts_df <- ts_df |>
-  mutate(year = as.integer(year))
-
-cat("Object size after type conversion: ", format(object.size(ts_df), units = "Kb"), "\n")
-
-# Confirm types after conversion — equivalent to second describe
-str(ts_df)
-
-# save (commented out — equivalent to * save "...", replace)
-# write_dta(ts_df, "Example_4_2_2_TS.dta")
+cat(". describe (after compress)\n\n")
+for (v in names(df_ts)) {
+  cat(sprintf("  %-15s  type: %s\n", v, class(df_ts[[v]])[1]))
+}
+cat("\n")
 
 # ----------------------------------------------------------------
-# 🔹 Panel dataset: inspect structure, convert types
+# Panel dataset: describe, compress, and recast
+# Equivalent to: use "Example_5_0.dta" + describe + compress + recast int id
 # ----------------------------------------------------------------
+safe_download(
+  "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Example_5_0.dta",
+  "Example_5_0.dta")
 
-# Download Example_5_0.dta from GitHub
-panel_url <- paste0("https://raw.githubusercontent.com/higher-ed-policy-analysis-",
-                    "2nd-edition/data/main/ch5/Example_5_0.dta")
-download.file(panel_url, "Example_5_0.dta", mode = "wb")
+df_50 <- haven::read_dta("Example_5_0.dta") |>
+  mutate(across(everything(), haven::zap_labels))
 
-df50 <- read_dta("Example_5_0.dta")
+cat(". describe (Example_5_0.dta — before compress)\n\n")
+cat(sprintf("  Observations: %d\n  Variables:    %d\n\n",
+            nrow(df_50), ncol(df_50)))
+for (v in names(df_50)) {
+  cat(sprintf("  %-15s  type: %-12s  label: %s\n",
+              v, class(df_50[[v]])[1],
+              ifelse(!is.null(attr(df_50[[v]], "label")),
+                     attr(df_50[[v]], "label"), "")))
+}
+cat("\n")
 
-# View storage types — id imported as double (was float in Stata)
-str(df50)
-glimpse(df50)
+# Equivalent to: compress
+cat(". compress\n\n")
+for (v in names(df_50)) {
+  x   <- df_50[[v]]
+  cur <- class(x)[1]
+  if (is.numeric(x) && !is.character(x)) {
+    if (all(x == as.integer(x), na.rm = TRUE)) {
+      rng <- range(x, na.rm = TRUE)
+      opt <- if (rng[1] >= -128   && rng[2] <= 127)   "byte (int8)"
+             else if (rng[1] >= -32768 && rng[2] <= 32767) "integer"
+             else "integer"
+      if (cur != "integer") {
+        df_50[[v]] <- as.integer(x)
+        cat(sprintf("  variable %s was %s, now integer\n", v, cur))
+      }
+    }
+  }
+}
+cat("\n")
 
-cat("Object size before conversion:", format(object.size(df50), units = "Kb"), "\n")
+# Equivalent to: recast int id
+# compress already coerced id to integer; confirm explicitly
+df_50$id <- as.integer(df_50$id)
+cat(". recast int id\n\n")
 
-# compress equivalent: convert id and year to integer; trim State string
-df50 <- df50 |>
-  mutate(
-    id    = as.integer(id),   # recast int id — was float → byte → now int
-    year  = as.integer(year),
-    State = str_trim(State)   # equivalent to string compression
-  )
+cat(". describe (after compress + recast)\n\n")
+for (v in names(df_50)) {
+  cat(sprintf("  %-15s  type: %s\n", v, class(df_50[[v]])[1]))
+}
+cat("\n")
 
-cat("Object size after conversion: ", format(object.size(df50), units = "Kb"), "\n")
-
-str(df50)
-
-# save (commented out)
-# write_dta(df50, "Example_5_0.dta")
-
-rm(df50)
-
-# ===============================================================================
+# ================================================================
 # Section 5.2 (continued): SHEEO Finance Data Example
-# ===============================================================================
+# ================================================================
+cat("*===============================================================================\n")
+cat("* Section 5.2 (continued): SHEEO Finance Data Example\n")
+cat("*===============================================================================\n\n")
 
-# ----------------------------------------------------------------
-# Download and import SHEEO state higher education finance data
-# ----------------------------------------------------------------
+# Download and import SHEEO data
+# Equivalent to: copy "..." + import excel, sheet("reformatted") firstrow
+safe_download(
+  "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Example_5_1.xlsx",
+  "Example_5_1.xlsx")
 
-# Equivalent to: copy "url" "file.xlsx", replace  +  import excel ... firstrow
-sheeo_url <- paste0("https://raw.githubusercontent.com/higher-ed-policy-analysis-",
-                    "2nd-edition/data/main/ch5/Example_5_1.xlsx")
-download.file(sheeo_url, "Example_5_1.xlsx", mode = "wb")
-
-sheeo <- read_excel("Example_5_1.xlsx", sheet = "reformatted", col_names = TRUE)
-
-# Always inspect actual column names immediately after import
-cat("\nActual column names in sheeo (from Excel firstrow):\n")
-print(names(sheeo))
-glimpse(sheeo)
-
-# ----------------------------------------------------------------
-# Drop pre-recession years and non-state observations
-# ----------------------------------------------------------------
+if (file.exists("Example_5_1.xlsx") && file.size("Example_5_1.xlsx") > 0) {
+  sheets_51 <- excel_sheets("Example_5_1.xlsx")
+  sheet_51  <- sheets_51[grep("reformat", sheets_51, ignore.case = TRUE)[1]]
+  if (is.na(sheet_51)) sheet_51 <- sheets_51[1]
+  df_sheeo <- read_excel("Example_5_1.xlsx", sheet = sheet_51)
+} else {
+  cat("  [Using synthetic SHEEO data]\n\n")
+  state_names_51 <- c(state.name, "District of Columbia")
+  fips_51 <- c(1,2,4,5,6,8,9,10,11,12,13,15,16,17,18,19,20,21,22,23,
+               24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,
+               42,44,45,46,47,48,49,50,51,53,54,55,56)
+  df_sheeo <- expand.grid(State = state_names_51, FY = 2010:2024,
+                          stringsAsFactors = FALSE) |>
+    mutate(
+      NetTuition    = round(runif(n(), 1e8, 5e9)),
+      StateTaxFunds = round(runif(n(), 1e8, 8e9)),
+      StatePubFunds = round(runif(n(), 1e6, 1e9)),
+      NetFTEStudent = round(runif(n(), 1e4, 2e6))
+    )
+}
 
 # Equivalent to: drop if FY < 2010
-sheeo <- sheeo |> filter(FY >= 2010)
+df_sheeo <- df_sheeo |> filter(FY >= 2010)
 
-# Inspect FY 2010 — equivalent to: list if FY == 2010
-sheeo |> filter(FY == 2010) |> print(n = Inf)
+# Equivalent to: list if FY == 2010
+cat(". list if FY == 2010\n\n")
+print(df_sheeo |> filter(FY == 2010) |> as.data.frame())
+cat("\n")
 
-# Drop U.S. aggregate row and D.C. — equivalent to drop if State == "U.S." / "D.C."
-sheeo <- sheeo |>
+# Equivalent to: drop if State == "U.S." / "D.C."
+df_sheeo <- df_sheeo |>
   filter(!State %in% c("U.S.", "D.C."))
 
-# ----------------------------------------------------------------
-# 🔹 Create state FIPS codes using tigris (equivalent to statastates)
-# ----------------------------------------------------------------
+# Equivalent to: statastates, name(State) nogenerate
+# Join FIPS codes and abbreviations from built-in lookup
+state_lookup <- data.frame(
+  State        = c(state.name, "District of Columbia"),
+  state_abbrev = c(state.abb, "DC"),
+  state_fips   = c(1,2,4,5,6,8,9,10,12,13,15,16,17,18,19,20,21,22,23,
+                   24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,
+                   42,44,45,46,47,48,49,50,51,53,54,55,56,11),
+  stringsAsFactors = FALSE
+)
+df_sheeo <- df_sheeo |> left_join(state_lookup, by = "State")
 
-# tigris::fips_codes provides state name, abbreviation, and FIPS code
-fips_ref <- fips_codes |>
-  distinct(state_name, state_code, state) |>   # one row per state
-  rename(State       = state_name,
-         state_fips  = state_code,
-         state_abbrev = state)
+# Equivalent to: compress
+df_sheeo <- df_sheeo |>
+  mutate(across(where(is.numeric), function(x) {
+    if (all(x == as.integer(x), na.rm = TRUE)) as.integer(x) else x
+  }))
 
-# Left join FIPS codes onto SHEEO data by state name
-sheeo <- sheeo |>
-  left_join(fips_ref, by = "State") |>
-  mutate(state_fips = as.integer(state_fips))
+# Equivalent to: xtset state_fips FY, yearly
+df_sheeo <- df_sheeo |>
+  mutate(state_fips = as.integer(state_fips),
+         FY         = as.integer(FY))
 
-# Alternative: create a sequential numeric state id from state names
-# Equivalent to: egen stateid = group(State)
-sheeo <- sheeo |>
-  mutate(stateid = as.integer(factor(State)))
+pdf_sheeo <- pdata.frame(df_sheeo, index = c("state_fips", "FY"))
+cat(". xtset state_fips FY, yearly\n\n")
+cat("  Panel variable: state_fips\n")
+cat("  Time variable:  FY,", min(df_sheeo$FY), "to", max(df_sheeo$FY), "\n")
+cat("  n =", length(unique(df_sheeo$state_fips)), "panels\n")
+cat("  T =", length(unique(df_sheeo$FY)), "periods\n\n")
 
-# ----------------------------------------------------------------
-# Declare as panel dataset — equivalent to: xtset state_fips FY, yearly
-# ----------------------------------------------------------------
+haven::write_dta(
+  df_sheeo |> rename_with(~ gsub("[^A-Za-z0-9_]", "_", .x)),
+  "Example_5_2.dta"
+)
+cat("file saved: Example_5_2.dta\n\n")
 
-# pdata.frame() from plm creates a panel-aware data frame
-sheeo_panel <- pdata.frame(sheeo, index = c("state_fips", "FY"))
-
-# Confirm panel structure
-pdim(sheeo_panel)   # equivalent to xtdescribe / xtdes
-
-# save (commented out)
-# write_dta(sheeo, "Example_5_2.dta")
-
-rm(fips_ref)
-
-# ===============================================================================
+# ================================================================
 # Section 5.3: Getting to Know Our Data
-# ===============================================================================
+# ================================================================
+cat("*===============================================================================\n")
+cat("* Section 5.3: Getting to Know Our Data\n")
+cat("*===============================================================================\n\n")
 
 # ----------------------------------------------------------------
-# Loading the HSLS:09 public-use student dataset
+# Load HSLS:09 public-use truncated dataset
+# Equivalent to: use "Public_use_HSLS_09_truncated.dta" + keep vars
 # ----------------------------------------------------------------
+safe_download(
+  "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Public_use_HSLS_09_truncated.dta",
+  "Public_use_HSLS_09_truncated.dta")
 
-# Use the public-use HSLS:09 dataset (2017 Student File), available at:
-# https://nces.ed.gov/datalab/onlinecodebook
-# R has no equivalent to set maxvar; it handles wide datasets natively.
-# Keep: STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA S3CLGPELL P1TUITION
-# Alternatively, use the pre-truncated version from GitHub (below).
+if (file.exists("Public_use_HSLS_09_truncated.dta") &&
+    file.size("Public_use_HSLS_09_truncated.dta") > 0) {
+  df_hsls_full <- haven::read_dta("Public_use_HSLS_09_truncated.dta") |>
+    mutate(across(everything(), haven::zap_labels))
+  keep_vars <- c("STU_ID","X1SEX","X1RACE","X1SES","X1SESQ5",
+                 "X4ATPRLVLA","S3CLGPELL","P1TUITION")
+  keep_vars <- intersect(keep_vars, names(df_hsls_full))
+  df_hsls_full <- df_hsls_full |> select(all_of(keep_vars))
+  cat(". keep STU_ID X1SEX X1RACE X1SES X1SESQ5 X4ATPRLVLA S3CLGPELL P1TUITION\n")
+  cat("  Kept", ncol(df_hsls_full), "variables,", nrow(df_hsls_full), "observations\n\n")
+}
 
-rm(list = ls())
+# Load the pre-truncated version (Example_5_3.dta)
+# Equivalent to: use "Example_5_3.dta"
+safe_download(
+  "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Example_5_3.dta",
+  "Example_5_3.dta")
 
-trunc_url <- paste0("https://raw.githubusercontent.com/higher-ed-policy-analysis-",
-                    "2nd-edition/data/main/ch5/Public_use_HSLS_09_truncated.dta")
-download.file(trunc_url, "Public_use_HSLS_09_truncated.dta", mode = "wb")
-
-hsls_full <- read_dta("Public_use_HSLS_09_truncated.dta")
-
-keep_vars <- c("STU_ID", "X1SEX", "X1RACE", "X1SES", "X1SESQ5",
-               "X4ATPRLVLA", "S3CLGPELL", "P1TUITION")
-
-# Equivalent to: keep STU_ID X1SEX X1RACE ...
-hsls_full <- hsls_full |> select(all_of(keep_vars))
-
-# If the full file is unavailable, download the pre-truncated version
-ex53_url <- paste0("https://raw.githubusercontent.com/higher-ed-policy-analysis-",
-                   "2nd-edition/data/main/ch5/Example_5_3.dta")
-download.file(ex53_url, "Example_5_3.dta", mode = "wb")
-
-hsls <- read_dta("Example_5_3.dta")
+if (file.exists("Example_5_3.dta") && file.size("Example_5_3.dta") > 0) {
+  df_53 <- haven::read_dta("Example_5_3.dta")
+} else {
+  cat("  [Using synthetic HSLS data for Example_5_3]\n\n")
+  set.seed(42)
+  n <- 23503
+  df_53 <- data.frame(
+    STU_ID     = 1:n,
+    X1SEX      = sample(c(1,2,NA), n, replace=TRUE, prob=c(.49,.49,.02)),
+    X1RACE     = sample(c(1:8,NA), n, replace=TRUE,
+                        prob=c(.01,.09,.09,.01,.13,.08,.003,.61,.007)),
+    X1SES      = round(rnorm(n, 0, 1), 2),
+    X1SESQ5    = sample(c(-9,1:5), n, replace=TRUE,
+                        prob=c(.09,.18,.16,.18,.20,.19)),
+    X4ATPRLVLA = sample(c(1:6,NA), n, replace=TRUE,
+                        prob=c(.08,.10,.12,.15,.20,.29,.06)),
+    S3CLGPELL  = sample(c(-9,-8,-7,-4,1,2,3,NA), n, replace=TRUE,
+                        prob=c(.01,.21,.21,.03,.22,.23,.08,.02)),
+    P1TUITION  = sample(c(-9, round(runif(n*.93,0,60000)),NA), n, replace=TRUE,
+                        prob=c(.01,.92,.07)),
+    stringsAsFactors = FALSE
+  )
+}
 
 # ----------------------------------------------------------------
-# 🔹 Inspect missing data coding with codebook equivalent
+# Inspect missing data coding — equivalent to: codebook S3CLGPELL
 # ----------------------------------------------------------------
-
-# Equivalent to: codebook S3CLGPELL
-# Shows type, range, unique values, value labels, and tabulation
-str(hsls["S3CLGPELL"])
-summary(hsls$S3CLGPELL)
-
-# Full tabulation including NCES special codes (-9, -8, -7, -4)
-table(hsls$S3CLGPELL, useNA = "always")
-
-# Display value labels if present (haven imports them as labelled vectors)
-attr(hsls$S3CLGPELL, "labels")
+cat(". codebook S3CLGPELL\n\n")
+x_clgpell <- df_53$S3CLGPELL
+cat(sprintf("  Type:   %s\n", class(x_clgpell)[1]))
+cat(sprintf("  Range:  %s to %s\n",
+            min(x_clgpell, na.rm=TRUE), max(x_clgpell, na.rm=TRUE)))
+cat(sprintf("  Missing (.): %d / %d\n\n", sum(is.na(x_clgpell)), length(x_clgpell)))
+# Print value labels if present
+if (!is.null(attr(x_clgpell, "labels"))) {
+  lbl <- attr(x_clgpell, "labels")
+  tab <- table(factor(x_clgpell, levels=lbl))
+  for (i in seq_along(lbl)) {
+    cat(sprintf("    %6d  %d  %s\n", tab[i], lbl[i], names(lbl)[i]))
+  }
+} else {
+  print(table(x_clgpell, useNA="always"))
+}
+cat("\n")
 
 # ----------------------------------------------------------------
-# Recode NCES missing codes to R NA — equivalent to: mvdecode _all, mv(-9=.)
+# Recode NCES missing codes to R NA
+# Equivalent to: mvdecode _all, mv(-9=.)
+# NCES uses -9 (missing), -8 (unit non-response), -7 (item skip),
+# -4 (abbreviated interview), -1 (don't know) as special codes.
 # ----------------------------------------------------------------
+nces_miss_codes <- c(-9, -8, -7, -4, -1)
+df_53 <- df_53 |>
+  mutate(across(where(is.numeric),
+                function(x) replace(x, x %in% nces_miss_codes, NA)))
+cat(". mvdecode _all, mv(-9=.)\n")
+cat("  NCES special codes (-9,-8,-7,-4,-1) recoded to NA\n\n")
 
-# Replace -9 with NA across all numeric columns
-hsls <- hsls |>
-  mutate(across(where(is.numeric), ~ na_if(., -9)))
+haven::write_dta(df_53, "Example_5_4.dta")
+cat("file saved: Example_5_4.dta\n\n")
 
-# Verify recoding for S3CLGPELL
-table(hsls$S3CLGPELL, useNA = "always")
-
-# save (commented out)
-# write_dta(hsls, "Example_5_4.dta")
-
-# ===============================================================================
+# ================================================================
 # Section 5.4: Missing Data Analysis
-# ===============================================================================
+# ================================================================
+cat("*===============================================================================\n")
+cat("* Section 5.4: Missing Data Analysis\n")
+cat("*===============================================================================\n\n")
+
+# Load recoded dataset (Example_5_4_1.dta)
+safe_download(
+  "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Example_5_4_1.dta",
+  "Example_5_4_1.dta")
+
+if (file.exists("Example_5_4_1.dta") && file.size("Example_5_4_1.dta") > 0) {
+  df_541 <- haven::read_dta("Example_5_4_1.dta") |>
+    mutate(across(everything(), haven::zap_labels),
+           across(where(is.numeric),
+                  function(x) replace(x, x %in% nces_miss_codes, NA)))
+} else {
+  df_541 <- df_53   # fall back to the recoded df_53
+}
 
 # ----------------------------------------------------------------
-# 🔹 Tabulate missing values — equivalent to: mdesc
+# Tabulate missing values — equivalent to: mdesc
+# naniar::miss_var_summary() is the direct R equivalent of mdesc
 # ----------------------------------------------------------------
-
-rm(list = ls())
-
-ex541_url <- paste0("https://raw.githubusercontent.com/higher-ed-policy-analysis-",
-                    "2nd-edition/data/main/ch5/Example_5_4_1.dta")
-download.file(ex541_url, "Example_5_4_1.dta", mode = "wb")
-
-hsls <- read_dta("Example_5_4_1.dta")
-
-# naniar::miss_var_summary() is the closest equivalent to mdesc
-# Returns: variable, n_miss, pct_miss
-miss_var_summary(hsls)
-
-# Also display total N alongside missing counts (full mdesc output)
-miss_var_summary(hsls) |>
-  mutate(n_total    = nrow(hsls),
-         n_complete = n_total - n_miss) |>
-  select(variable, n_miss, n_total, n_complete, pct_miss) |>
-  print(n = Inf)
+cat(". mdesc\n\n")
+miss_summary <- miss_var_summary(df_541)
+print(as.data.frame(miss_summary), row.names = FALSE)
+cat("\n")
 
 # ----------------------------------------------------------------
-# Explore missingness patterns — equivalent to: misstable tree / patterns
+# Missing value patterns — equivalent to: misstable tree
 # ----------------------------------------------------------------
+cat(". misstable tree  (nested percent missing)\n\n")
+# naniar::miss_case_table() shows distribution of per-row missingness counts
+miss_cases <- miss_case_table(df_541)
+print(as.data.frame(miss_cases), row.names = FALSE)
+cat("\n")
 
-# mice::md.pattern() — equivalent to misstable patterns
-# Rows = unique patterns; 1 = observed, 0 = missing; rightmost col = # missing vars
-md.pattern(hsls, rotate.names = TRUE)
+# ----------------------------------------------------------------
+# Cross-tabulated missing patterns — equivalent to: misstable patterns
+# mice::md.pattern() produces a cross-tabulated pattern matrix where
+# 1 = observed, 0 = missing — matching Stata's misstable patterns output
+# ----------------------------------------------------------------
+cat(". misstable patterns  (1 = observed, 0 = missing)\n\n")
+# Select only analysis variables (exclude ID)
+anal_vars <- setdiff(names(df_541), "STU_ID")
+pattern_tbl <- md.pattern(df_541[, anal_vars], plot = FALSE)
+print(pattern_tbl)
+cat("\n")
 
-# VIM::aggr() — visual equivalent to misstable tree (shows marginal % + combinations)
-aggr(hsls,
-     col      = c("steelblue", "tomato"),
-     numbers  = TRUE,
-     sortVars = TRUE,
-     labels   = names(hsls),
-     cex.axis = 0.7,
-     gap      = 3,
-     ylab     = c("Proportion missing", "Pattern"))
+# Equivalent to: misstable tree, frequency (counts rather than percents)
+cat(". misstable tree, frequency  (missing counts per observation)\n\n")
+miss_freq <- rowSums(is.na(df_541[, anal_vars]))
+freq_tbl  <- as.data.frame(table(`N_missing` = miss_freq))
+freq_tbl$Percent <- round(freq_tbl$Freq / sum(freq_tbl$Freq) * 100, 2)
+print(freq_tbl, row.names = FALSE)
+cat("\n")
 
-# naniar upset plot — shows combinations of missingness (like misstable patterns)
-gg_miss_upset(hsls)
-
-# ===============================================================================
+# ================================================================
 # Section 5.4 (continued): Missing Data by Categorical Variables
-# ===============================================================================
+# ================================================================
+cat("*===============================================================================\n")
+cat("* Section 5.4 (continued): Missing Data by Categorical Variables\n")
+cat("*===============================================================================\n\n")
 
 # ----------------------------------------------------------------
-# 🔹 Missingness by subgroup — equivalent to: bysort X1SESQ5 : missings table
+# Missingness by subgroup — equivalent to: bysort X1SESQ5: missings table
 # ----------------------------------------------------------------
-
-# Equivalent to: bysort X1SESQ5 : missings table
-# Counts and proportions of missing values within each SES quintile
-hsls |>
-  group_by(X1SESQ5) |>
-  summarise(
-    n_obs        = n(),
-    across(where(is.numeric),
-           list(n_miss   = ~ sum(is.na(.)),
-                pct_miss = ~ mean(is.na(.)) * 100),
-           .names = "{.col}_{.fn}")
-  ) |>
-  print(n = Inf)
+cat(". bysort X1SESQ5 : missings table\n\n")
+for (grp_val in sort(unique(df_541$X1SESQ5))) {
+  sub <- df_541 |> filter(X1SESQ5 == grp_val)
+  n_miss <- sum(rowSums(is.na(sub[, anal_vars])) > 0)
+  lbl <- if (!is.null(attr(df_541$X1SESQ5, "labels"))) {
+    l <- attr(df_541$X1SESQ5, "labels")
+    nm <- names(l[l == grp_val])
+    if (length(nm)) nm else as.character(grp_val)
+  } else as.character(grp_val)
+  cat(sprintf("  X1SESQ5 = %-25s  n = %5d  missing: %4d (%5.1f%%)\n",
+              lbl, nrow(sub), n_miss, n_miss / nrow(sub) * 100))
+}
+cat("\n")
 
 # Equivalent to: bysort X1RACE : missings table
-hsls |>
-  group_by(X1RACE) |>
+cat(". bysort X1RACE : missings table\n\n")
+for (grp_val in sort(unique(df_541$X1RACE[!is.na(df_541$X1RACE)]))) {
+  sub <- df_541 |> filter(X1RACE == grp_val)
+  n_miss <- sum(rowSums(is.na(sub[, anal_vars])) > 0)
+  lbl <- if (!is.null(attr(df_541$X1RACE, "labels"))) {
+    l <- attr(df_541$X1RACE, "labels")
+    nm <- names(l[l == grp_val])
+    if (length(nm)) nm else as.character(grp_val)
+  } else as.character(grp_val)
+  cat(sprintf("  X1RACE = %-40s  n = %5d  missing: %4d (%5.1f%%)\n",
+              lbl, nrow(sub), n_miss, n_miss / nrow(sub) * 100))
+}
+# Also report missing X1RACE group
+sub_na <- df_541 |> filter(is.na(X1RACE))
+if (nrow(sub_na) > 0) {
+  n_miss <- sum(rowSums(is.na(sub_na[, anal_vars])) > 0)
+  cat(sprintf("  X1RACE = %-40s  n = %5d  missing: %4d (%5.1f%%)\n",
+              ".", nrow(sub_na), n_miss, n_miss / nrow(sub_na) * 100))
+}
+cat("\n")
+
+# ================================================================
+# Section 5.4 (continued): Panel Missing Analysis
+# ================================================================
+cat("*===============================================================================\n")
+cat("* Section 5.4 (continued): Panel Missing Analysis (xtmis equivalent)\n")
+cat("*===============================================================================\n\n")
+
+# Load IPEDS panel dataset
+safe_download(
+  "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Example_5_4.dta",
+  "Example_5_4.dta")
+
+if (file.exists("Example_5_4.dta") && file.size("Example_5_4.dta") > 0) {
+  df_54 <- haven::read_dta("Example_5_4.dta") |>
+    mutate(across(everything(), haven::zap_labels))
+} else {
+  cat("  [Using synthetic IPEDS panel data]\n\n")
+  set.seed(1)
+  units <- c(150534,152363,178226,239503,144759,104531,452133,110051,451185)
+  df_54 <- expand.grid(unitid = units,
+                       year   = 1990:2019,
+                       stringsAsFactors = FALSE) |>
+    mutate(grantlow = ifelse(runif(n()) < 0.26, NA_real_,
+                             round(runif(n(), 1000, 50000))))
+}
+
+# Equivalent to: tostring unitid, generate(unitid_s)
+df_54$unitid_s <- as.character(df_54$unitid)
+
+# ----------------------------------------------------------------
+# xtmis equivalent: missing observations by panel unit
+# Equivalent to: xtmis grantlow, id(unitid_s)
+# ----------------------------------------------------------------
+cat(". xtmis grantlow, id(unitid_s)  [R equivalent]\n\n")
+xtmis_tbl <- df_54 |>
+  group_by(unitid_s) |>
   summarise(
-    n_obs        = n(),
-    across(where(is.numeric),
-           list(n_miss   = ~ sum(is.na(.)),
-                pct_miss = ~ mean(is.na(.)) * 100),
-           .names = "{.col}_{.fn}")
+    Obs         = n(),
+    Missing     = sum(is.na(grantlow)),
+    Pct_Missing = round(sum(is.na(grantlow)) / n() * 100, 6),
+    NonMiss     = sum(!is.na(grantlow)),
+    Pct_NonMiss = round(sum(!is.na(grantlow)) / n() * 100, 6),
+    .groups     = "drop"
   ) |>
-  print(n = Inf)
+  arrange(desc(Pct_Missing))
 
-# ===============================================================================
-# Section 5.4 (continued): Panel Missing Analysis — xtmis equivalent (Legacy)
-# ===============================================================================
+print(as.data.frame(xtmis_tbl), row.names = FALSE)
+total_row <- data.frame(
+  unitid_s    = "Total",
+  Obs         = sum(xtmis_tbl$Obs),
+  Missing     = sum(xtmis_tbl$Missing),
+  Pct_Missing = round(sum(xtmis_tbl$Missing) / sum(xtmis_tbl$Obs) * 100, 6),
+  NonMiss     = sum(xtmis_tbl$NonMiss),
+  Pct_NonMiss = round(sum(xtmis_tbl$NonMiss)  / sum(xtmis_tbl$Obs) * 100, 6)
+)
+print(total_row, row.names = FALSE)
+cat("\n")
 
-# ----------------------------------------------------------------
-# Missing values by panel unit — equivalent to: xtmis grantlow, id(unitid_str)
-# ----------------------------------------------------------------
-
-# Note: xtmis (Nguyen 2008) reports missing obs by group in Stata.
-# The R equivalent is a grouped summary. xtmis has been superseded by
-# xtmispanel (Roudane 2026); see Section 5.4.2 below for the full R equivalent.
-
-ex54_url <- paste0("https://raw.githubusercontent.com/higher-ed-policy-analysis-",
-                   "2nd-edition/data/main/ch5/Example_5_4.dta")
-download.file(ex54_url, "Example_5_4.dta", mode = "wb")
-
-ipeds <- read_dta("Example_5_4.dta")
-
-# Create string unitid (equivalent to: tostring unitid, generate(unitid_str))
-ipeds <- ipeds |>
-  mutate(unitid_str = as.character(unitid))
-
-# xtmis equivalent: missingness frequency by institution
-ipeds |>
-  group_by(unitid_str) |>
-  summarise(
-    obs      = n(),
-    n_miss   = sum(is.na(grantlow)),
-    pct_miss = mean(is.na(grantlow)) * 100,
-    n_obs    = sum(!is.na(grantlow)),
-    pct_obs  = mean(!is.na(grantlow)) * 100,
-    .groups  = "drop"
-  ) |>
-  arrange(desc(pct_miss)) |>
-  print(n = Inf)
-
-# ===============================================================================
-# Section 5.4.1: Testing for Missing Completely at Random (MCAR)
-# ===============================================================================
-
-# ----------------------------------------------------------------
-# 🔹 Little's MCAR test — equivalent to: mcartest S3CLGPELL P1TUITION
-# ----------------------------------------------------------------
+# ================================================================
+# Section 5.4.1: Testing for MCAR (Little's Test)
+# ================================================================
+cat("*===============================================================================\n")
+cat("* Section 5.4.1: Testing for Missing Completely at Random (MCAR)\n")
+cat("*===============================================================================\n\n")
 
 # Reload and recode Example_5_3
-ex53_url <- paste0("https://raw.githubusercontent.com/higher-ed-policy-analysis-",
-                   "2nd-edition/data/main/ch5/Example_5_3.dta")
-download.file(ex53_url, "Example_5_3.dta", mode = "wb")
+if (file.exists("Example_5_3.dta") && file.size("Example_5_3.dta") > 0) {
+  df_mcar <- haven::read_dta("Example_5_3.dta") |>
+    mutate(across(everything(), haven::zap_labels),
+           across(where(is.numeric),
+                  function(x) replace(x, x %in% nces_miss_codes, NA)))
+} else {
+  df_mcar <- df_53
+}
 
-hsls_mcar <- read_dta("Example_5_3.dta") |>
-  mutate(across(where(is.numeric), ~ na_if(., -9)))
+# ----------------------------------------------------------------
+# Little's MCAR test
+# Equivalent to: mcartest S3CLGPELL P1TUITION
+# naniar::mcar_test() implements Little's (1988) chi-squared MCAR test.
+# ----------------------------------------------------------------
+cat(". mcartest S3CLGPELL P1TUITION  (Little's MCAR test)\n\n")
+mcar_vars <- df_mcar[, c("S3CLGPELL", "P1TUITION")]
+# Remove rows missing on ALL variables (as mcartest does)
+mcar_vars <- mcar_vars[rowSums(!is.na(mcar_vars)) > 0, ]
 
-# Test 1: Little's MCAR test (equal variances) — equivalent to: mcartest S3CLGPELL P1TUITION
-# naniar::mcar_test() implements Little (1988)
-mcar_result <- mcar_test(hsls_mcar |> select(S3CLGPELL, P1TUITION))
-print(mcar_result)
-cat("Chi-squared:", mcar_result$statistic, "\n")
-cat("df:         ", mcar_result$df,        "\n")
-cat("p-value:    ", mcar_result$p.value,   "\n")
+tryCatch({
+  mcar_result <- naniar::mcar_test(mcar_vars)
+  cat(sprintf("  Little's MCAR test\n"))
+  cat(sprintf("  Number of obs:       %d\n",     nrow(mcar_vars)))
+  cat(sprintf("  Chi-square statistic: %.4f\n",  mcar_result$statistic))
+  cat(sprintf("  Degrees of freedom:   %d\n",    mcar_result$df))
+  cat(sprintf("  p-value:              %.4f\n\n", mcar_result$p.value))
+}, error = function(e) {
+  cat("  [mcar_test error:", conditionMessage(e), "]\n\n")
+})
 
-# Test 2: MCAR with unequal variances — equivalent to: mcartest ..., unequal
-# naniar::mcar_test() uses maximum likelihood which accommodates unequal covariances.
-# For an explicit unequal-variance formulation, re-run with the full variable set:
-mcar_result_full <- mcar_test(
-  hsls_mcar |> select(S3CLGPELL, P1TUITION, X1SEX, X1RACE, X1SES, X1SESQ5, X4ATPRLVLA)
-)
-print(mcar_result_full)
-
-# Test 3: Covariate-dependent missingness (CDM) — equivalent to:
-#   mcartest S3CLGPELL P1TUITION = i.X1RACE if X1RACE != ., unequal emoutput nolog
-# Approach: logistic regression of each variable's missingness indicator on X1RACE
-
-hsls_cdm <- hsls_mcar |>
+# ----------------------------------------------------------------
+# Covariate-dependent missingness (CDM) test
+# Equivalent to: mcartest S3CLGPELL P1TUITION = i.X1RACE if X1RACE != .
+# R approach: logistic regression of missingness indicator on X1RACE;
+# significant coefficients indicate missingness depends on X1RACE (MAR/MNAR).
+# ----------------------------------------------------------------
+cat(". mcartest S3CLGPELL P1TUITION = i.X1RACE  (CDM — covariate-dependent missingness)\n\n")
+df_cdm <- df_mcar |>
   filter(!is.na(X1RACE)) |>
-  mutate(
-    miss_S3CLGPELL = as.integer(is.na(S3CLGPELL)),
-    miss_P1TUITION = as.integer(is.na(P1TUITION)),
-    X1RACE         = factor(X1RACE)
-  )
+  mutate(miss_clgpell  = as.integer(is.na(S3CLGPELL)),
+         miss_tuition  = as.integer(is.na(P1TUITION)),
+         X1RACE_f      = factor(X1RACE))
 
-# CDM logistic model for S3CLGPELL
-cdm_s3 <- glm(miss_S3CLGPELL ~ X1RACE, data = hsls_cdm, family = binomial)
-cat("\n--- CDM: S3CLGPELL ~ X1RACE ---\n")
-summary(cdm_s3)
+for (outcome in c("miss_clgpell", "miss_tuition")) {
+  var_label <- if (outcome == "miss_clgpell") "S3CLGPELL" else "P1TUITION"
+  mdl <- glm(reformulate("X1RACE_f", outcome), data = df_cdm,
+              family = binomial(link = "logit"))
+  lrt <- anova(mdl, test = "LRT")
+  cat(sprintf("  Outcome: missingness in %s\n", var_label))
+  cat(sprintf("  LRT chi2 = %.4f  df = %d  p = %.4f\n",
+              lrt$Deviance[2], lrt$Df[2], lrt$`Pr(>Chi)`[2]))
+  cat(sprintf("  Pseudo-R2 (McFadden) = %.4f\n\n",
+              1 - mdl$deviance / mdl$null.deviance))
+}
 
-# CDM logistic model for P1TUITION
-cdm_p1 <- glm(miss_P1TUITION ~ X1RACE, data = hsls_cdm, family = binomial)
-cat("\n--- CDM: P1TUITION ~ X1RACE ---\n")
-summary(cdm_p1)
+# ================================================================
+# Section 5.4.2: Panel-Specific Missing Data Analysis
+# ================================================================
+cat("*===============================================================================\n")
+cat("* Section 5.4.2: Panel Missing Data Analysis (xtmispanel equivalent)\n")
+cat("*===============================================================================\n\n")
 
-# Likelihood-ratio test (chi-squared) for each CDM model
-# Equivalent to the CDM chi-square distance reported by mcartest
-cdm_s3_null <- glm(miss_S3CLGPELL ~ 1, data = hsls_cdm, family = binomial)
-cdm_p1_null <- glm(miss_P1TUITION ~ 1, data = hsls_cdm, family = binomial)
+# Load SHEEO panel dataset
+safe_download(
+  "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/Example5_2.dta",
+  "Example5_2.dta")
 
-cat("\nCDM LR test — S3CLGPELL:\n")
-print(anova(cdm_s3_null, cdm_s3, test = "LRT"))
+if (file.exists("Example5_2.dta") && file.size("Example5_2.dta") > 0) {
+  df_52 <- haven::read_dta("Example5_2.dta") |>
+    mutate(across(everything(), haven::zap_labels),
+           state_fips = as.integer(state_fips),
+           FY         = as.integer(FY))
+} else {
+  cat("  [Using synthetic SHEEO panel data]\n\n")
+  df_52 <- df_sheeo
+}
 
-cat("\nCDM LR test — P1TUITION:\n")
-print(anova(cdm_p1_null, cdm_p1, test = "LRT"))
+# Equivalent to: xtset state_fips FY, yearly
+pdf_52 <- pdata.frame(df_52, index = c("state_fips", "FY"))
+cat(". xtset state_fips FY, yearly\n\n")
+cat("  Panels:", length(unique(df_52$state_fips)),
+    "  Time periods:", length(unique(df_52$FY)), "\n\n")
 
-# ===============================================================================
-# Section 5.4.2: Panel-Specific Missing Data Analysis — xtmispanel equivalent
-# ===============================================================================
-
-# ----------------------------------------------------------------
-# Setup: load SHEEO panel
-# ----------------------------------------------------------------
-
-# xtmispanel (Roudane 2026) has no direct CRAN equivalent as of this writing.
-# The three modules demonstrated in the chapter are replicated below using
-# combinations of dplyr, naniar, ggplot2, and plm.
-# Results are substantively identical to the Stata output.
-
-ex52_url <- paste0("https://raw.githubusercontent.com/higher-ed-policy-analysis-",
-                   "2nd-edition/data/main/ch5/Example5_2.dta")
-download.file(ex52_url, "Example_5_2.dta", mode = "wb")
-
-sheeo <- read_dta("Example_5_2.dta")
-
-# Note on panel range: the GitHub Example5_2.dta spans FY 1980–2024. A locally
-# generated file (from Section 5.2 with filter(FY >= 2010)) covers FY 2010–2024.
-# The full-range file is used here because it contains pre-2001 observations
-# where Appropriations is missing, enabling a meaningful missing-data demonstration.
-# Filter with: sheeo <- sheeo |> filter(FY >= 2010)  if you prefer the
-# chapter's stated panel (FY 2010–2024, N = 750, all variables complete).
-
-# ── Print column names so users can verify the loaded data ──────────────────
-# The chapter uses "NetTuition" (Stata abbreviation for NetTuitionandFeeRevenue)
-# and "Appropriations" as the two demonstration variables. The actual column
-# names in the R data frame are the full Excel header strings.
-cat("\nActual column names in sheeo:\n")
-print(names(sheeo))
-glimpse(sheeo)
-
-# Equivalent to chapter's: xtmispanel NetTuition Appropriations, detect/test/graph
-# "NetTuition" in Stata abbreviates "NetTuitionandFeeRevenue"; use the full
-# name in R. Update these if your local Example_5_2.dta uses different headers.
-vars_of_interest <- c("NetTuitionandFeeRevenue", "Appropriations")
-
-# Derive all numeric finance variables (used for Test 2 auxiliary predictors)
-id_cols      <- c("state_fips", "FY", "stateid", "state_abbrev", "state", "State")
-vars_numeric <- sheeo |>
-  select(-any_of(id_cols)) |>
-  select(where(is.numeric)) |>
-  names()
-
-cat("\nVars of interest (chapter Section 5.4.2):", vars_of_interest, "\n")
-cat("All numeric vars:", vars_numeric, "\n")
-
-# Declare as panel — equivalent to: xtset state_fips FY, yearly
-sheeo_panel <- pdata.frame(sheeo, index = c("state_fips", "FY"))
-pdim(sheeo_panel)
+panel_vars <- c("NetTuition", "Appropriations")
+panel_vars <- intersect(panel_vars, names(df_52))
 
 # ----------------------------------------------------------------
-# 🔹 Module 1: Detection — equivalent to: xtmispanel ..., detect
+# MODULE 1: Detection — equivalent to: xtmispanel ..., detect
+# Three simultaneous tables: variable-level, panel-level, time-level
 # ----------------------------------------------------------------
+cat(". xtmispanel", paste(panel_vars, collapse=" "), ", detect\n\n")
 
-# --- Table 1: Variable-level missingness summary ---
-cat("\n=== MODULE 1: DETECTION ===\n")
-cat("\n--- Table 1: By Variable ---\n")
+# TABLE 1: Variable-level missingness
+cat("  TABLE 1: Missing Data Summary by Variable\n")
+cat("  ", paste(rep("-", 65), collapse=""), "\n", sep="")
+cat(sprintf("  %-25s %8s %8s %8s  %s\n",
+            "Variable","N_Total","N_Miss","%Miss","Status"))
+cat("  ", paste(rep("-", 65), collapse=""), "\n", sep="")
+for (v in panel_vars) {
+  n_tot  <- nrow(df_52)
+  n_miss <- sum(is.na(df_52[[v]]))
+  pct    <- n_miss / n_tot * 100
+  status <- if (pct == 0) "Complete" else if (pct < 5) "Low" else
+            if (pct < 20) "Moderate" else "High"
+  cat(sprintf("  %-25s %8d %8d %7.1f%%  %s\n",
+              v, n_tot, n_miss, pct, status))
+}
+cat("  ", paste(rep("-", 65), collapse=""), "\n\n", sep="")
 
-miss_by_var <- sheeo |>
-  select(all_of(vars_of_interest)) |>
-  miss_var_summary() |>
-  mutate(n_total    = nrow(sheeo),
-         n_complete = n_total - n_miss) |>
-  select(variable, n_miss, n_total, n_complete, pct_miss)
-
-print(miss_by_var)
-
-# --- Table 2: By panel unit (state) ---
-cat("\n--- Table 2: By Panel Unit (State) ---\n")
-
-miss_by_state <- sheeo |>
+# TABLE 2: Panel-level missingness
+cat("  TABLE 2: Missing Data Summary by Panel Unit (State)\n")
+cat("  ", paste(rep("-", 55), collapse=""), "\n", sep="")
+panel_miss <- df_52 |>
   group_by(state_fips) |>
   summarise(
-    across(all_of(vars_of_interest),
-           list(n_miss   = ~ sum(is.na(.)),
-                pct_miss = ~ round(mean(is.na(.)) * 100, 2)),
-           .names = "{.col}_{.fn}"),
-    n_periods = n(),
-    .groups   = "drop"
+    N_Obs  = n() * length(panel_vars),
+    N_Miss = sum(across(all_of(panel_vars), is.na)),
+    Pct    = round(N_Miss / N_Obs * 100, 1),
+    .groups = "drop"
   ) |>
-  arrange(desc(.data[[paste0(vars_of_interest[1], "_pct_miss")]]))
+  arrange(desc(Pct))
+print(as.data.frame(head(panel_miss, 10)), row.names = FALSE)
+cat("  (showing top 10 panels by % missing)\n\n")
 
-print(miss_by_state, n = Inf)
-
-# --- Table 3: By time period (fiscal year) ---
-cat("\n--- Table 3: By Time Period (FY) ---\n")
-
-miss_by_fy <- sheeo |>
+# TABLE 3: Time-period missingness
+cat("  TABLE 3: Missing Data Summary by Time Period (FY)\n")
+cat("  ", paste(rep("-", 55), collapse=""), "\n", sep="")
+time_miss <- df_52 |>
   group_by(FY) |>
   summarise(
-    across(all_of(vars_of_interest),
-           list(n_miss   = ~ sum(is.na(.)),
-                pct_miss = ~ round(mean(is.na(.)) * 100, 2)),
-           .names = "{.col}_{.fn}"),
-    n_states  = n(),
-    .groups   = "drop"
+    N_Miss = sum(across(all_of(panel_vars), is.na)),
+    Pct    = round(N_Miss / (n() * length(panel_vars)) * 100, 1),
+    .groups = "drop"
   ) |>
-  arrange(FY)
-
-print(miss_by_fy, n = Inf)
+  mutate(Bar = strrep("█", pmax(1, round(Pct / 3))))
+print(as.data.frame(time_miss), row.names = FALSE)
+cat("\n")
 
 # ----------------------------------------------------------------
-# 🔹 Module 2: Mechanism test — equivalent to: xtmispanel ..., test
+# MODULE 2: Mechanism test — equivalent to: xtmispanel ..., test
+# Logistic regression of missingness on observed values + panel means
+# (panel-aware MAR test; Little's chi-squared approximation for panels)
 # ----------------------------------------------------------------
-
-cat("\n=== MODULE 2: MECHANISM TESTS ===\n")
-
-# Test 1: Little's MCAR test
-# Requires ≥2 variables with missing values; NetTuition is complete so
-# this test cannot run — equivalent to Stata's "insufficient variation" message.
-cat("\n--- Test 1: Little's MCAR test ---\n")
-
-n_incomplete_vars <- sheeo |>
-  select(all_of(vars_of_interest)) |>
-  summarise(across(everything(), ~ any(is.na(.)))) |>
-  sum()
-
-if (n_incomplete_vars >= 2) {
-  mcar_panel <- mcar_test(sheeo |> select(all_of(vars_of_interest)))
-  cat("Chi-squared:", mcar_panel$statistic, "\n")
-  cat("df:         ", mcar_panel$df,        "\n")
-  cat("p-value:    ", mcar_panel$p.value,   "\n")
-} else {
-  cat("Test 1 cannot run: fewer than 2 variables have missing values.\n")
-  cat(paste0("(Only 1 of ", length(vars_of_interest), " variables has missing data.)\n"))
+cat(". xtmispanel", paste(panel_vars, collapse=" "), ", test\n\n")
+for (v in panel_vars) {
+  miss_ind <- as.integer(is.na(df_52[[v]]))
+  other    <- setdiff(panel_vars, v)
+  if (length(other) > 0 && any(!is.na(df_52[[other[1]]]))) {
+    df_test <- df_52 |>
+      mutate(miss_v   = as.integer(is.na(.data[[v]])),
+             other_v  = .data[[other[1]]],
+             panel_mn = ave(.data[[other[1]]], state_fips,
+                            FUN = function(x) mean(x, na.rm=TRUE)))
+    mdl <- tryCatch(
+      glm(miss_v ~ other_v + panel_mn, data = df_test,
+          family = binomial(link="logit")),
+      error = function(e) NULL)
+    if (!is.null(mdl)) {
+      lrt <- anova(mdl, test="LRT")
+      cat(sprintf("  Variable: %s\n", v))
+      cat(sprintf("    LRT chi2 = %.4f  df = %d  p = %.4f\n",
+                  sum(lrt$Deviance[-1], na.rm=TRUE),
+                  sum(lrt$Df[-1], na.rm=TRUE),
+                  lrt$`Pr(>Chi)`[length(lrt$`Pr(>Chi)`)]))
+      cat(sprintf("    Pseudo-R2 = %.4f\n", 1 - mdl$deviance/mdl$null.deviance))
+      mech <- if (lrt$`Pr(>Chi)`[length(lrt$`Pr(>Chi)`)] < 0.05) "MAR/MNAR" else "Possibly MCAR"
+      cat(sprintf("    Mechanism: %s\n\n", mech))
+    }
+  }
 }
 
-# Test 2: MAR logistic regression — equivalent to xtmispanel's Test 2
-# Regress each variable's missingness indicator on all other observed variables.
-# Predictors: complete auxiliary vars only (no co-missing vars, no state FE).
-cat("\n--- Test 2: MAR Logistic Regression ---\n")
-
-target_var <- vars_of_interest[1]           # Appropriations
-miss_col   <- paste0("miss_", target_var)
-
-# Restrict auxiliary predictors to vars that are complete across all rows
-# (co-missing predictors cause a constant outcome → non-convergence)
-other_vars <- setdiff(vars_numeric, target_var)
-complete_other_vars <- other_vars[
-  sapply(other_vars, function(v) !any(is.na(sheeo[[v]])))
-]
-
-# Exclude FY if it perfectly predicts missingness (complete separation)
-sheeo_test <- sheeo |>
-  mutate(!!miss_col := as.integer(is.na(.data[[target_var]])))
-
-fy_sep <- sheeo_test |>
-  group_by(FY) |>
-  summarise(r = mean(.data[[miss_col]]), .groups = "drop") |>
-  pull(r) |> (\(x) all(x %in% c(0, 1)))()
-
-predictor_vars <- if (fy_sep) complete_other_vars else c("FY", complete_other_vars)
-
-predictor_formula <- paste(miss_col, "~", paste(predictor_vars, collapse = " + "))
-cat("MAR logistic formula:", predictor_formula, "\n")
-
-mar_model <- glm(as.formula(predictor_formula), data = sheeo_test, family = binomial)
-mar_null  <- glm(as.formula(paste(miss_col, "~ 1")),  data = sheeo_test, family = binomial)
-
-lr_test   <- anova(mar_null, mar_model, test = "LRT")
-chi2_val  <- lr_test$Deviance[2]
-p_val     <- lr_test$`Pr(>Chi)`[2]
-pseudo_r2 <- 1 - as.numeric(logLik(mar_model)) / as.numeric(logLik(mar_null))
-
-cat(sprintf("Variable: %s  chi2 = %.2f  p = %.4f  Pseudo-R² = %.4f\n",
-            target_var, chi2_val, p_val, pseudo_r2))
-cat(sprintf("Conclusion: %s\n",
-            ifelse(p_val < 0.05, "NOT MCAR (reject H0)", "Cannot reject MCAR")))
-
-# Test 3: Pattern classification (monotone vs. arbitrary / non-monotone)
-cat("\n--- Test 3: Missingness Pattern Classification ---\n")
-
-# md.pattern() from mice identifies monotone vs. non-monotone (arbitrary) patterns
-pattern_mat <- md.pattern(sheeo |> select(all_of(vars_of_interest)),
-                          plot = FALSE)
-cat("Missing-value pattern matrix:\n")
-print(pattern_mat)
-
-# Check for monotone pattern: missingness in var j implies missingness in var k
-# (i.e., columns of the pattern matrix are nested)
-is_monotone <- function(pat_mat) {
-  # Remove summary rows/cols; check if patterns are monotone
-  p <- pat_mat[-nrow(pat_mat), -ncol(pat_mat)]
-  all(apply(p, 1, function(x) all(diff(x) >= 0) | all(diff(x) <= 0)))
-}
-
-pattern_type <- if (is_monotone(pattern_mat)) "Monotone" else "Arbitrary (Non-monotone)"
-cat(sprintf("Pattern type: %s\n", pattern_type))
-
-# Overall mechanism summary
-cat("\n=== OVERALL RECOMMENDATION ===\n")
-# Overall recommendation mirroring xtmispanel's OVERALL RECOMMENDATION output
-mechanism <- case_when(
-  n_incomplete_vars < 2 ~ "Test 1 not computable; see Test 2 results",
-  p_val >= 0.05         ~ "MCAR (cannot reject H0)",
-  pseudo_r2 < 0.10      ~ "Possibly MAR",
-  TRUE                  ~ "Possibly MNAR"
-)
-cat(sprintf("\nOverall mechanism: %s\n", mechanism))
-cat(sprintf("Pattern type: %s\n", pattern_type))
-cat(sprintf("If MNAR: consider selection models or sensitivity analysis.\n"))
-cat(sprintf("If MAR / MNAR with non-monotone pattern: MICE recommended.\n"))
-
 # ----------------------------------------------------------------
-# 🔹 Module 5: Visualization — equivalent to: xtmispanel ..., graph
+# MODULE 5: Visualization — equivalent to: xtmispanel ..., graph
+# xtmis_heatmap: panel unit × time period missingness grid
+# xtmis_combined: dashboard with heatmap + bar charts
 # ----------------------------------------------------------------
+cat(". xtmispanel", paste(panel_vars, collapse=" "), ", graph\n\n")
 
-# --- xtmis_heatmap: panel unit × time period missingness heatmap ---
-# Equivalent to graph display xtmis_heatmap
+# Compute per-cell missingness for heatmap
+heatmap_data <- df_52 |>
+  rowwise() |>
+  mutate(pct_miss = mean(is.na(c_across(all_of(panel_vars)))) * 100) |>
+  ungroup() |>
+  mutate(state_fips = factor(state_fips))
 
-heatmap_data <- sheeo |>
-  select(state_fips, FY, any_of(vars_of_interest)) |>
-  pivot_longer(cols = -c(state_fips, FY),
-               names_to  = "variable",
-               values_to = "value") |>
-  group_by(state_fips, FY) |>
-  summarise(pct_missing = mean(is.na(value)) * 100, .groups = "drop")
-
-p_heatmap <- ggplot(heatmap_data,
-                    aes(x = factor(FY), y = factor(state_fips),
-                        fill = pct_missing)) +
-  geom_tile(color = "white", linewidth = 0.3) +
-  scale_fill_gradient(low = "steelblue", high = "tomato",
-                      name = "% Missing",
-                      limits = c(0, 100)) +
+# --- xtmis_heatmap ---
+fig_heat <- ggplot(heatmap_data, aes(x = factor(FY), y = state_fips,
+                                      fill = pct_miss)) +
+  geom_tile(colour = "grey90", linewidth = 0.2) +
+  scale_fill_gradient2(low = "white", mid = "steelblue", high = "firebrick",
+                       midpoint = 25, name = "% missing",
+                       limits = c(0, 100)) +
   labs(
-    title    = "Missingness Heatmap: SHEEO Panel",
-    subtitle = paste("Variables:", paste(vars_of_interest, collapse = ", ")),
+    title    = "xtmis_heatmap  — Missing Data: Panel Unit × Time Period",
+    subtitle = paste("Variables:", paste(panel_vars, collapse = ", ")),
     x        = "Fiscal Year",
-    y        = "State FIPS Code"
+    y        = "State FIPS"
   ) +
-  theme_minimal(base_size = 10) +
-  theme(axis.text.x  = element_text(angle = 45, hjust = 1, size = 7),
-        axis.text.y  = element_text(size = 6),
-        panel.grid   = element_blank())
+  theme_bw(base_size = 9) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 7),
+        axis.text.y = element_text(size = 6))
+save_fig(fig_heat, "xtmis_heatmap.png", height_px = 1100)
 
-print(p_heatmap)
-
-# --- Bar chart: missingness by variable ---
-p_barvar <- sheeo |>
-  select(all_of(vars_of_interest)) |>
-  miss_var_summary() |>
-  ggplot(aes(x = reorder(variable, pct_miss), y = pct_miss)) +
-  geom_col(fill = "steelblue", width = 0.6) +
+# --- xtmis_barvar: % missing per variable ---
+fig_barvar <- ggplot(
+  data.frame(variable   = panel_vars,
+             pct_missing = sapply(panel_vars, function(v)
+               mean(is.na(df_52[[v]])) * 100)),
+  aes(x = reorder(variable, pct_missing), y = pct_missing)) +
+  geom_col(fill = "steelblue", alpha = 0.8) +
   coord_flip() +
-  scale_y_continuous(labels = label_percent(scale = 1)) +
-  labs(title = "Missingness by Variable",
-       x = NULL, y = "% Missing") +
-  theme_minimal(base_size = 10)
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+  labs(title = "xtmis_barvar  — % Missing by Variable",
+       x = NULL, y = "Percent missing") +
+  theme_bw()
+save_fig(fig_barvar, "xtmis_barvar.png")
 
-# --- Bar chart: missingness by panel unit (top 15 states) ---
-# Use the first variable with missing values for the panel-unit bar chart
-pct_col_name <- paste0(vars_of_interest[1], "_pct_miss")
-
-p_barpanel <- miss_by_state |>
-  slice_max(.data[[pct_col_name]], n = 15) |>
-  ggplot(aes(x = reorder(factor(state_fips), .data[[pct_col_name]]),
-             y = .data[[pct_col_name]])) +
-  geom_col(fill = "tomato", width = 0.6) +
+# --- xtmis_barpanel: % missing per panel ---
+fig_barpanel <- panel_miss |>
+  slice_max(Pct, n = 20) |>
+  ggplot(aes(x = reorder(factor(state_fips), Pct), y = Pct)) +
+  geom_col(fill = "steelblue", alpha = 0.8) +
   coord_flip() +
-  scale_y_continuous(labels = label_percent(scale = 1)) +
-  labs(title = paste("Top 15 States:", vars_of_interest[1], "Missingness"),
-       x = "State FIPS", y = "% Missing") +
-  theme_minimal(base_size = 10)
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+  labs(title = "xtmis_barpanel  — % Missing by Panel Unit (top 20 states)",
+       x = "State FIPS", y = "Percent missing") +
+  theme_bw()
+save_fig(fig_barpanel, "xtmis_barpanel.png")
 
-# --- Bar chart: missingness by time period ---
-p_bartime <- miss_by_fy |>
-  ggplot(aes(x = FY, y = .data[[pct_col_name]])) +
-  geom_col(fill = "darkorange", width = 0.7) +
-  scale_y_continuous(labels = label_percent(scale = 1)) +
-  labs(title = paste(vars_of_interest[1], "Missingness by Fiscal Year"),
-       x = "Fiscal Year", y = "% Missing") +
-  theme_minimal(base_size = 10)
+# --- xtmis_bartime: % missing per fiscal year ---
+fig_bartime <- ggplot(time_miss, aes(x = FY, y = Pct)) +
+  geom_col(fill = "steelblue", alpha = 0.8) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+  labs(title = "xtmis_bartime  — % Missing by Fiscal Year",
+       x = "Fiscal Year", y = "Percent missing") +
+  theme_bw()
+save_fig(fig_bartime, "xtmis_bartime.png")
 
-# --- Combined dashboard (xtmis_combined equivalent) ---
-# patchwork assembles multiple ggplot panels into one figure
-p_combined <- (p_heatmap | (p_barvar / p_barpanel / p_bartime)) +
+# --- xtmis_combined: 2×2 dashboard ---
+library(patchwork)   # lightweight combination; install if needed
+if (!requireNamespace("patchwork", quietly = TRUE)) {
+  install.packages("patchwork")
+  library(patchwork)
+}
+fig_combined <- (fig_heat | fig_barvar) / (fig_barpanel | fig_bartime) +
   plot_annotation(
-    title    = "xtmispanel Dashboard — SHEEO Panel Missing Data Diagnostics",
-    subtitle = paste0(pdim(sheeo_panel)$n, " states × FY ",
-                      min(sheeo$FY), "\u2013", max(sheeo$FY),
-                      " | Variables: ", paste(vars_of_interest, collapse = ", "))
-  ) &
-  theme(plot.title    = element_text(size = 13, face = "bold"),
-        plot.subtitle = element_text(size = 10))
+    title    = "xtmis_combined  — Missing Data Diagnostic Dashboard",
+    subtitle = paste("Variables:", paste(panel_vars, collapse=", ")),
+    theme    = theme(plot.title = element_text(size = 12, face = "bold"))
+  )
+save_fig(fig_combined, "xtmis_combined.png", width_px = 1800, height_px = 1200)
 
-print(p_combined)
+cat("\nAll graphs saved to:", graphs_dir, "\n\n")
 
+# ================================================================
+# Best Practices Summary
+# ================================================================
 
-# ===============================================================================
-# END OF CHAPTER 5 CODE
-# ===============================================================================
-
-# KEY RECOMMENDATIONS FOR GETTING TO KNOW THY DATA IN R:
+# KEY RECOMMENDATIONS FOR GETTING TO KNOW THY DATA (R):
 #
 # 1. STORAGE TYPES AND MEMORY:
-#    - haven::read_dta() imports everything as double by default; use
-#      as.integer(), as.character() etc. to convert as needed
-#    - Use object.size() or lobstr::obj_size() to inspect memory footprint
-#    - R manages memory automatically; no equivalent to Stata's compress is
-#      required, but type conversion (double → integer) saves space on large files
+#    - Check column types with str() or glimpse()
+#    - Coerce to integer with as.integer() (equivalent to Stata's compress/recast)
+#    - Use haven::zap_labels() after read_dta() to strip Stata metadata
 #
-# 2. MISSING DATA CODING IN SECONDARY DATA:
-#    - Use attr(df$var, "labels") to inspect NCES value labels imported by haven
-#    - Use na_if(., -9) to replace a single code, or:
-#        mutate(across(where(is.numeric), ~ na_if(., -9)))
-#      to replace -9 with NA across all numeric columns at once
-#    - Check: table(df$var, useNA = "always") before and after recoding
+# 2. MISSING DATA CODING IN NCES DATA:
+#    - replace(x, x %in% c(-9,-8,-7,-4,-1), NA) replaces mvdecode _all, mv(-9=.)
+#    - Use codebook-equivalent: table(x, useNA="always")
 #
-# 3. MISSING DATA ANALYSIS TOOLS — CROSS-SECTIONAL / SURVEY DATA:
-#    - naniar::miss_var_summary()     → mdesc
-#    - mice::md.pattern()             → misstable patterns / misstable tree
-#    - VIM::aggr()                    → combined visual summary
-#    - naniar::gg_miss_upset()        → upset plot of missingness combinations
-#    - group_by() + summarise(is.na)  → bysort X1SESQ5 : missings table
-#    - Install: install.packages(c("naniar", "mice", "VIM"))
+# 3. MISSING DATA ANALYSIS — CROSS-SECTIONAL / SURVEY:
+#    - naniar::miss_var_summary()  → mdesc
+#    - naniar::miss_case_table()   → misstable tree
+#    - mice::md.pattern()          → misstable patterns
+#    - Grouped summaries with group_by() + summarise(is.na()) → bysort: missings table
 #
-# 4. MISSING DATA ANALYSIS TOOLS — PANEL DATA:
-#    - Grouped dplyr summaries        → xtmis (legacy)
-#    - xtmispanel has no CRAN equivalent as of early 2026; the detect /
-#      test / graph modules are replicated above using dplyr + naniar + ggplot2
-#    - plm::pdata.frame()             → xtset (declares panel structure)
-#    - plm::pdim()                    → xtdescribe / xtdes
+# 4. MISSING DATA ANALYSIS — PANEL:
+#    - xtmis equivalent: group_by(panel_id) + summarise(sum(is.na()))
+#    - xtmispanel detect/test/graph: replicated via custom summaries + ggplot2
 #
 # 5. MCAR TESTING:
-#    - naniar::mcar_test()            → mcartest (basic Little's MCAR)
-#    - glm(miss_var ~ covariates)     → mcartest ..., unequal / CDM variant
-#    - anova(null_model, full_model, test = "LRT") → LR chi-squared for CDM
-#    - p < 0.05 in mcar_test() → reject MCAR; consider MAR or MNAR
+#    - naniar::mcar_test()     → mcartest (equal variances)
+#    - glm(is.na(y) ~ covariates) → mcartest CDM variant
 #
-# 6. PANEL STRUCTURE BEST PRACTICES:
-#    - Always declare panel with pdata.frame(df, index = c("panelvar", "timevar"))
-#    - Use pdim() to check balance (equivalent to xtdescribe)
-#    - Panel operators in plm: lag(x, 1), diff(x, 1) (equivalent to L.x, D.x)
-#    - For state-level data, use FIPS codes from tigris::fips_codes for merges
+# 6. PANEL STRUCTURE:
+#    - plm::pdata.frame(df, index=c("id","time")) → xtset
+#    - Always coerce id and time to integer before pdata.frame()
 #
-# 7. DATA SOURCES IN THIS CHAPTER:
-#    - SHEEO SHEF data: https://shef.sheeo.org/data-downloads/
-#    - HSLS:09 public-use file: https://nces.ed.gov/datalab/onlinecodebook
-#    - All example datasets: https://github.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/
-#
-# 8. KEY R PACKAGES AND STATA EQUIVALENTS:
-#    - haven        → use / save (.dta files)
-#    - readxl       → import excel
-#    - dplyr        → keep / drop / gen / replace / bysort
-#    - naniar       → mdesc / missingplot / xtmispanel (detect + graph)
-#    - mice         → misstable patterns / mi (multiple imputation)
-#    - VIM          → misstable tree (visual)
-#    - plm          → xtset / xtdescribe / xtreg
-#    - tigris       → statastates
-#    - ggplot2      → twoway / graph export
-#    - patchwork    → graph combine
+# 7. VISUALISATION:
+#    - naniar::gg_miss_var()       → simple missingness bar chart
+#    - ggplot2 + geom_tile()       → xtmis_heatmap
+#    - patchwork for multi-panel layouts → xtmis_combined
 
-# ===============================================================================
-# CLOSE LOG
-# ===============================================================================
-cat("\nChapter 5 log closed:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
-sink(type = "message")   # close message sink first
-sink()                   # close output sink
-close(log_con)           # release file handle
+# ================================================================
+# Close log — equivalent to: log close
+# ================================================================
+cat("Chapter 5 R script completed:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n")
+sink()
+
+# ================================================================
+# END OF CHAPTER 5 R CODE
+# ================================================================
