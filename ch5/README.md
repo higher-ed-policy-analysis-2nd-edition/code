@@ -1,4 +1,3 @@
-```markdown
 # Chapter 5 — Getting to Know Thy Data
 
 **Book:** Higher Education Policy Analysis Using Quantitative Techniques (2nd Edition)  
@@ -7,7 +6,7 @@
 
 ## Overview
 
-This directory contains complete, reproducible code and supporting files for Chapter 5. The chapter teaches practical data‑preparation and data‑discovery skills used throughout the book: examining dataset structures, declaring panel data, exploring missingness patterns, and performing formal missing‑data diagnostics (including Little’s MCAR test and related diagnostics). Both Stata and R implementations are provided and validated for consistency.
+This directory contains complete, reproducible code and supporting files for Chapter 5. The chapter teaches practical data‑preparation and data‑discovery skills used throughout the book: examining dataset structures, declaring panel data, exploring missingness patterns, and performing formal missing‑data diagnostics (including Little's MCAR test and related diagnostics). Both Stata and R implementations are provided and validated for consistency.
 
 ## Repository Contents
 
@@ -30,6 +29,39 @@ All datasets are stored in the companion data repository and are downloaded auto
 Data URL root:
 `https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/`
 
+## Output Files
+
+### Graph Output Directory
+
+Both scripts save all plots to:
+
+```
+C:\Users\marvi\Dropbox\Book\2nd Edition\Chapter 5\Output\graphs
+```
+
+Plots from each platform are distinguished by a filename suffix to prevent overwrites when both scripts are run:
+
+| Figure | R filename (`_R` suffix) | Stata filename (`_Stata` suffix) |
+|--------|--------------------------|----------------------------------|
+| Panel missingness heatmap | `xtmis_heatmap_R.png` | `xtmis_heatmap_Stata.png` |
+| Bar chart: variable-level missingness | `xtmis_barvar_R.png` | `xtmis_barvar_Stata.png` |
+| Bar chart: panel-level missingness | `xtmis_barpanel_R.png` | `xtmis_barpanel_Stata.png` |
+| Bar chart: time-period missingness | `xtmis_bartime_R.png` | `xtmis_bartime_Stata.png` |
+| Combined missingness dashboard | `xtmis_combined_R.png` | `xtmis_combined_Stata.png` |
+| Missingness pattern plot | *(R: not produced)* | `xtmis_pattern_Stata.png` |
+| Timeline plot | *(R: not produced)* | `xtmis_timeline_Stata.png` |
+
+### Log Output Directory
+
+Both scripts write a plain-text log to:
+
+```
+C:\Users\marvi\Dropbox\Book\2nd Edition\Chapter 5\Output\logs\
+```
+
+- Stata: `Chapter5_Stata_output.log`
+- R: `Chapter5_R_output.log`
+
 ## Software Requirements
 
 ### Stata
@@ -38,7 +70,7 @@ Data URL root:
   - `statastates` — convenient for matching state names / IDs (used in the script)
   - `mdesc`, `misstable` — missing data summaries (usually included in base Stata; `mdesc` may be user-written)
   - `xtmis`, `tomata` — panel missingness diagnostics (install via `ssc install xtmis, replace` / `ssc install tomata, replace`)
-  - `mcartest` — Little’s MCAR test (install if needed; e.g., `cap net install st0318.pkg, replace` as directed in the do-file)
+  - `mcartest` — Little's MCAR test (install if needed; e.g., `cap net install st0318.pkg, replace` as directed in the do-file)
 
 The do-file includes inline comments describing where to install user-written packages if required.
 
@@ -76,16 +108,17 @@ cd code/ch5
    do Stata_code5.do
    ```
 
-The do-file downloads required datasets from the book's data repository, prepares variables, runs missingness summaries and patterns, and executes Little’s MCAR and related diagnostics.
+The do-file downloads required datasets from the book's data repository, prepares variables, runs missingness summaries and patterns, and executes Little's MCAR and related diagnostics. All plots are exported to the graphs output directory with `_Stata` suffixes.
 
 ### Run with R
-1. Open `R_code5.R` (or `R_code5.txt`) in R or RStudio.
-2. (Optional) Set `ch5data` at the top of the script if you wish to persist downloaded files locally.
-3. Source or run the script:
+1. Open `R_code5.R` (or `R_code5.txt`) in RStudio.
+2. Source or run the script:
    ```r
    source("R_code5.R")
    ```
-The R script installs missing packages (if needed), downloads the datasets, creates necessary variables and ids, computes missingness summaries, displays missingness patterns, and runs Little’s MCAR test (via `naniar::mcar_test()` with fallbacks to `BaylorEdPsych`/`MissMech` if available). It also includes a CDM-style logistic fallback (missingness ~ covariates) when formal MCAR functions are not present.
+The R script installs missing packages (if needed), downloads the datasets, creates necessary variables and ids, computes missingness summaries, displays missingness patterns, and runs Little's MCAR test (via `naniar::mcar_test()` with fallbacks to `BaylorEdPsych`/`MissMech` if available). It also includes a CDM-style logistic fallback (missingness ~ covariates) when formal MCAR functions are not present.
+
+All plots are displayed in the RStudio Plots pane as they are generated and saved to the graphs output directory with `_R` suffixes. Output paths are hardcoded — no path configuration is required.
 
 ## What the Code Does (High Level)
 
@@ -100,7 +133,7 @@ The R script installs missing packages (if needed), downloads the datasets, crea
 
 - Section 5.4 — Missing data diagnostics:
   - Unit-level panel missing summaries (Stata `xtmis`; R can reproduce via grouping/aggregation)
-  - Tests for Missing Completely at Random (Little’s MCAR):
+  - Tests for Missing Completely at Random (Little's MCAR):
     - Stata: `mcartest` (equal- and unequal-variance versions; CDM conditional test variant)
     - R: `naniar::mcar_test()` primary, with optional fallbacks to `BaylorEdPsych::LittleMCAR` or `MissMech` functions
   - When formal MCAR tests are unavailable, the R code runs CDM‑style logistic diagnostics (fit missingness indicators on covariates, report LR tests and a Fisher combination)
@@ -123,7 +156,7 @@ A dedicated comparison file (`Comparison of R and Stata Results.txt`) documents 
   - Dominant complete-case pattern (e.g., pattern `00000000` with 20,572 complete cases)
   - These counts and pattern frequencies match between Stata and R outputs.
 
-- Little’s MCAR test:
+- Little's MCAR test:
   - Stata: Chi-square ≈ 68.1557, df = 2, p < 0.0001 (reject MCAR)
   - R (`naniar::mcar_test`): statistic ≈ 68.2, df = 2, p ≈ 1.55e-15 (same conclusion)
   - CDM and unequal-variance variants produce highly significant results in both implementations.
@@ -139,16 +172,20 @@ Conclusion: The R translation reproduces Stata results with high precision. Mino
 - R package issues:
   - If automatic installation fails, install packages manually and restart R.
   - The R script checks for optional MCAR packages (`BaylorEdPsych`, `MissMech`) — these are not required but provide alternative implementations.
+- Plot saving (R): The R script saves plots via a temp-file copy approach to avoid Dropbox sync-lock conflicts. If a plot is not found in the output directory after running, check the temp path reported in the console for a fallback copy.
 - Differences to expect:
   - Output formatting differs across platforms (Stata tables vs R tibbles). Numbers match to displayed precision.
   - Some specialized CDM tests available in Stata may not have direct equivalents in base R packages; the R script provides diagnostic fallbacks (CDM‑style logistic models) to approximate the same checks.
+  - Stata's `xtmis` produces two additional graph types (`pattern`, `timeline`) that are not replicated in the R script; only the five shared graph types have `_R` counterparts.
 
 ## Reproducibility & Where to Look in the Code
 
 - `Stata_code5.do` contains inline comments and step-by-step commands for:
-  - Downloading data, recoding special missing values, summarizing missingness, and running Little’s MCAR and CDM diagnostics.
+  - Downloading data, recoding special missing values, summarizing missingness, and running Little's MCAR and CDM diagnostics.
+  - Exporting all `xtmis` graphs with `_Stata` filename suffixes via a `foreach` loop.
 - `R_code5.R` mirrors the Stata workflow and includes:
   - Helpers to recode -9 to NA, downcast numeric types, produce missingness patterns, run `naniar::mcar_test`, and fallback CDM logistic diagnostics.
+  - A `save_fig()` helper that prints each plot to the RStudio Plots pane and saves it to the output directory using a temp-file copy strategy.
 
 ## Citation
 
@@ -169,5 +206,4 @@ Code is provided for educational and research purposes. See the repository licen
 
 ## Last Updated
 
-November 16, 2025
-```
+March 29, 2026
