@@ -36,19 +36,10 @@ library(patchwork) # plot composition    — side-by-side panels
 # Paths switch automatically by username, mirroring the Stata logic.
 # ================================================================
 
-user <- Sys.info()[["user"]]
-
-if (user == "marvi") {
-  graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output/graphs"
-  log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output/logs/Chapter6_R_output.log"
-  dir.create(dirname(log_path),   showWarnings = FALSE, recursive = TRUE)
-  dir.create(graphs_dir,          showWarnings = FALSE, recursive = TRUE)
-} else {
-  graphs_dir <- "Output/graphs"
-  log_path   <- "Output/logs/Chapter6_R_output.log"
-  dir.create("Output/logs",   showWarnings = FALSE, recursive = TRUE)
-  dir.create("Output/graphs", showWarnings = FALSE, recursive = TRUE)
-}
+graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output/graphs"
+log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output/logs/Chapter6_R_output.log"
+dir.create(graphs_dir,        showWarnings = FALSE, recursive = TRUE)
+dir.create(dirname(log_path), showWarnings = FALSE, recursive = TRUE)
 
 # Open log — sink() captures all console output to a text file
 # Equivalent to: log using "...", replace text
@@ -58,12 +49,29 @@ cat("Graphs directory:", graphs_dir, "\n\n")
 
 # Helper: save ggplot to graphs_dir at 1200px wide (matches Stata width(1200))
 save_fig <- function(plot, filename, width_px = 1200, height_px = 900, dpi = 150) {
-  filepath <- file.path(graphs_dir, filename)
-  ggsave(filepath, plot = plot,
-         width  = width_px  / dpi,
-         height = height_px / dpi,
-         dpi    = dpi)
-  cat("file", filepath, "saved as PNG format\n")
+  final_path <- file.path(graphs_dir, filename)
+  dir.create(graphs_dir, showWarnings = FALSE, recursive = TRUE)
+
+  # 1. Print to RStudio Plots pane (screen device)
+  print(plot)
+
+  # 2. Save to local temp file first — avoids Dropbox file-lock blocking overwrite
+  tmp_path <- file.path(tempdir(), filename)
+  ggplot2::ggsave(filename = tmp_path,
+                  plot     = plot,
+                  width    = width_px / dpi,
+                  height   = height_px / dpi,
+                  dpi      = dpi,
+                  device   = "png")
+
+  # 3. Copy from temp to Dropbox destination, overwriting any locked file
+  ok <- file.copy(from = tmp_path, to = final_path, overwrite = TRUE)
+  if (ok) {
+    cat("file", final_path, "saved as PNG format\n")
+  } else {
+    cat("WARNING: temp file created but copy to Dropbox failed:", final_path, "\n")
+    cat("  Temp file available at:", tmp_path, "\n")
+  }
 }
 
 # ================================================================
@@ -456,7 +464,7 @@ fig6_8 <- ggplot(df_graphs, aes(x = stapr_fte)) +
        x = "State Appropriations per FTE Student ($)",
        y = "Density") +
   theme_bw()
-save_fig(fig6_8, "fig6_8_histogram_stapr_fte.png")
+save_fig(fig6_8, "fig6_8_histogram_stapr_fte_R.png")
 
 # --- Fig. 6.9: Box Chart of State Appropriations per FTE Student ---
 # Equivalent to: graph box stapr_fte
@@ -468,7 +476,7 @@ fig6_9 <- ggplot(df_graphs, aes(y = stapr_fte)) +
        y = "State Appropriations per FTE Student ($)") +
   theme_bw() +
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
-save_fig(fig6_9, "fig6_9_box_stapr_fte.png")
+save_fig(fig6_9, "fig6_9_box_stapr_fte_R.png")
 
 # --- Fig. 6.10: Histogram of Membership in Regional Compacts ---
 # Equivalent to: histogram region_compact, discrete addlabels ylabel(,grid) percent
@@ -489,7 +497,7 @@ fig6_10 <- ggplot(rc_pct, aes(x = region_compact, y = pct,
        y = "Percent") +
   theme_bw() +
   theme(panel.grid.major.x = element_blank())
-save_fig(fig6_10, "fig6_10_histogram_region_compact.png")
+save_fig(fig6_10, "fig6_10_histogram_region_compact_R.png")
 
 # --- Fig. 6.11: State Appropriations per FTE Student by Regional Compact ---
 # Equivalent to: histogram stapr_fte, by(region_compact)
@@ -501,7 +509,7 @@ fig6_11 <- ggplot(df_graphs, aes(x = stapr_fte)) +
        x = "State Appropriations per FTE Student ($)",
        y = "Frequency") +
   theme_bw()
-save_fig(fig6_11, "fig6_11_histogram_stapr_fte_by_region.png")
+save_fig(fig6_11, "fig6_11_histogram_stapr_fte_by_region_R.png")
 
 # --- Fig. 6.12: Box Chart of State Appropriations per FTE by Regional Compact ---
 # Equivalent to: graph box stapr_fte, by(region_compact)
@@ -516,7 +524,7 @@ fig6_12 <- ggplot(df_graphs, aes(x = region_compact, y = stapr_fte,
   theme(legend.position = "none",
         axis.text.x     = element_blank(),
         axis.ticks.x    = element_blank())
-save_fig(fig6_12, "fig6_12_box_stapr_fte_by_region.png")
+save_fig(fig6_12, "fig6_12_box_stapr_fte_by_region_R.png")
 
 # Data subset for 2016 scatter plots
 df_2016 <- df_graphs |> filter(year == 2016)
@@ -530,7 +538,7 @@ fig6_13 <- ggplot(df_2016, aes(x = netuit_fte, y = stapr_fte)) +
        x = "Net Tuition Revenue per FTE Student ($)",
        y = "State Appropriations per FTE Student ($)") +
   theme_bw()
-save_fig(fig6_13, "fig6_13_scatter_2016.png")
+save_fig(fig6_13, "fig6_13_scatter_2016_R.png")
 
 # --- Fig. 6.14: Scatter Plot with Fitted Regression Line (Method 1) ---
 # Equivalent to: twoway (scatter) (lfit) if year==2016
@@ -542,7 +550,7 @@ fig6_14 <- ggplot(df_2016, aes(x = netuit_fte, y = stapr_fte)) +
        x = "Net Tuition Revenue per FTE Student ($)",
        y = "State Appropriations per FTE Student ($)") +
   theme_bw()
-save_fig(fig6_14, "fig6_14_scatter_fitted_2016.png")
+save_fig(fig6_14, "fig6_14_scatter_fitted_2016_R.png")
 
 # --- Fig. 6.15: Scatter Plot with Fitted Line and State Labels (Method 2) ---
 # Equivalent to: twoway scatter, mlabel(state) || lfit if year==2016
@@ -555,7 +563,7 @@ fig6_15 <- ggplot(df_2016, aes(x = netuit_fte, y = stapr_fte, label = state)) +
        x = "Net Tuition Revenue per FTE Student ($)",
        y = "State Appropriations per FTE Student ($)") +
   theme_bw()
-save_fig(fig6_15, "fig6_15_scatter_labels_2016.png")
+save_fig(fig6_15, "fig6_15_scatter_labels_2016_R.png")
 
 # --- Fig. 6.16 & 6.17: aaplot equivalent — scatter with regression line,
 #     annotations (R², intercept, slope), mimicking Stata's aaplot output ---
@@ -589,10 +597,10 @@ aaplot_r <- function(data, year_val, fig_num, file_name) {
 }
 
 cat("* --- Fig. 6.16: aaplot equivalent, FY 1990 ---\n")
-aaplot_r(df_graphs, 1990, 16, "fig6_16_aaplot_1990.png")
+aaplot_r(df_graphs, 1990, 16, "fig6_16_aaplot_1990_R.png")
 
 cat("* --- Fig. 6.17: aaplot equivalent, FY 2016 ---\n")
-aaplot_r(df_graphs, 2016, 17, "fig6_17_aaplot_2016.png")
+aaplot_r(df_graphs, 2016, 17, "fig6_17_aaplot_2016_R.png")
 
 cat("\nAll graphs saved to:", graphs_dir, "\n")
 
