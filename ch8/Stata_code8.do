@@ -11,14 +11,44 @@
 
 * Script tested in Stata 19.5
 * Compatible with Stata version 19 or later
-*================================================================
-* IMPORTANT: Set working directory (customize this for your system)
-*================================================================
 
-/* Use a global path to make it easy to update in one place
-global ch8data "C:/Users/YourName/Documents/book-materials/ch8/data"
-cd "$ch8data"
-*/
+*========================================================================
+* IMPORTANT: Set working directory (customize this for your system)
+*========================================================================
+
+* Use a global path to make it easy to update in one place
+* global ch8data "C:/Users/YourName/Documents/book-materials/ch8/data"
+* cd "$ch8data"
+
+*========================================================================
+* OUTPUT DIRECTORIES AND LOG FILE
+* Paths switch automatically based on the OS username (c(username)).
+* The instructor's personal paths are used when username == "marvi";
+* all other users get the generic relative paths.
+*========================================================================
+
+* Close any stale log silently, then open a fresh one
+capture log close
+
+if c(username) == "marvi" {
+    global graphs_dir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 8/Output/graphs"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 8/Output"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 8/Output/graphs"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 8/Output/logs"
+    log using ///
+        "C:\\Users\\marvi\\Dropbox\\Book\\2nd Edition\\Chapter 8\\Output\\logs\\Chapter8_Stata_output.log", ///
+        replace text
+}
+else {
+    global graphs_dir "Output/graphs"
+    capture mkdir "Output"
+    capture mkdir "Output/graphs"
+    capture mkdir "Output/logs"
+    log using "Output/logs/Chapter8_Stata_output.log", replace text
+}
+
+di "Chapter 8 log opened: " c(current_date) " " c(current_time)
+di "Graphs directory: $graphs_dir"
 *================================================================
 * Section 8.2: Time Series Data and Autocorrelation
 *================================================================
@@ -50,6 +80,7 @@ twoway (line lnenpub2yr year, lcolor(black) lpattern(solid)) ///
 	(line lnunemprate year, lcolor(black) lpattern(dot)), ///
 	xlabel(1970 (6) 2017, labsize(small)) ytitle(Logs) ///
 	title("Trends in Enrollment in 2 YR, Tuition at 2 YR, and Unemployment Rates" "1970 to 2017", size(medium))
+graph export "$graphs_dir/fig8_1_ts_levels_Stata.png", replace width(1200)
 
 * DF-GLS unit root tests for stationarity
 dfgls lnenpub2yr
@@ -62,6 +93,7 @@ twoway (line D1.lnenpub2yr year, lcolor(black) lpattern(solid)) ///
 	(line D1.lnunemprate year, lcolor(black) lpattern(dot)), ///
 	xlabel(1971 (5) 2017, labsize(small)) ytitle(Change in Logs) ///
 	title("First-Differenced Enrollment in 2 YR, Tuition at 2 YR, and Unemployment Rates" "1971 to 2017", size(small))
+graph export "$graphs_dir/fig8_2_ts_firstdiff_Stata.png", replace width(1200)
 
 * Regression with first-differenced variables
 reg D1.lnenpub2yr D1.lntupub2yr D1.lnunemprate
@@ -69,9 +101,11 @@ reg D1.lnenpub2yr D1.lntupub2yr D1.lnunemprate
 * Autocorrelation function (correlogram) of residuals
 predict residuals, resid
 ac residuals
+graph export "$graphs_dir/fig8_3_ac_residuals_Stata.png", replace width(1200)
 
 * Partial autocorrelation function
 pac residuals, yw
+graph export "$graphs_dir/fig8_4_pac_residuals_Stata.png", replace width(1200)
 
 *================================================================
 * Section 8.3: Testing for Autocorrelations
@@ -100,9 +134,11 @@ predict residuals_PW, resid
 
 * Autocorrelation function of P-W residuals
 ac residuals_PW
+graph export "$graphs_dir/fig8_5_ac_residuals_PW_Stata.png", replace width(1200)
 
 * Partial autocorrelation function of P-W residuals
 pac residuals_PW, yw
+graph export "$graphs_dir/fig8_6_pac_residuals_PW_Stata.png", replace width(1200)
 
 * Install and run Cumby-Huizinga test (if not already installed)
 * ssc install actest, replace
@@ -152,7 +188,7 @@ xtpurt lnpc_income
 * include first-differenced variables in our final regression fixed- or 
 * random-effects model with an AR1 disturbance term
 
-. qui xtregar D1.lnnetuit D1.lnstapr D1.lnfte D1.lnpc_income, re
+qui xtregar D1.lnnetuit D1.lnstapr D1.lnfte D1.lnpc_income, re
 /* However, we conduct a test to see if there is any remaining autocorrelation 
    in the residuals. We do this by using the Cumby-Huizinga (C-H) general test
    for autocorrelation. First, we generate residuals from the model. */
@@ -273,6 +309,9 @@ predict xtscc_residuals_fe2y, resid
 xtcdf xtscc_residuals_fe2y
 
 clear all
+
+* Close log
+capture log close
 
 exit
 
