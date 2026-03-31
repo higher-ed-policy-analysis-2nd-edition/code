@@ -9,13 +9,44 @@
 *=======================================================
 * Script tested in Stata 19.5
 * Compatible with Stata version 19 or later
-*=======================================================
-* IMPORTANT: Set working directory (customize this for 8 * your system)
-*=======================================================
-/* Use a global path to make it easy to update in one place
-global ch9data "C:/Users/YourName/Documents/book-materials/ch9/data"
-cd "$ch9data"
-*/
+
+*========================================================================
+* IMPORTANT: Set working directory (customize this for your system)
+*========================================================================
+
+* Use a global path to make it easy to update in one place
+* global ch9data "C:/Users/YourName/Documents/book-materials/ch9/data"
+* cd "$ch9data"
+
+*========================================================================
+* OUTPUT DIRECTORIES AND LOG FILE
+* Paths switch automatically based on the OS username (c(username)).
+* The instructor's personal paths are used when username == "marvi";
+* all other users get the generic relative paths.
+*========================================================================
+
+* Close any stale log silently, then open a fresh one
+capture log close
+
+if c(username) == "marvi" {
+    global graphs_dir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 9/Output/graphs"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 9/Output"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 9/Output/graphs"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 9/Output/logs"
+    log using ///
+        "C:\\Users\\marvi\\Dropbox\\Book\\2nd Edition\\Chapter 9\\Output\\logs\\Chapter9_Stata_output.log", ///
+        replace text
+}
+else {
+    global graphs_dir "Output/graphs"
+    capture mkdir "Output"
+    capture mkdir "Output/graphs"
+    capture mkdir "Output/logs"
+    log using "Output/logs/Chapter9_Stata_output.log", replace text
+}
+
+di "Chapter 9 log opened: " c(current_date) " " c(current_time)
+di "Graphs directory: $graphs_dir"
 *=======================================================
 * Heterogeneous Coefficient Regression with DCCE and MG
 * Estimators Using Macro Panel Data
@@ -55,19 +86,14 @@ twoway (line lny1 FY), by(state) ///
    xlabel(1980 (12) 2024,labsize(small)) ///
    ytitle(Log of State Appropriations) ///
    xtitle(Fiscal Year)
+graph export "$graphs_dir/fig9_1_lny1_by_state_Stata.png", replace width(1200)
 *=======================================================
 * Create Figure 9.2: Trends in Log of Per Capita Income * by State
 *=======================================================
 twoway (line lnx3 FY), by(state) ///
   xlabel(1980 (12) 2024, labsize(small)) ///
   ytitle(Log of Per Capita Income) xtitle(Fiscal Year)
-
-*=======================================================
-* Section 9.3.2: Tests for Nonstationary Data
-*=======================================================
-* OLS regression with state fixed effects referred to in the text
-xtreg lny1 lnx1 lnx2 lnx3, fe 
-* 
+graph export "$graphs_dir/fig9_2_lnx3_by_state_Stata.png", replace width(1200)
 *=======================================================
 * Section 9.6.2: Tests for Nonstationary Data
 *=======================================================
@@ -98,6 +124,7 @@ xtpurt lnx2, test(hmw) trend
 xtpurt lnx3, test(hmw) trend
 
 * xtpurt with all test options with first-differences (d)
+
 * create first-differences
 gen dlny1 = D.lny1
 gen dlnx1 = D.lnx1
@@ -128,9 +155,9 @@ xtcointtest pedroni lny1 lnx1 lnx2 lnx3, demean
 xtcointtest westerlund lny1 lnx1 lnx2 lnx3
 xtcointtest westerlund lny1 lnx1 lnx2 lnx3, demean
 
-/* ECM-based cointegration test (xtwest), developed by Westerlund 2007), that is
-   robust to structural breaks in the intercept and slope of the cointegrated
-   regression, serial correlation, and heteroscedasticity. 
+/* ECM-based cointegration test, developed by Westerlund 2007), that is robust
+   to structural breaks in the intercept and slope of the cointegrated
+   regression, serial correlation, and heteroscedasticity.
 */
 xtwest lny1 lnx1 lnx2 lnx3, constant lags(0 3)
 
@@ -194,26 +221,29 @@ xtdcce2 D1.lny1 L1.D1.lny1 L1.D1.lnx1 L1.D1.lnx2 ///
 */
 xtdcce2 D1.lny1 L1.D1.lny1 L1.D1.lnx1 L1.D1.lnx2 ///
    L1.D1.lnx3, reportc cr(_all) cr_lags(1 3 3 3) ///
-   lr(L1.lny1 lnx1 lnx2 lnx3) lr_options(ardl) ///
+   lr(L1.lny1 lnx1 lnx2 lnx3) lr_options(ardl)///
    exponent showin
-  
-*========================================================
+
+/*  
+========================================================
 * Additional Analysis Options
-*========================================================
+========================================================
 
 /* Alternative specifications with different cross-sectional lags 2 cross-sectional lags
 xtdcce2 D1.lny1 L1.D1.lny1 L1.D1.lnx1 L1.D1.lnx2 ///
    L1.D1.lnx3, reportc cr(_all) cr_lags(2 2 2 2) ///
    lr(L1.lny1 lnx1 lnx2 lnx3) lr_options(ardl)
 
-* 4 cross-sectional lags 
-
+4 cross-sectional lags
 xtdcce2 D1.lny1 L1.D1.lny1 L1.D1.lnx1 L1.D1.lnx2 ///
-   L1.D1.lnx3, reportc cr(_all) cr_lags(4 4 4 4) ///
-   lr(L1.lny1 lnx1 lnx2 lnx3) lr_options(ardl) 
+   L1.D1.lnx3, reportc cr(_all) cr_lags(4 4 4 4)///
+   lr(L1.lny1 lnx1 lnx2 lnx3) lr_options(ardl)
 */
     
 clear all
+
+* Close log
+capture log close
 
 exit
 
