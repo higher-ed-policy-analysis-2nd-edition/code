@@ -44,13 +44,38 @@
 * education finance literature. Claude assisted in translating specifications
 * to executable code. The author reviewed, tested, and validated all code.
 ********************************************************************************
-* IMPORTANT: Set working directory (customize this for
-* your system)
-*=======================================================
-/* Use a global path to make it easy to update in one place
-global ch10data "C:/Users/YourName/Documents/book-materials/ch10/data"
-cd "$ch10data"
-*/
+*========================================================================
+* IMPORTANT: Set working directory (customize this for your system)
+*========================================================================
+
+* Use a global path to make it easy to update in one place
+* global ch10data "C:/Users/YourName/Documents/book-materials/ch10/data"
+* cd "$ch10data"
+
+*========================================================================
+* OUTPUT DIRECTORIES AND LOG FILE
+* Paths switch automatically based on the OS username (c(username)).
+* The instructor's personal paths are used when username == "marvi";
+* all other users get the generic relative paths.
+*========================================================================
+
+* Close any stale log silently, then open a fresh one
+capture log close
+
+if c(username) == "marvi" {
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output"
+    capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output/logs"
+    log using ///
+        "C:\\Users\\marvi\\Dropbox\\Book\\2nd Edition\\Chapter 10\\Output\\logs\\SyntheticBB_generation.log", ///
+        replace text
+}
+else {
+    capture mkdir "Output"
+    capture mkdir "Output/logs"
+    log using "Output/logs/SyntheticBB_generation.log", replace text
+}
+
+di "Synthetic B&B generation log opened: " c(current_date) " " c(current_time)
 
 clear all
 set more off
@@ -527,15 +552,19 @@ order id female white black hispanic asian other_race age_ba ///
       te_field_return ///
       ln_salary_0 te_masters ln_salary_1 ln_salary salary
 
-/* Compress and save
+* Compress and save
 compress
 save "Example_7_5_3.dta", replace
 
 di _n "=============================================="
 di "Dataset saved: Example_7_5_3.dta"
 di "=============================================="
-*/
 
 ********************************************************************************
 * END OF DATA GENERATION
 ********************************************************************************
+
+* Close log
+capture log close
+
+exit
