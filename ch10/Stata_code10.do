@@ -64,6 +64,7 @@ clear all
 set more off
 version 19
 set seed 20251130
+set scheme s2mono        // Monochrome scheme for Springer B&W print
 
 *========================================================================
 *========================================================================
@@ -183,10 +184,10 @@ xtreg lngenop did_placebo $controls i.fy if fy < 2018, ///
 preserve
 collapse (mean) lngenop, by(treat_state fy)
 twoway (connected lngenop fy if treat_state == 0, ///
-          lpattern(dash) mcolor(navy) lcolor(navy)) ///
+          lpattern(dash) lcolor(gs8) mcolor(gs8) msymbol(Oh)) ///
        (connected lngenop fy if treat_state == 1, ///
-          mcolor(maroon) lcolor(maroon)), ///
-  xline(2018, lpattern(dot)) ///
+          lpattern(solid) lcolor(gs0) mcolor(gs0) msymbol(O)), ///
+  xline(2018, lpattern(dot) lcolor(gs6)) ///
   legend(label(1 "Control States") label(2 "Georgia")) ///
   ytitle("Log Operating Expenses") xtitle("Fiscal Year") ///
   title("Parallel Trends: Treatment vs Control") ///
@@ -279,12 +280,21 @@ synth lngenop lngenop(2005) lngenop(2010) lngenop(2015) ///
   lntotsup(2005(1)2017) lnfinaid(2005(1)2017) ///
   lntuifee(2005(1)2017) lnfte(2005(1)2017), ///
   trunit(13) trperiod(2018) nested ///
-  fig keep(synth_output) replace
-graph export "$graphs_dir/fig10_2_synth_control_Stata.png", replace width(1200)
+  keep(synth_output) replace          // fig suppressed; graph reconstructed below
 
 * Calculate treatment effect
 use synth_output, clear
 gen synth_gap = _Y_treated - _Y_synthetic
+
+* Reconstruct SCM figure in B&W
+twoway (line _Y_treated   _time, lcolor(gs0) lwidth(medthick) lpattern(solid)) ///
+       (line _Y_synthetic _time, lcolor(gs8) lwidth(medthick) lpattern(dash)),  ///
+  xline(2018, lpattern(dot) lcolor(gs6)) ///
+  legend(label(1 "Georgia") label(2 "Synthetic Georgia")) ///
+  ytitle("Log Operating Expenses") xtitle("Fiscal Year") ///
+  title("Synthetic Control: Georgia vs. Synthetic Georgia") ///
+  name(fig10_2_synth_control, replace)
+graph export "$graphs_dir/fig10_2_synth_control_Stata.png", replace width(1200)
 
 * Post-treatment average effect
 summarize synth_gap if _time >= 2018
@@ -339,7 +349,9 @@ reghdfe lngenop event_1-event_17 $controls, ///
 
 * Plot event study coefficients
 coefplot, keep(event_*) vertical ///
-  yline(0) xlabel(, angle(45)) ///
+  yline(0, lpattern(dash) lcolor(gs8)) xlabel(, angle(45)) ///
+  mcolor(gs0) msymbol(O) lcolor(gs0) ///
+  ciopts(lcolor(gs6)) ///
   ytitle("Effect on Log Operating Expenses") ///
   xtitle("Years Relative to Treatment") ///
   name(fig10_3_event_study, replace)
@@ -419,6 +431,7 @@ estat group
 
 * Event study
 estat event
+* Note: csdid_plot does not accept lcolor(); styling is handled by set scheme s2mono
 csdid_plot, style(rcap)
 graph export "$graphs_dir/fig10_4_csdid_event_Stata.png", replace width(1200)
 
@@ -453,6 +466,8 @@ permute did coef=_b[did], reps(1000) ///
 use perm_results, clear
 summarize coef
 histogram coef, normal ///
+  fcolor(gs10) lcolor(gs0) ///
+  normopts(lcolor(gs0) lwidth(medthick) lpattern(solid)) ///
   name(fig10_5_permutation_hist, replace)
 graph export "$graphs_dir/fig10_5_permutation_hist_Stata.png", replace width(1200)
 
@@ -574,13 +589,33 @@ di _n "=============================================="
 di "LOADING SYNTHETIC B&B DATASET"
 di "=============================================="
 
-* FIX F (v14): try updated dataset first; fall back to base dataset.
-* The updated file contains pre-generated ma_* variables.  The base file
-* does not; Section 1b will generate them automatically when the updated
-* file is unavailable.
+* Download Part B dataset from GitHub repository.
+* Try the updated file (contains pre-generated ma_* variables) first;
+* fall back to the base file if the updated version is unavailable.
+* If neither is found locally, attempt to download from the repository.
+capture confirm file "Example_7_5_3_updated.dta"
+if _rc != 0 {
+    di as text "Attempting to download Example_7_5_3_updated.dta from GitHub..."
+    capture copy ///
+        "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch10/Example_7_5_3_updated.dta" ///
+        "Example_7_5_3_updated.dta", replace
+    if _rc != 0 di as text "Download failed — will try local file or base version."
+}
+
 capture use "Example_7_5_3_updated.dta", clear
 if _rc != 0 {
     di as text "Note: Example_7_5_3_updated.dta not found."
+    di as text "Attempting to download Example_7_5_3.dta from GitHub (ch7 repository)..."
+    capture copy ///
+        "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch7/Example_7_5_3.dta" ///
+        "Example_7_5_3.dta", replace
+    if _rc != 0 {
+        di as error "ERROR: Download of Example_7_5_3.dta failed."
+        di as error "Please download the file manually from:"
+        di as error "https://github.com/higher-ed-policy-analysis-2nd-edition/data/blob/main/ch7/Example_7_5_3.dta"
+        di as error "and place it in the working directory before running Part B."
+        exit 601
+    }
     di as text "Loading Example_7_5_3.dta; ma_* will be generated in Section 1b."
     use "Example_7_5_3.dta", clear
 }
@@ -643,6 +678,7 @@ if _rc != 0 {
 
     * Seeded draw — one random value per treated observation
     set seed 20251130
+set scheme s2mono        // Monochrome scheme for Springer B&W print
     gen _rma = runiform() if masters == 1
     replace _rma = . if masters == 0
 
@@ -1420,12 +1456,13 @@ preserve
     gen mte_est = `b0' + `b1'*u + `b2'*u^2 + `b3'*u^3
     label var u "Unobserved Resistance to Treatment"
     label var mte_est "Marginal Treatment Effect"
-    twoway (line mte_est u, lcolor(navy) lwidth(medthick)), ///
+    twoway (line mte_est u, lcolor(gs0) lwidth(medthick) lpattern(solid)), ///
            ytitle("Marginal Treatment Effect") ///
            xtitle("u (Unobserved Resistance to Treatment)") ///
            title("Estimated MTE Curve - Pooled") ///
            subtitle("Master's Degree Effect on Log Salary") ///
            note("Declining MTE indicates positive selection on gains") ///
+           yline(0, lpattern(dash) lcolor(gs8)) ///
            name(mte_curve, replace)
     graph save "$graphs_dir/mte_curve.gph", replace
     graph export "$graphs_dir/fig10_6_mte_curve_Stata.png", replace width(1200)
@@ -1438,12 +1475,13 @@ preserve
     collapse (mean) mte_mean=mte_hat (sd) mte_sd=mte_hat (count) n=id, by(p_decile)
     di _n "Estimated MTE by Propensity Score Decile:"
     list p_decile mte_mean mte_sd n
-    twoway (scatter mte_mean p_decile, msize(large) mcolor(navy)) ///
-           (line mte_mean p_decile, lcolor(navy) lwidth(medium)), ///
+    twoway (scatter mte_mean p_decile, msize(large) mcolor(gs0) msymbol(D)) ///
+           (line mte_mean p_decile, lcolor(gs0) lwidth(medium) lpattern(solid)), ///
            ytitle("Mean Estimated MTE") ///
            xtitle("Propensity Score Decile") ///
            title("Estimated MTE by Propensity Score Decile") ///
            subtitle("Evidence of Treatment Effect Heterogeneity") ///
+           yline(0, lpattern(dash) lcolor(gs8)) ///
            name(mte_by_decile, replace)
     graph save "$graphs_dir/mte_by_decile.gph", replace
     graph export "$graphs_dir/fig10_7_mte_by_decile_Stata.png", replace width(1200)
@@ -1460,15 +1498,16 @@ preserve
     gen mte_educ     = `c0_education'  + `c1_education' *u + `c2_education' *u^2 + `c3_education' *u^3
     gen mte_health   = `c0_health'     + `c1_health'    *u + `c2_health'    *u^2 + `c3_health'    *u^3
 
-    twoway (line mte_health   u, lcolor(cranberry) lwidth(medthick)) ///
-           (line mte_stem     u, lcolor(navy)      lwidth(medthick)) ///
-           (line mte_business u, lcolor(dkgreen)   lwidth(medthick)) ///
-           (line mte_educ     u, lcolor(orange)    lwidth(medthick)) ///
-           (line mte_other    u, lcolor(gray)      lwidth(medthick) lpattern(dash)), ///
+    twoway (line mte_health   u, lcolor(gs0) lwidth(medthick) lpattern(solid))     ///
+           (line mte_stem     u, lcolor(gs0) lwidth(medthick) lpattern(dash))       ///
+           (line mte_business u, lcolor(gs0) lwidth(medthick) lpattern(longdash))   ///
+           (line mte_educ     u, lcolor(gs8) lwidth(medthick) lpattern(solid))      ///
+           (line mte_other    u, lcolor(gs8) lwidth(medthick) lpattern(dash)),      ///
         ytitle("Marginal Treatment Effect") ///
         xtitle("u (Unobserved Resistance to Treatment)") ///
         title("MTE Curves by Graduate Program Area") ///
         subtitle("Field-specific returns to master's degree") ///
+        yline(0, lpattern(shortdash) lcolor(gs10)) ///
         legend(order(1 "Health & Related" 2 "STEM" 3 "Business" ///
                      4 "Education" 5 "Other (base)") ///
                cols(3) size(small)) ///
@@ -1658,10 +1697,11 @@ preserve
     gen p_margin     = `p_baseline' + ga_increase * 0.015
     gen mprte_approx = `b0' + `b1'*p_margin + `b2'*p_margin^2 + `b3'*p_margin^3
     list ga_increase p_margin mprte_approx
-    twoway (line mprte_approx ga_increase, lcolor(navy) lwidth(medthick)), ///
+    twoway (line mprte_approx ga_increase, lcolor(gs0) lwidth(medthick) lpattern(solid)), ///
         ytitle("MPRTE") xtitle("GA Funding Increase ($1000s)") ///
         title("MPRTE by Policy Intensity") ///
         subtitle("Marginal returns to GA funding expansion") ///
+        yline(0, lpattern(dash) lcolor(gs8)) ///
         name(mprte_intensity, replace)
     graph save "$graphs_dir/mprte_by_intensity.gph", replace
     graph export "$graphs_dir/fig10_9_mprte_by_intensity_Stata.png", replace width(1200)
@@ -1706,38 +1746,55 @@ di "  Health & Related pipeline:  " %6.4f `mprte_ma_hlth'
 * SECTION 13: MPRTE VISUALIZATION
 ********************************************************************************
 
-preserve
-    clear
-    set obs 100
-    gen u = _n/100
-    gen mte = `b0' + `b1'*u + `b2'*u^2 + `b3'*u^3
-    gen region_lowinc  = (u >= 0.10 & u <= 0.25)
-    gen region_uniform = (u >= 0.25 & u <= 0.40)
-    twoway (area mte u if region_lowinc,  color(cranberry%30)) ///
-           (area mte u if region_uniform, color(navy%30))      ///
-           (line mte u, lcolor(navy) lwidth(medthick)),         ///
-        ytitle("Marginal Treatment Effect") ///
-        xtitle("u (Unobserved Resistance to Treatment)") ///
-        title("MTE Curve with Policy-Relevant Regions") ///
-        legend(order(3 "Estimated MTE" 1 "Low-income margin" ///
-                     2 "Uniform policy margin") cols(2) size(small)) ///
-        name(mte_policy_regions, replace)
-    graph save "$graphs_dir/mte_policy_regions.gph", replace
-    graph export "$graphs_dir/fig10_10_mte_policy_regions_Stata.png", replace width(1200)
-restore
+* Fig 10.10: MTE Curve with Policy-Relevant Regions
+* Build a 100-point grid in a tempfile to avoid preserve/clear issues
+* that cause twoway rarea + line to fail silently in batch mode.
+tempfile mte_grid
+tempname mte_mem
+
+* Save current dataset, build grid, plot, reload
+qui save `mte_mem', replace emptyok
+
+clear
+set obs 100
+gen u         = _n / 100
+gen mte       = `b0' + `b1'*u + `b2'*u^2 + `b3'*u^3
+gen region_lo = (u >= 0.10 & u <= 0.25)
+gen region_un = (u >= 0.25 & u <= 0.40)
+gen zero_line = 0
+qui save `mte_grid', replace
+
+* Plot directly — no name() to avoid batch-mode named-graph failure
+twoway (rarea zero_line mte u if region_lo == 1, fcolor(gs5)  lwidth(none)) ///
+       (rarea zero_line mte u if region_un == 1, fcolor(gs11) lwidth(none)) ///
+       (line  mte u, lcolor(gs0) lwidth(medthick) lpattern(solid)),         ///
+    yline(0, lpattern(dash) lcolor(gs8)) ///
+    ytitle("Marginal Treatment Effect") ///
+    xtitle("u (Unobserved Resistance to Treatment)") ///
+    title("MTE Curve with Policy-Relevant Regions") ///
+    legend(order(3 "Estimated MTE" 1 "Low-income margin" ///
+                 2 "Uniform policy margin") cols(2) size(small))
+
+graph save   "$graphs_dir/mte_policy_regions.gph", replace
+graph export "$graphs_dir/fig10_10_mte_policy_regions_Stata.png", replace width(1200)
+
+* Reload main dataset
+qui use `mte_mem', clear
 
 preserve
     gen p_bin = floor(phat * 20) / 20
     bysort p_bin: egen mean_mte = mean(mte_hat)
     bysort p_bin: gen n_bin = _N
     collapse (mean) mean_mte (first) n_bin, by(p_bin)
-    twoway (bar n_bin p_bin, barwidth(0.04) color(gray%50) yaxis(2)) ///
-           (scatter mean_mte p_bin, mcolor(navy) msize(medium) msymbol(D) yaxis(1)) ///
-           (line mean_mte p_bin, lcolor(navy) lwidth(medium) yaxis(1)), ///
+    twoway (bar n_bin p_bin,      barwidth(0.04) fcolor(gs12) lcolor(gs8) yaxis(2)) ///
+           (scatter mean_mte p_bin, mcolor(gs0) msize(medium) msymbol(D)  yaxis(1)) ///
+           (line mean_mte p_bin,    lcolor(gs0) lwidth(medium) lpattern(solid) yaxis(1)), ///
+        yline(0, lpattern(dash) lcolor(gs8) axis(1)) ///
         ytitle("Estimated MTE", axis(1)) ///
         ytitle("Frequency", axis(2)) ///
         xtitle("Propensity Score") ///
         title("MTE by Propensity Score") ///
+        legend(order(2 "Mean MTE" 1 "Obs. count")) ///
         name(mte_by_propensity, replace)
     graph save "$graphs_dir/mte_by_propensity.gph", replace
     graph export "$graphs_dir/fig10_11_mte_by_propensity_Stata.png", replace width(1200)
