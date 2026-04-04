@@ -326,6 +326,8 @@ sdid lngenop fips fy treat_sdid, ///
 * Store SDID results
 estimates store sdid_model
 
+graph export "$graphs_dir/fig10_4_sdid_Stata.png", replace width(1200)
+
 *=======================================================
 * Section 10.2.4 & 10.3.3: Event Study Specifications
 * (Part of Parallel Trends Assessment)
