@@ -356,8 +356,15 @@ coefplot, keep(event_*) vertical ///
   ciopts(lcolor(gs6)) ///
   ytitle("Effect on Log Operating Expenses") ///
   xtitle("Years Relative to Treatment") ///
+  coeflabels(event_1 = "-17" event_2 = "-16" event_3 = "-15" ///
+             event_4 = "-14" event_5 = "-13" event_6 = "-12" ///
+             event_7 = "-11" event_8 = "-10" event_9 = "-9"  ///
+             event_10 = "-8" event_11 = "-7" event_12 = "-6" ///
+             event_13 = "-5" event_14 = "-4" event_15 = "-3" ///
+             event_16 = "-2" event_17 = "-1") ///
   name(fig10_3_event_study, replace)
-graph export "$graphs_dir/fig10_3_event_study_Stata.png", replace width(1200)
+  graph export "$graphs_dir/fig10_3_event_study_Stata.png", ///
+  name(fig10_3_event_study) replace width(1200)
 
 * Callaway-Sant'Anna DiD
 * Create treatment year variable (0 for never-treated)
