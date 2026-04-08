@@ -4,6 +4,8 @@
 # Higher Education Policy Analysis Using Quantitative Techniques (2nd Edition)
 # Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch10
 # Author: Marvin A. Titus
+# NOTE: Code development was assisted by Claude (Anthropic). The author
+# provided specifications and reviewed, tested, and validated all code.
 # Date: March 2026
 # ============================================================================
 # Script tested in R 4.4.x

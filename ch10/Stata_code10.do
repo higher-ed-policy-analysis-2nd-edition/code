@@ -6,6 +6,8 @@
 * Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch10
 * Author: Marvin A. Titus
 * Date: November 2025 (revised March 2026)
+* NOTE: Code development was assisted by Claude (Anthropic). The author
+* provided specifications and reviewed, tested, and validated all code.
 *========================================================================
 * Script tested in Stata 19.5
 * Compatible with Stata version 19 or later
@@ -348,6 +350,7 @@ quietly tab rel_time, gen(event_)
 * Event study regression
 reghdfe lngenop event_1-event_17 $controls, ///
   absorb(fips fy) vce(cluster fips)
+
 
 * Plot event study coefficients
 coefplot, keep(event_*) vertical ///
