@@ -34,7 +34,7 @@ This directory contains all replication code for Chapter 10, which is organized 
 
 `Example_10_3_1.csv` is downloaded automatically at the top of `Stata_code10.do` and `R_code10.R` from the chapter's GitHub data repository. `Example_7_5_3.dta` must be generated locally by running `Synthetic_truncated_BB.do` before executing the main analysis scripts, or downloaded separately from the data repository.
 
-> **Note on synthetic data.** The B&B panel used in Part B is a synthetic dataset calibrated to mirror the characteristics of the NCES Baccalaureate and Beyond Longitudinal Study (B&B:08/18). Synthetic data are used in place of actual B&B restricted-use data for three reasons: (1) B&B restricted-use files require an NCES data license; (2) known true parameter values allow readers to validate their results; and (3) the same dataset is used continuously across Chapters 7 and 10, supporting cumulative learning. All results based on this dataset are illustrative and should not be interpreted as estimates from actual B&B data.
+> **Note on synthetic data.** The Baccalaureate and Beyond (B&B) panel used in Part B is a synthetic dataset calibrated to mirror the characteristics of the NCES B&B Longitudinal Study (B&B:08/18). Synthetic data are used in place of actual B&B restricted-use data for three reasons: (1) B&B restricted-use files require an NCES data license; (2) known true parameter values allow readers to validate their results; and (3) the same dataset is used continuously across Chapters 7 and 10, supporting cumulative learning. All results based on this dataset are illustrative and should not be interpreted as estimates from actual B&B data.
 
 ---
 
