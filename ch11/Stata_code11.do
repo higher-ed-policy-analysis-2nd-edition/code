@@ -629,7 +629,7 @@ tempfile sim_results
 postfile sim_handle ///
     draw          ///
     b0_s b1_s b2_s b3_s        ///  Posterior draws on MTE polynomial
-    ate_s att_s atu_s          ///  Treatment parameters per draw
+    ate_s att_s atu_s mprte_s  ///  Treatment parameters per draw (incl. MPRTE)
     fiscal_s                   ///  Fiscal savings ($000s)
     behav_cost_s               ///  Behavioral cost ($000s)
     effic_gain_s               ///  Efficiency gain from low-return exit ($000s)
@@ -688,6 +688,13 @@ forvalues s = 1 / $S_draws {
         sum mte_s if masters == 0
         local atu_s = r(mean)
 
+        * MPRTE: displacement-weighted average of draw-specific MTE.
+        * Reuses total_disp scalar from Section 6 (constant across draws since
+        * displaced_E is a function of loan_overage, not the MTE polynomial).
+        gen mprte_i_s = displaced_E * mte_s / total_disp if masters == 1
+        sum mprte_i_s if masters == 1
+        local mprte_s = r(sum)
+
         * Fiscal savings (uses draw-specific subsidy rate)
         gen fs_i_s = loan_overage * `sub_rate_s' * above_cap
         sum fs_i_s
@@ -727,14 +734,14 @@ forvalues s = 1 / $S_draws {
         local cross_sub_loss_s = 0.20 * `inst_rev_loss_s'
         local nb_extended_s = `net_benefit_s' - `inst_rev_loss_s' - `cross_sub_loss_s'
 
-        drop mte_s fs_i_s bc_i_s eg_i_s ir_i_s
+        drop mte_s mprte_i_s fs_i_s bc_i_s eg_i_s ir_i_s
     }
 
     * ── Post results ──────────────────────────────────────────────────────────
     post sim_handle ///
         (`s') ///
         (`b0_s') (`b1_s') (`b2_s') (`b3_s') ///
-        (`ate_s') (`att_s') (`atu_s') ///
+        (`ate_s') (`att_s') (`atu_s') (`mprte_s') ///
         (`fiscal_s') (`behav_cost_s') (`effic_gain_s') ///
         (`net_benefit_s') (`nb_per_student_s') (`bcr_s') (`pnb_positive_s') ///
         (`inst_rev_loss_s') (`cross_sub_loss_s') (`nb_extended_s')
@@ -789,8 +796,33 @@ foreach var in inst_rev_loss_s cross_sub_loss_s nb_extended_s {
 gen pnb_ext_pos_s = (nb_extended_s > 0)
 qui sum pnb_ext_pos_s
 di _n "P(Extended NB > 0, incl. institutional costs): " %5.3f r(mean)
-tabstat b0_s b1_s b2_s b3_s ate_s att_s atu_s, ///
+tabstat b0_s b1_s b2_s b3_s ate_s att_s atu_s mprte_s, ///
     stats(mean sd) columns(statistics)
+
+* ── Treatment Parameter Posterior Summary (Table 11.5 inputs) ────────────────
+* Posterior means and 95% credible intervals for ATE, ATT, MPRTE, ATU.
+* These four numbers populate the Estimate column of Table 11.5 and provide
+* the inferential basis for the MPRTE > ATT claim in the chapter narrative.
+di _n "--- Treatment Parameter Posterior (log-salary units) ---"
+foreach var in ate_s att_s mprte_s atu_s {
+    qui sum `var'
+    local xm = r(mean)
+    local xs = r(sd)
+    _pctile `var', p(2.5 97.5)
+    di "`var':  mean = " %6.4f `xm' ///
+        "  sd = " %6.4f `xs' ///
+        "  95% CI: [" %6.4f r(r1) ", " %6.4f r(r2) "]"
+}
+
+* ── P(MPRTE > ATT) — formal inferential statement ────────────────────────────
+* The chapter's central policy claim — that the cap pushes out students with
+* above-average returns among completers — is true if MPRTE > ATT in the
+* posterior. We compute this probability directly from the joint draws.
+gen mprte_gt_att = (mprte_s > att_s)
+qui sum mprte_gt_att
+di _n "P(MPRTE > ATT | data): " %5.3f r(mean) ///
+    "   (posterior probability cap binds high-return margin)"
+drop mprte_gt_att
 
 * ── P(Net Benefit > 0) ───────────────────────────────────────────────────────
 qui sum pnb_positive_s
