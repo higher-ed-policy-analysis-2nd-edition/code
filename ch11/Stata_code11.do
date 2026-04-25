@@ -388,6 +388,14 @@ reg ln_salary masters c.masters#(c.phat c.phat2 c.phat3) ///
     $X phat phat2 phat3, robust
 estimates store mte_cubic
 
+* ── Joint significance test for MTE polynomial coefficients ─────────────────
+* Individual coefficients are often imprecise due to multicollinearity among
+* polynomial terms. The joint F-test is the appropriate assessment of whether
+* the MTE curve is identified — i.e., whether treatment effect heterogeneity
+* exists across the distribution of unobserved resistance to treatment.
+test masters c.masters#c.phat c.masters#c.phat2 c.masters#c.phat3
+di as text "Joint F-test p-value: " %6.4f r(p)
+
 * ── Store polynomial coefficients ───────────────────────────────────────────
 local b0 = _b[masters]                      // MTE at u = 0
 local b1 = _b[c.masters#c.phat]             // Linear slope
@@ -458,6 +466,36 @@ summarize p_displaced if masters == 1 & above_cap == 1
 * ── Expected displacement indicator (continuous treatment intensity) ─────────
 gen displaced_E = p_displaced * masters    // Expected D: 1 → 0 switchers
 summarize displaced_E
+
+* ── Marginal Policy-Relevant Treatment Effect (MPRTE) ────────────────────────
+* MPRTE = E[MTE(U) | margin shifted by the $100k cap]
+*       = displacement-weighted average of individual MTEs.
+* Each student is weighted by their share of total expected displacement.
+* Restricted to completers (displaced_E = 0 for non-completers by construction).
+*
+* Interpretation:
+*   MPRTE > 0  → cap displaces high-return students (efficiency loss)
+*   MPRTE ≈ 0  → cap displaces marginal students (efficiency neutral)
+*   MPRTE < 0  → cap displaces low-return students (efficiency gain)
+*
+* Note on Stata syntax: gen ... sum() returns a *running* (cumulative) sum,
+* not a total. We use a scalar from summarize r(sum) to compute proper
+* normalized weights that sum to 1.
+qui sum displaced_E if masters == 1
+scalar total_disp = r(sum)
+gen mprte_weight = displaced_E / total_disp if masters == 1
+gen mprte_i      = mte_hat * mprte_weight   if masters == 1
+qui sum mprte_i  if masters == 1
+scalar mprte = r(sum)
+
+di _n "--- Treatment Parameter Hierarchy (Point Estimates) ---"
+di "ATE   (population average):           " %6.4f `ate'
+di "ATT   (E[MTE | D=1], completers):     " %6.4f `att'
+di "ATU   (E[MTE | D=0], non-completers): " %6.4f `atu'
+di "MPRTE (cap-displaced margin):         " %6.4f mprte
+di _n "MPRTE compares the average return on the policy margin to the" 
+di    "population-wide ATE. If MPRTE < ATT, the cap is removing students"
+di    "with below-average returns among completers (efficiency-improving)."
 
 * ── Present value factor ─────────────────────────────────────────────────────
 local pv_factor = (1 - (1 + $discount_rate)^(-$career_years)) / $discount_rate
