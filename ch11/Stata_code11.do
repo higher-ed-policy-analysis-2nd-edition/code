@@ -1070,7 +1070,7 @@ graph bar value, over(label, sort(component)) ///
     yline(0, lpattern(dash) lcolor(gs8)) ///
     ytitle("Posterior Mean ($000s)") ///
     title("Cost–Benefit Decomposition") ///
-    subtitle("$100k Grad PLUS Cap (Posterior Mean Components)") ///
+    subtitle("$100k Federal Loan Cap (Posterior Mean Components)") ///
     note("Behavioral cost shown as negative (subtracted from net benefit)." ///
          "Net benefit = Fiscal Savings + Efficiency Gain − Behavioral Cost.") ///
     name(fig11_3_cba_decomp, replace)
