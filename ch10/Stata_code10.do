@@ -234,33 +234,117 @@ xtreg lngenop did $controls i.fy [aweight=mean_fte], ///
 
 *=======================================================
 * Section 10.4.2-10.4.3: LASSO-Residualized DiD
-* (Machine Learning Approach: Specification & Results)
+* Belloni, Chernozhukov & Hansen (2014) -- Double Selection
+*
+* This implements the residualized (double-selection) approach,
+* which differs from post-LASSO OLS (single selection). The
+* procedure involves three steps:
+*
+*   Step 1. Partial out state and year fixed effects from the
+*           outcome (lngenop), the DiD indicator (did), and all
+*           candidate controls via within-transformation
+*           (reghdfe with no regressors -> predict resid).
+*
+*   Step 2. Run rlasso of the FE-partialled outcome on the
+*           FE-partialled candidate controls -> selected set S_Y.
+*           Run rlasso of the FE-partialled DiD indicator on
+*           the same partialled controls -> selected set S_D.
+*           rlasso uses the theory-driven BRT penalty rather than
+*           cross-validation, which is required for valid
+*           post-selection inference.
+*
+*   Step 3. Estimate the DiD via reghdfe, absorbing state and
+*           year FEs and including the union S_Y u S_D as controls.
+*           Unioning the two selected sets (double selection)
+*           ensures the DiD coefficient is consistent and the
+*           clustered standard errors are valid even though
+*           controls were chosen by LASSO.
+*
+* Reference: Belloni, A., Chernozhukov, V., & Hansen, C. (2014).
+*   High-dimensional methods and inference on structural and
+*   treatment effects. Journal of Economic Perspectives, 28(2), 29-50.
 *=======================================================
 
-* Install required packages
-ssc install lassopack, replace
-ssc install elasticregress, replace
+* Install required package (lassopack provides both lasso2 and rlasso)
+capture ssc install lassopack, replace
 
-* Create interaction terms for LASSO selection
+* --- Interaction terms: expand the candidate control set ---
+* Post x covariate and treat x covariate interactions allow LASSO
+* to select controls that differ in their post-treatment or
+* treatment-group relationship with the outcome.
+* Note: post and treat_state are excluded from the candidate list --
+* state FEs absorb treat_state and year FEs absorb post in TWFE.
 foreach var of global controls {
-    gen `var'_post = `var' * post
+    capture drop `var'_post `var'_treat
+    gen `var'_post  = `var' * post
     gen `var'_treat = `var' * treat_state
 }
 
-* LASSO with cross-validation
-* Note: Run LASSO without fixed effects, then use reghdfe
-lasso2 lngenop did post treat_state $controls ///
-  lntotsup_post lntotsup_treat lnfinaid_post lnfinaid_treat ///
-  lntuifee_post lntuifee_treat lnfte_post lnfte_treat
+* Build candidate control list: base controls + interactions
+local candidates ""
+foreach var of global controls {
+    local candidates "`candidates' `var' `var'_post `var'_treat"
+}
 
-* Extract selected variables
-local lasso_selected "`e(selected)'"
+* --- Step 1: Partial out state and year fixed effects ---
+* The resid option must be declared at estimation time in reghdfe.
+* A subsequent predict retrieves the cached within-residuals.
+* capture drop guards against errors on re-runs.
 
-* Post-LASSO OLS with fixed effects
-reghdfe lngenop did `lasso_selected', ///
-  absorb(fips fy) vce(cluster fips)
+capture drop res_y
+reghdfe lngenop, absorb(fips fy) resid
+predict res_y, resid
+
+capture drop res_did
+reghdfe did, absorb(fips fy) resid
+predict res_did, resid
+
+foreach var of local candidates {
+    capture drop res_`var'
+    quietly reghdfe `var', absorb(fips fy) resid
+    predict res_`var', resid
+}
+
+* Build list of residualized candidate controls for rlasso
+local res_candidates ""
+foreach var of local candidates {
+    local res_candidates "`res_candidates' res_`var'"
+}
+
+* --- Step 2: Double selection via rlasso ---
+
+* Selection for outcome equation: which controls predict lngenop?
+rlasso res_y `res_candidates'
+local selected_y "`e(selected)'"
+
+* Selection for treatment equation: which controls predict did?
+rlasso res_did `res_candidates'
+local selected_d "`e(selected)'"
+
+* Form union S_Y u S_D and map back to original variable names
+* by stripping the "res_" prefix added in Step 1.
+local union_res : list selected_y | selected_d
+local union_orig ""
+foreach var of local union_res {
+    local orig = subinstr("`var'", "res_", "", 1)
+    local union_orig "`union_orig' `orig'"
+}
+local union_orig : list uniq union_orig
+
+* Report selection results
+di _newline "=== Double-Selection Results ==="
+di "Outcome equation  (S_Y):                  `selected_y'"
+di "Treatment equation (S_D):                 `selected_d'"
+di "Union S_Y u S_D (passed to final DiD):    `union_orig'"
+
+* --- Step 3: Final DiD estimation ---
+* Absorb state and year FEs; include union of selected controls;
+* cluster standard errors at the state level.
+reghdfe lngenop did `union_orig', ///
+    absorb(fips fy) vce(cluster fips)
 
 estimates store lasso_did
+
 
 *=======================================================
 * Section 10.5.3: SCM Application to Georgia Consolidation
@@ -365,9 +449,9 @@ coefplot, keep(event_*) vertical ///
              event_10 = "-8" event_11 = "-7" event_12 = "-6" ///
              event_13 = "-5" event_14 = "-4" event_15 = "-3" ///
              event_16 = "-2" event_17 = "-1") ///
-  name(fig10_3_event_study, replace)
-  graph export "$graphs_dir/fig10_3_event_study_Stata.png", ///
-  name(fig10_3_event_study) replace width(1200)
+  name(fig10_4_event_study, replace)
+  graph export "$graphs_dir/fig10_4_event_study_Stata.png", ///
+  name(fig10_4_event_study) replace width(1200)
 
 * Callaway-Sant'Anna DiD
 * Create treatment year variable (0 for never-treated)
