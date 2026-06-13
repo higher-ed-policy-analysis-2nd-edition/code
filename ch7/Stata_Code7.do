@@ -335,6 +335,70 @@ est sto random
 rhausman fixed random, reps(400) cluster
 
 *========================================================================
+* Section 7.4.2: Correlated Random-Effects (CRE) Regression
+*========================================================================
+
+/* The standard Hausman test (Section 7.4.1) rests on the assumption that
+   the random effects (u_i) are uncorrelated with the regressors. When that
+   assumption is violated, the RE estimator is inconsistent. The
+   correlated random-effects (CRE) estimator -- following Mundlak (1978) --
+   addresses this by augmenting the RE model with group (institution) means
+   of all time-varying regressors. The group-mean terms absorb the
+   correlation between u_i and X, yielding estimates of the time-varying
+   coefficients that are numerically identical to the within (FE) estimator.
+   The key advantage of CRE over FE is that it:
+     (1) allows time-invariant regressors to enter the model directly, and
+     (2) provides a clean Wald test of the RE vs. FE choice by testing
+         the joint significance of the group-mean terms.
+
+   Stata implements CRE via xtreg with the cre option (Stata 15+).
+   The syntax automatically constructs the group means and appends them.
+
+   We continue with the institutional-level log-transformed data from
+   the Hausman test above (Example_7_3_1.dta). */
+
+*------------------------------------------------------------------------
+* Step 1: Estimate the CRE model
+*------------------------------------------------------------------------
+
+/* xtreg, cre re adds the within-group means of all time-varying
+   covariates to the RE specification. The prefix "mean(" is applied
+   to the generated mean variables in the output. */
+xtreg lneg lnstatea lntuition lntotfteiarep lnftfac lnptfac, ///
+      cre cluster(opeid5_new)
+
+/* Key output to examine:
+     - Coefficients on main regressors: equivalent to FE estimates
+     - Coefficients on mean() terms: test whether group means matter
+     - rho: fraction of variance attributable to institutional effects
+   
+   If the group-mean terms are jointly insignificant, RE is preferred
+   because it is more efficient. If they are significant, CRE/FE is
+   required for consistent estimation. */
+
+*------------------------------------------------------------------------
+* Step 2: Joint significance test of the group-mean (Mundlak) terms
+*------------------------------------------------------------------------
+
+/* Stata reports the Mundlak test automatically at the bottom of the
+   xtreg, cre output as: "Mundlak test (xt_means = 0): chi2(df) = ..."
+   No separate post-estimation command is required.
+
+   H0: All xt_means coefficients are jointly zero (RE is consistent)
+   Ha: At least one xt_means coefficient is nonzero (FE/CRE required)
+
+   Rejection (p < 0.05): The institutional effects are correlated with
+   the regressors, so RE is inconsistent; use CRE or FE.
+   Failure to reject: RE is consistent and more efficient than FE;
+   the CRE model reduces to the standard RE specification.
+
+   Unlike the standard Hausman test, the Mundlak test:
+     (a) is valid under cluster-robust variance estimation, and
+     (b) does not require the homoscedasticity assumptions that can
+         make the standard Hausman test unreliable in finite samples
+         (as flagged in Section 7.4.1 above). */
+
+*========================================================================
 *========================================================================
 *
 *     SECTION 7.5: INSTRUMENTAL VARIABLES AND TWO-STAGE LEAST SQUARES
@@ -484,6 +548,41 @@ estat firststage
 
 /* The first-stage F-statistic should exceed the Stock-Yogo threshold of 10
    to avoid weak instrument bias */
+
+*------------------------------------------------------------------------
+* Weak-Instrument-Robust Inference
+*------------------------------------------------------------------------
+
+/* The first-stage F-statistic is a pre-test for instrument strength, but
+   it does not protect inference on the structural parameter itself. Even
+   when F > 10, confidence intervals and p-values from standard IV/2SLS
+   can be misleading if the instrument is only moderately strong. The
+   Anderson-Rubin (AR) test and the conditional likelihood ratio (CLR)
+   test remain valid regardless of instrument strength because they do not
+   condition on a particular first-stage estimate.
+
+   estat weakrobust (Stata 17+) reports these weak-instrument-robust
+   statistics after ivregress. It should be run routinely alongside
+   estat firststage as part of every IV diagnostic workflow -- not only
+   when the F-statistic raises concern, but as a standard validity check.
+
+   H0 (for each test): The structural parameter equals zero
+   The tests remain correctly sized even when the instrument is weak. */
+
+estat weakrobust
+
+/* Output includes:
+     - Anderson-Rubin Wald statistic: robust to weak instruments;
+       valid under homoscedasticity.
+     - Anderson-Rubin F-statistic: finite-sample version of the AR test.
+     - Stock-Wright S statistic: weak-instrument-robust score test
+       for joint significance of all endogenous regressors.
+   
+   When the instrument is strong (as confirmed by estat firststage above),
+   the robust p-values will closely match those from standard IV/2SLS.
+   A large divergence between the two would signal that the F-statistic
+   overstated instrument strength and that the robust results should be
+   preferred for inference. */
 
 *------------------------------------------------------------------------
 * Endogeneity Test (Durbin-Wu-Hausman)

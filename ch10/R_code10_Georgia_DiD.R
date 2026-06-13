@@ -245,6 +245,7 @@ p_pt <- ggplot(pt_df, aes(x = fy, y = lngenop,
 
 ggsave(file.path(graphs_dir, "fig10_3_parallel_trends_R.png"),
        p_pt, width = 7, height = 5, dpi = 200)
+print(p_pt)
 cat("   fig10_3_parallel_trends_R.png exported\n")
 
 # -- Formal pre-trends test: treat × linear time trend -----------------
@@ -343,6 +344,7 @@ p_es <- ggplot(es_df, aes(x = t, y = b)) +
 
 ggsave(file.path(graphs_dir, "fig10_6_event_study_R.png"),
        p_es, width = 7, height = 5, dpi = 200)
+print(p_es)
 cat("   fig10_6_event_study_R.png exported\n")
 
 # =====================================================================================================================
@@ -410,6 +412,7 @@ p_rob <- ggplot(rob_df, aes(x = b, y = spec)) +
 
 ggsave(file.path(graphs_dir, "fig10_3_2_robustness_R.png"),
        p_rob, width = 7, height = 4, dpi = 200)
+print(p_rob)
 cat("   fig10_3_2_robustness_R.png exported\n")
 
 # =====================================================================================================================
@@ -508,6 +511,7 @@ p_lasso <- ggplot(lasso_comp_df, aes(x = b, y = spec)) +
 
 ggsave(file.path(graphs_dir, "fig10_4_1_lasso_comparison_R.png"),
        p_lasso, width = 7, height = 3.5, dpi = 200)
+print(p_lasso)
 cat("   fig10_4_1_lasso_comparison_R.png exported\n")
 
 # =====================================================================================================================
@@ -585,6 +589,7 @@ if (synth_available) {
 
     ggsave(file.path(graphs_dir, "fig10_4_scm_trends_R.png"),
            p_scm, width = 7, height = 5, dpi = 200)
+    print(p_scm)
 
     # fig10_5_1: Gap plot
     p_gap <- ggplot(synth_df, aes(x = fy, y = gap)) +
@@ -601,6 +606,7 @@ if (synth_available) {
 
     ggsave(file.path(graphs_dir, "fig10_5_1_scm_gap_R.png"),
            p_gap, width = 7, height = 5, dpi = 200)
+    print(p_gap)
     cat("   fig10_5_1_scm_gap + fig10_4_scm_trends_R.png exported\n")
 
   }, error = function(e) {
@@ -705,6 +711,7 @@ tryCatch({
 
   ggsave(file.path(graphs_dir, "fig10_7_2_csdid_R.png"),
          p_cs, width = 7, height = 5, dpi = 200)
+  print(p_cs)
   cat("   fig10_7_2_csdid_R.png exported\n")
 
   # Simple aggregated ATT
@@ -833,6 +840,7 @@ tryCatch({
 
   ggsave(file.path(graphs_dir, "fig10_7_staggered_es_R.png"),
          p_stag, width = 7, height = 5, dpi = 200)
+  print(p_stag)
   cat("   fig10_7_staggered_es_R.png exported\n")
 
   cs_stag_simple <- aggte(cs_stag, type = "simple",  na.rm = TRUE)
@@ -929,6 +937,7 @@ p_perm <- ggplot(perm_df, aes(x = b_placebo)) +
 
 ggsave(file.path(graphs_dir, "fig10_8_1_permutation_R.png"),
        p_perm, width = 7, height = 5, dpi = 200)
+print(p_perm)
 cat("   fig10_8_1_permutation_R.png exported\n")
 
 # =====================================================================================================================
@@ -981,6 +990,7 @@ p_loo <- ggplot(loo_df, aes(x = obs, y = b_loo)) +
 
 ggsave(file.path(graphs_dir, "fig10_8_2_loo_R.png"),
        p_loo, width = 7, height = 5, dpi = 200)
+print(p_loo)
 cat("   fig10_8_2_loo_R.png exported\n")
 
 # =====================================================================================================================
@@ -1065,6 +1075,7 @@ p_summ <- ggplot(summ_df, aes(x = b, y = label)) +
 
 ggsave(file.path(graphs_dir, "fig10_9_1_summary_R.png"),
        p_summ, width = 7, height = 4, dpi = 200)
+print(p_summ)
 cat("   fig10_9_1_summary_R.png exported\n")
 
 # =====================================================================================================================

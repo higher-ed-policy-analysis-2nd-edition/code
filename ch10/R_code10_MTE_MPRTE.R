@@ -472,7 +472,8 @@ B2 <- coef(fit_byarea)["I(masters * phat2)"]
 B3 <- coef(fit_byarea)["I(masters * phat3)"]
 
 # Area differential coefficients
-areas <- c("stem","business","education","health")
+areas     <- c("stem","business","education","health")
+all_areas <- c("other", areas)
 d_coef <- list()
 for (a in areas) {
   d_coef[[a]] <- c(
@@ -496,34 +497,40 @@ for (a in areas) {
 }
 
 cat("\n--- Area-Specific MTE Functions ---\n")
-for (a in c("other", areas)) {
+for (a in all_areas) {
   cc <- c_coef[[a]]
   cat(sprintf("  %-12s %.4f + %.4f*u + %.4f*u^2 + %.4f*u^3\n",
               paste0(a,":"), cc[1], cc[2], cc[3], cc[4]))
 }
 
 # Area-specific ATE (integral of MTE over [0,1])
-ate_area <- sapply(c("other", areas), function(a) {
-  cc <- c_coef[[a]]
-  cc[1] + cc[2] / 2 + cc[3] / 3 + cc[4] / 4
-})
+ate_area   <- setNames(
+  sapply(all_areas, function(a) {
+    cc <- c_coef[[a]]
+    unname(cc[1]) + unname(cc[2])/2 + unname(cc[3])/3 + unname(cc[4])/4
+  }),
+  all_areas
+)
 
 cat("\n--- Area-Specific ATE (integral_0^1 MTE_a(u) du) ---\n")
 for (a in names(ate_area))
   cat(sprintf("  ATE (%s): %.4f\n", a, ate_area[a]))
 
 # Area-specific MTE_hat variables
-for (a in c("other", areas)) {
+for (a in all_areas) {
   cc <- c_coef[[a]]
   df[[paste0("mte_hat_", a)]] <-
     cc[1] + cc[2] * df$phat + cc[3] * df$phat2 + cc[4] * df$phat3
 }
 
 # Area-specific ATT
-att_area <- sapply(c("other", areas), function(a) {
-  flag <- paste0("ma_", a)
-  mean(df[[paste0("mte_hat_", a)]][df[[flag]] == 1], na.rm = TRUE)
-})
+att_area <- setNames(
+  sapply(all_areas, function(a) {
+    flag <- paste0("ma_", a)
+    mean(df[[paste0("mte_hat_", a)]][df[[flag]] == 1], na.rm = TRUE)
+  }),
+  all_areas
+)
 atu_pooled_untreated <- mean(df$mte_hat[df$masters == 0], na.rm = TRUE)
 
 cat("\n--- Area-Specific ATT ---\n")
@@ -536,8 +543,15 @@ cat("AREA-SPECIFIC TREATMENT PARAMETER SUMMARY\n")
 cat("==============================================\n")
 cat(sprintf("  %-12s %8s %8s\n", "Area", "ATE", "ATT"))
 cat("  ", strrep("-", 32), "\n")
-for (a in c("other", areas))
+for (a in all_areas)
   cat(sprintf("  %-12s %8.4f %8.4f\n", a, ate_area[a], att_area[a]))
+cat("\n")
+cat("  NOTE (Chapter footnote): The Business ATE (2.12) should be interpreted\n")
+cat("  with caution. Business master's students are a small subgroup (N=194\n")
+cat("  treated), concentrated in a narrow propensity score range; the cubic\n")
+cat("  polynomial extrapolates beyond the observed support, producing an\n")
+cat("  unstable estimate with a wide bootstrap SE (0.9975). The ATT (1.15)\n")
+cat("  is better identified and more reliable for this subgroup.\n")
 
 # -----------------------------------------------------------------------
 # SECTION 6c: Cluster Bootstrap
@@ -602,10 +616,16 @@ for (b in seq_len(R_boot)) {
   )
   if (!ok) { if (b %% 10 == 0) cat("."); next }
 
-  r0 <- coef(fit_cub_b)["masters"]
-  r1 <- coef(fit_cub_b)["I(masters * pb)"]
-  r2 <- coef(fit_cub_b)["I(masters * pb2)"]
-  r3 <- coef(fit_cub_b)["I(masters * pb3)"]
+  cf_cub  <- coef(fit_cub_b)
+  cfn_cub <- names(cf_cub)
+  m_idx_c <- grep("^masters$", cfn_cub)
+  r0 <- if (length(m_idx_c) == 1) unname(cf_cub[m_idx_c]) else 0
+  idx_r1 <- grep("masters * pb)", cfn_cub, fixed = TRUE)
+  r1 <- if (length(idx_r1) == 1) unname(cf_cub[idx_r1]) else 0
+  idx_r2 <- grep("masters * pb2)", cfn_cub, fixed = TRUE)
+  r2 <- if (length(idx_r2) == 1) unname(cf_cub[idx_r2]) else 0
+  idx_r3 <- grep("masters * pb3)", cfn_cub, fixed = TRUE)
+  r3 <- if (length(idx_r3) == 1) unname(cf_cub[idx_r3]) else 0
   b_ate_r <- r0 + r1/2 + r2/3 + r3/4
   mb      <- r0 + r1 * bs_df$pb + r2 * bs_df$pb2 + r3 * bs_df$pb3
   b_att_r <- mean(mb[bs_df$masters == 1], na.rm = TRUE)
@@ -632,17 +652,27 @@ for (b in seq_len(R_boot)) {
   )
   if (!ok) { if (b %% 10 == 0) cat("."); next }
 
-  BB0 <- coef(fit_ia_b)["masters"]
-  BB1 <- coef(fit_ia_b)["I(masters * pb)"]
-  BB2 <- coef(fit_ia_b)["I(masters * pb2)"]
-  BB3 <- coef(fit_ia_b)["I(masters * pb3)"]
+  cf_b      <- coef(fit_ia_b)
+  cfn_b     <- names(cf_b)
+  safe_b    <- function(pat) {
+    idx <- grep(pat, cfn_b, fixed = TRUE)
+    if (length(idx) == 1) unname(cf_b[idx]) else 0
+  }
+
+  BB0 <- safe_b("masters")
+  # get base masters coef (not interactions)
+  m_idx <- grep("^masters$", cfn_b)
+  BB0   <- if (length(m_idx) == 1) unname(cf_b[m_idx]) else 0
+  BB1   <- safe_b("masters * pb)")
+  BB2   <- safe_b("masters * pb2)")
+  BB3   <- safe_b("masters * pb3)")
 
   area_bs <- list()
   for (a in areas) {
-    D0 <- coef(fit_ia_b)[paste0("I(masters * ma_", a, ")")]
-    D1 <- coef(fit_ia_b)[paste0("I(masters * ma_", a, " * pb)")]
-    D2 <- coef(fit_ia_b)[paste0("I(masters * ma_", a, " * pb2)")]
-    D3 <- coef(fit_ia_b)[paste0("I(masters * ma_", a, " * pb3)")]
+    D0 <- safe_b(paste0("masters * ma_", a, ")"))
+    D1 <- safe_b(paste0("masters * ma_", a, " * pb)"))
+    D2 <- safe_b(paste0("masters * ma_", a, " * pb2)"))
+    D3 <- safe_b(paste0("masters * ma_", a, " * pb3)"))
     C0 <- BB0 + D0; C1 <- BB1 + D1; C2 <- BB2 + D2; C3 <- BB3 + D3
     ate_a <- C0 + C1/2 + C2/3 + C3/4
     ms    <- C0 + C1 * bs_df$pb + C2 * bs_df$pb2 + C3 * bs_df$pb3
@@ -713,7 +743,7 @@ cat(sprintf("  ATU = %.4f  (Bootstrap SE = %.4f)\n", atu_est,       atu_se))
 cat("\n--- Bootstrap SEs: Area-Specific ATE ---\n")
 cat(sprintf("  %-12s %10s %8s %20s\n", "Area","Point Est","BS SE","95% CI"))
 cat("  ", strrep("-", 54), "\n")
-for (a in c("other", areas)) {
+for (a in all_areas) {
   se_a <- get(paste0("ate_se_", a))
   lo   <- ate_area[a] - 1.96 * se_a
   hi   <- ate_area[a] + 1.96 * se_a
@@ -724,7 +754,7 @@ for (a in c("other", areas)) {
 cat("\n--- Bootstrap SEs: Area-Specific ATT ---\n")
 cat(sprintf("  %-12s %10s %8s\n", "Area","Point Est","BS SE"))
 cat("  ", strrep("-", 34), "\n")
-for (a in c("other", areas)) {
+for (a in all_areas) {
   se_a <- get(paste0("att_se_", a))
   cat(sprintf("  %-12s %10.4f %8.4f\n", a, att_area[a], se_a))
 }
@@ -783,6 +813,7 @@ p_mte <- ggplot(mte_grid_df, aes(x = u, y = mte_est)) +
 
 ggsave(file.path(graphs_dir, "fig10_8_mte_curve_R.png"),
        p_mte, width = 7, height = 5, dpi = 200)
+print(p_mte)
 cat("fig10_8 exported.\n")
 
 # -- mte_by_decile: MTE by propensity score decile --------------------
@@ -811,10 +842,11 @@ p_dec <- ggplot(dec_df, aes(x = p_decile, y = mte_mean)) +
 
 ggsave(file.path(graphs_dir, "fig10_12_mte_by_decile_R.png"),
        p_dec, width = 7, height = 5, dpi = 200)
+print(p_dec)
 
 # -- fig10_10: MTE curves by program area -----------------------------
 area_curves <- data.frame(u = u_grid)
-for (a in c("other", areas)) {
+for (a in all_areas) {
   cc <- c_coef[[a]]
   area_curves[[a]] <- cc[1] + cc[2] * u_grid +
                       cc[3] * u_grid^2 + cc[4] * u_grid^3
@@ -855,6 +887,7 @@ p_area <- ggplot(area_long, aes(x = u, y = mte,
 
 ggsave(file.path(graphs_dir, "fig10_10_mte_byarea_curve_R.png"),
        p_area, width = 7, height = 5, dpi = 200)
+print(p_area)
 cat("fig10_10 exported.\n")
 
 # -----------------------------------------------------------------------
@@ -1008,6 +1041,7 @@ p_int <- ggplot(intensity_df, aes(x = ga_increase, y = mprte_approx)) +
 
 ggsave(file.path(graphs_dir, "fig10_14_mprte_by_intensity_R.png"),
        p_int, width = 7, height = 5, dpi = 200)
+print(p_int)
 
 # -----------------------------------------------------------------------
 # SECTION 12: Comparing Treatment Effect Parameters
@@ -1036,7 +1070,7 @@ cat(sprintf("MPRTE (Ed ug -> any grad):         %.4f\n", mprte_ed))
 cat("\nAREA-SPECIFIC PARAMETERS:\n")
 cat(sprintf("  %-12s %8s %8s %12s %8s\n", "Area","ATE","BS SE","ATT","BS SE"))
 cat("  ", strrep("-", 52), "\n")
-for (a in c("other", areas)) {
+for (a in all_areas) {
   se_ate_a <- get(paste0("ate_se_", a))
   se_att_a <- get(paste0("att_se_", a))
   cat(sprintf("  %-12s %8.4f %8.4f %12.4f %8.4f\n",
@@ -1081,6 +1115,7 @@ p_reg <- ggplot(mte_region_df, aes(x = u, y = mte)) +
 
 ggsave(file.path(graphs_dir, "fig10_11_mte_policy_regions_R.png"),
        p_reg, width = 7, height = 5, dpi = 200)
+print(p_reg)
 cat("fig10_11 exported.\n")
 
 # -- fig10_9: MTE by propensity score (bins of width 0.05) ------------
@@ -1109,6 +1144,7 @@ p_pbin <- ggplot(pbin_df) +
 
 ggsave(file.path(graphs_dir, "fig10_9_mte_by_propensity_R.png"),
        p_pbin, width = 7, height = 5, dpi = 200)
+print(p_pbin)
 cat("fig10_9 exported.\n")
 
 # -----------------------------------------------------------------------
@@ -1186,8 +1222,8 @@ summary_field <- df %>%
     ln_salary  = mean(ln_salary,na.rm = TRUE),
     phat       = mean(phat,     na.rm = TRUE),
     mte_hat    = mean(mte_hat,  na.rm = TRUE),
-    across(starts_with("ma_"),       mean, na.rm = TRUE),
-    across(starts_with("mte_hat_"),  mean, na.rm = TRUE),
+    across(starts_with("ma_"),       \(x) mean(x, na.rm = TRUE)),
+    across(starts_with("mte_hat_"),  \(x) mean(x, na.rm = TRUE)),
     sd_mte     = sd(mte_hat,    na.rm = TRUE),
     n          = n(),
     .groups    = "drop"
@@ -1203,7 +1239,7 @@ summary_area <- df %>%
     salary     = mean(salary,    na.rm = TRUE),
     phat       = mean(phat,      na.rm = TRUE),
     mte_hat    = mean(mte_hat,   na.rm = TRUE),
-    across(starts_with("mte_hat_"), mean, na.rm = TRUE),
+    across(starts_with("mte_hat_"), \(x) mean(x, na.rm = TRUE)),
     n          = n(),
     .groups    = "drop"
   )
@@ -1229,7 +1265,7 @@ cat(sprintf("  7.  poly(quad) ATE:                  %.4f (BS SE = %.4f)\n",
 cat(sprintf("  8.  First-stage F:                   %.1f\n",  first_stage_F))
 
 cat("\nAREA-SPECIFIC ATE (program area interacted MTE):\n")
-for (a in c("other", areas)) {
+for (a in all_areas) {
   se_a <- get(paste0("ate_se_", a))
   cat(sprintf("  ATE (%s):  %.4f (BS SE = %.4f)\n", a, ate_area[a], se_a))
 }

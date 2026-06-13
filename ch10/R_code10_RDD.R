@@ -231,6 +231,7 @@ den_gg <- den_plot$Estplot +
 
 ggsave(file.path(graphs_dir, "fig10_2_1_rdd_density_test.png"),
        den_gg, width = 7, height = 5, dpi = 200)
+print(den_gg)
 cat("   Density test exported -> fig10_2_1_rdd_density_test.png\n")
 cat("   See the Robust row above for the preferred test statistic.\n")
 
@@ -299,6 +300,7 @@ for (nm in names(outcomes_bin)) {
   fname <- file.path(graphs_dir,
                      paste0("fig10_2_2_rdd_binscatter_", nm, ".png"))
   ggsave(fname, p, width = 7, height = 5, dpi = 200)
+  print(p)
 }
 cat("Binned scatterplots exported.\n")
 
@@ -407,6 +409,7 @@ p_bw <- ggplot(bw_df, aes(x = h, y = LATE)) +
 
 ggsave(file.path(graphs_dir, "fig10_2_3_rdd_bw_sensitivity.png"),
        p_bw, width = 7, height = 5, dpi = 200)
+print(p_bw)
 cat("Bandwidth sensitivity plot exported -> fig10_2_3_rdd_bw_sensitivity.png\n")
 
 # -----------------------------------------------------------------------
@@ -689,6 +692,7 @@ save_rdplot <- function(y, x, title, subtitle, ytitle, fname,
     theme_springer() +
     theme(legend.position = "none")
   ggsave(file.path(graphs_dir, fname), p, width = 7, height = 5, dpi = 200)
+  print(p)
 }
 
 # fig10_2_4: Sharp persistence
@@ -763,6 +767,7 @@ p_late <- ggplot(late_df, aes(x = b, y = j)) +
 
 ggsave(file.path(graphs_dir, "fig10_2_fuzzy_late_credits.png"),
        p_late, width = 7, height = 3.5, dpi = 200)
+print(p_late)
 
 cat("All RD plots exported.\n")
 
