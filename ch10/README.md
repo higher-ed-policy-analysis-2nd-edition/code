@@ -20,18 +20,24 @@ All results are based on synthetic data and are intended to illustrate methods o
 
 ## Files
 
-The chapter ships with a complete implementation in each language. The Stata implementation is modular (a master do-file that calls four section do-files); the R implementation is provided as a single self-contained script.
+Both the Stata and R implementations are modular: a master script sets paths, installs/loads packages, and calls the section scripts in order.
 
 | File | Description |
 |------|-------------|
-| `Stata_code10.do` | Stata master script; sets paths, installs packages, and runs the four section do-files in order (tested in Stata 19.5) |
+| `Stata_code10.do` | Stata master script; sets paths, installs packages, and runs the section do-files in order (tested in Stata 19.5) |
 | `RDD.do` | Stata — Section 10.2, regression discontinuity design |
 | `Georgia_DiD.do` | Stata — Sections 10.3–10.9, difference-in-differences family |
 | `ETWFE.do` | Stata — Section 10.7.4, Extended TWFE |
 | `MTE_MPRTE.do` | Stata — Sections 10.10–10.16, marginal treatment effects |
-| `R_code10.R` | Complete, self-contained R translation of the entire chapter; all four sections inlined, runs top to bottom (tested in R 4.4.x) |
+| `Synthetic_truncated_BB.do` | Stata — generates the truncated synthetic B&B dataset used in Part B |
+| `R_code10.R` | R master script; sets shared paths and logging, loads all packages once, defines `theme_springer()`, and sources the section scripts in order (tested in R 4.4.x) |
+| `R_code10_RDD.R` | R — Section 10.2, regression discontinuity design |
+| `R_code10_Georgia_DiD.R` | R — Sections 10.3–10.9, difference-in-differences family |
+| `R_code10_ETWFE.R` | R — Section 10.7.4, Extended TWFE |
+| `R_code10_MTE_MPRTE.R` | R — Sections 10.10–10.16, marginal treatment effects |
+| `R_code10_CATE.R` | R — conditional average treatment effects (subgroup IV and interacted IV) |
 
-The R script reproduces the full chapter in one file: it sets up shared paths and logging, loads all packages once, defines the grayscale `theme_springer()` plotting theme, and then executes the RDD, DiD, ETWFE, and MTE/MPRTE sections in sequence.
+Each R section script can also be sourced independently after the master script has been run once to establish the shared environment (paths, packages, plotting theme).
 
 ---
 
@@ -78,7 +84,7 @@ Section 10.2 (RDD) does not download a file: it generates a synthetic HSLS:09-ca
 | 10.15 | MTE visualization | `twoway`, `rarea` | `ggplot2` (`geom_ribbon`, etc.) |
 | 10.16 | Cost-benefit analysis | Stata matrix ops | base R |
 
-**Implementation notes.** The R `etwfe`/`marginaleffects` pair replicates Stata's `jwdid` plus its `estat` aggregations (simple, group, calendar, event). The MTE cluster bootstrap is implemented as an explicit base-R loop over state clusters (no separate package). Stata's `mtefe` has no direct R equivalent, so its ATE/ATT/ATU/LATE output is reproduced with the manual polynomial MTE estimator and labelled accordingly.
+**Implementation notes.** The R `etwfe`/`marginaleffects` pair replicates Stata's `jwdid` plus its `estat` aggregations (simple, group, calendar, event). The MTE cluster bootstrap is implemented as an explicit base-R loop over state clusters (no separate package). Stata's `mtefe` has no direct R equivalent, so its ATE/ATT/ATU/LATE output is reproduced with the manual polynomial MTE estimator and labelled accordingly. Conditional average treatment effects (CATE) are implemented via subgroup IV and interacted IV in `R_code10_CATE.R`; the `cate` package is not used as it does not support IV/endogeneity settings.
 
 ---
 
@@ -147,6 +153,9 @@ etwfe, marginaleffects
 
 # MTE / MPRTE (Part B)
 AER, sampleSelection, sandwich, lmtest, truncnorm
+
+# CATE (R_code10_CATE.R)
+fixest, AER
 
 # Shared
 dplyr, tidyr, ggplot2, haven
