@@ -29,6 +29,7 @@ Both the Stata and R implementations are modular: a master script sets paths, in
 | `Georgia_DiD.do` | Stata — Sections 10.3–10.9, difference-in-differences family |
 | `ETWFE.do` | Stata — Section 10.7.4, Extended TWFE |
 | `MTE_MPRTE.do` | Stata — Sections 10.10–10.16, marginal treatment effects |
+| `CATE.do` | Stata — conditional average treatment effects (subgroup IV and interacted IV); standalone script for the CATE application in Section 10.9 |
 | `Synthetic_truncated_BB.do` | Stata — generates the truncated synthetic B&B dataset used in Part B |
 | `R_code10.R` | R master script; sets shared paths and logging, loads all packages once, defines `theme_springer()`, and sources the section scripts in order (tested in R 4.4.x) |
 | `R_code10_RDD.R` | R — Section 10.2, regression discontinuity design |
