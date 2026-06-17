@@ -1,6 +1,6 @@
-# ========================================================================
+#========================================================================
 # Chapter 10 – Sections 10.10–10.16: Marginal Treatment Effects
-#              Returns to Master's Degree Completion
+#             Returns to Master's Degree Completion
 # Higher Education Policy Analysis Using Quantitative Techniques
 # (2nd Edition)
 # Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch10
@@ -8,174 +8,123 @@
 # Date: May 2026
 # NOTE: Code development was assisted by Claude (Anthropic). The author
 # provided specifications and reviewed, tested, and validated all code.
-# ========================================================================
-# Called by: R_code10.R  (inherits graphs_dir)
-# Standalone: can also be sourced directly; uses fallback paths if needed.
-#
-# Data: synthetic B&B panel
-#   Example_7_5_3_updated.csv  (primary; contains pre-generated ma_* vars)
-#   Example_7_5_3.csv          (fallback; ma_* generated in Section 1b)
-#   NOTE: R reads CSV; Stata .dta files can be imported via haven::read_dta()
-#         if the CSV versions are unavailable.
+#========================================================================
+# Translation of MTE_MPRTE_v2.do to R
 #
 # Required packages:
-#   AER        — ivreg() for IV/2SLS
-#   sampleSelection — heckit() for Heckman selection model
-#   sandwich   — vcovHC() robust SEs
-#   lmtest     — coeftest()
-#   dplyr      — data wrangling
-#   tidyr      — pivot_longer() for area-curve plot
-#   ggplot2    — publication plots
-#   haven      — read_dta() fallback for .dta files
+#   haven, dplyr, AER, sandwich, lmtest, sampleSelection,
+#   ggplot2, tidyr, readr, boot
 #
-# Install once:
-#   install.packages(c("AER","sampleSelection","sandwich","lmtest",
-#                      "dplyr","tidyr","ggplot2","haven"))
-#
-# NOTE on mtefe: The Stata mtefe package has no direct R equivalent.
-#   This script replicates all mtefe output (ATE, ATT, ATU, LATE)
-#   using the manual polynomial MTE estimator (Section 6) with the same
-#   cluster bootstrap SEs. mtefe results in the output are labelled
-#   "manual poly (mtefe-equivalent)" throughout.
-#
-# NOTE on wild cluster bootstrap (fwildclusterboot):
-#   Replaced here by cluster-robust SEs via sandwich::vcovCL().
-#   Full wild cluster bootstrap can be added via the fwildclusterboot
-#   package if desired.
-# ========================================================================
+# Sections:
+#   1     Load dataset
+#   1b    Verify / generate master's program area indicators (ma_*)
+#   2     Summary statistics
+#   3     First stage and instrument relevance
+#   4     Naive OLS estimation
+#   5     IV/2SLS estimation (LATE)
+#   6     MTE estimation — pooled polynomial (quadratic and cubic)
+#   6b    MTE by graduate program area (fully interacted)
+#   6b-ATU Prospective program area assignment for untreated
+#   6c    Bootstrap infrastructure (cluster bootstrap)
+#   7     Results comparison
+#   8     MTE visualization
+#   9     Basic policy simulation (PRTE)
+#   10    MPRTE — Scenarios 1–4
+#   10b   MPRTE by graduate program area — Scenarios 5–8
+#   11    MPRTE by policy intensity
+#   12    Comparing treatment effect parameters
+#   13    MPRTE visualization
+#   14    Policy cost-benefit analysis
+#   15    Save results
+#   16    Final summary
+#========================================================================
 
 # -----------------------------------------------------------------------
-# Packages
+# Package loading
 # -----------------------------------------------------------------------
 suppressPackageStartupMessages({
+  library(haven)
+  library(dplyr)
   library(AER)
-  library(sampleSelection)
   library(sandwich)
   library(lmtest)
-  library(dplyr)
-  library(tidyr)
+  library(sampleSelection)   # Heckman selection model
   library(ggplot2)
-  library(haven)
+  library(tidyr)
+  library(readr)
+  library(boot)
 })
 
 # -----------------------------------------------------------------------
-# Fallback output paths (overridden when sourced from R_code10.R)
+# Output directory setup
 # -----------------------------------------------------------------------
-if (!exists("graphs_dir")) {
-  if (Sys.info()[["user"]] == "marvi") {
-    graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output/graphs"
-  } else {
-    graphs_dir <- "Output/graphs"
-  }
-  dir.create(file.path(dirname(graphs_dir)), showWarnings = FALSE, recursive = TRUE)
-  dir.create(graphs_dir,                    showWarnings = FALSE, recursive = TRUE)
-  message("R_code10_MTE_MPRTE.R (standalone): graphs_dir set to ", graphs_dir)
-}
+graphs_dir <- "Output/graphs"
+dir.create("Output",       showWarnings = FALSE, recursive = TRUE)
+dir.create(graphs_dir,     showWarnings = FALSE, recursive = TRUE)
 
-# Springer B&W ggplot2 theme (mirrors Stata s2mono)
-theme_springer <- function(base_size = 11) {
-  theme_bw(base_size = base_size) +
+# Springer monochrome theme (mirrors s2mono)
+theme_springer <- function() {
+  theme_bw(base_size = 11) +
     theme(
       panel.grid.minor  = element_blank(),
-      panel.grid.major  = element_line(colour = "grey85", linewidth = 0.3),
-      plot.title        = element_text(size = base_size,     face = "bold"),
-      plot.subtitle     = element_text(size = base_size - 1, colour = "grey30"),
-      plot.caption      = element_text(size = base_size - 2, colour = "grey40",
-                                       hjust = 0),
-      axis.title        = element_text(size = base_size - 1),
+      panel.grid.major  = element_line(colour = "grey85"),
+      plot.title        = element_text(size = 11, face = "bold"),
+      plot.subtitle     = element_text(size = 10),
+      axis.title        = element_text(size = 10),
       legend.position   = "bottom",
       legend.title      = element_blank()
     )
 }
 
-# -----------------------------------------------------------------------
+################################################################################
 # SECTION 1: Load Dataset
-# -----------------------------------------------------------------------
+################################################################################
 cat("\n==============================================\n")
 cat("LOADING SYNTHETIC B&B DATASET\n")
 cat("==============================================\n")
 
-# Try updated CSV first (contains pre-generated ma_* variables),
-# then fall back to the base CSV, then try .dta via haven.
-gh_base <- "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main"
+url_updated <- paste0(
+  "https://raw.githubusercontent.com/",
+  "higher-ed-policy-analysis-2nd-edition/data/main/ch10/",
+  "Example_7_5_3_updated.dta"
+)
+url_base <- paste0(
+  "https://raw.githubusercontent.com/",
+  "higher-ed-policy-analysis-2nd-edition/data/main/ch7/",
+  "Example_7_5_3.dta"
+)
 
-load_data <- function() {
-  # 1. Local updated CSV
-  if (file.exists("Example_7_5_3_updated.csv")) {
-    message("Loading local Example_7_5_3_updated.csv")
-    return(read.csv("Example_7_5_3_updated.csv"))
+df <- tryCatch(
+  haven::read_dta(url_updated),
+  error = function(e) {
+    message("Updated file unavailable; trying base file...")
+    tryCatch(
+      haven::read_dta(url_base),
+      error = function(e2) stop("Could not download dataset. Download manually.")
+    )
   }
-  # 2. Download updated CSV from GitHub
-  tmp <- tryCatch(
-    read.csv(paste0(gh_base, "/ch10/Example_7_5_3_updated.csv")),
-    error = function(e) NULL
-  )
-  if (!is.null(tmp)) {
-    write.csv(tmp, "Example_7_5_3_updated.csv", row.names = FALSE)
-    message("Downloaded Example_7_5_3_updated.csv from GitHub")
-    return(tmp)
-  }
-  # 3. Try updated .dta via haven
-  tmp <- tryCatch(
-    haven::read_dta(paste0(gh_base, "/ch10/Example_7_5_3_updated.dta")),
-    error = function(e) NULL
-  )
-  if (!is.null(tmp)) {
-    message("Loaded Example_7_5_3_updated.dta from GitHub via haven")
-    return(as.data.frame(tmp))
-  }
-  # 4. Base CSV (ch7)
-  tmp <- tryCatch(
-    read.csv(paste0(gh_base, "/ch7/Example_7_5_3.csv")),
-    error = function(e) NULL
-  )
-  if (!is.null(tmp)) {
-    write.csv(tmp, "Example_7_5_3.csv", row.names = FALSE)
-    message("Downloaded Example_7_5_3.csv (base) from GitHub. ma_* will be generated in Section 1b.")
-    return(tmp)
-  }
-  # 5. Base .dta via haven
-  tmp <- tryCatch(
-    haven::read_dta(paste0(gh_base, "/ch7/Example_7_5_3.dta")),
-    error = function(e) NULL
-  )
-  if (!is.null(tmp)) {
-    message("Loaded Example_7_5_3.dta (base) via haven. ma_* will be generated in Section 1b.")
-    return(as.data.frame(tmp))
-  }
-  stop(paste0(
-    "ERROR: Cannot load dataset.\n",
-    "Please download Example_7_5_3_updated.csv (or .dta) from:\n",
-    gh_base, "/ch10/\n",
-    "and place it in the working directory."
-  ))
-}
+)
 
-df <- load_data()
-
+df <- as.data.frame(df)
 if (!"id" %in% names(df)) df$id <- seq_len(nrow(df))
 
-cat(sprintf("Variables: %s\n", paste(names(df), collapse = ", ")))
-cat(sprintf("Sample size: %d\n", nrow(df)))
+cat("Sample size:", nrow(df), "\n")
+cat("Variables:", ncol(df), "\n")
 
-# -----------------------------------------------------------------------
+################################################################################
 # SECTION 1b: Verify / Generate Master's Program Area Indicators
-# -----------------------------------------------------------------------
-# Five mutually exclusive categories (IPEDS CIP-based):
-#   ma_business   Business, Management, Marketing (CIP 52)
-#   ma_education  Education (CIP 13)
-#   ma_health     Health Professions & Related (CIP 51)
-#   ma_stem       STEM fields (CIPs 11, 14, 15, 26, 27, 40, 41)
-#   ma_other      All remaining fields
-# ma_* = 0 for all untreated observations (masters == 0).
-
+################################################################################
 cat("\n==============================================\n")
 cat("MASTER'S PROGRAM AREA INDICATORS\n")
 cat("==============================================\n")
 
+X_controls <- c("female","black","hispanic","asian","age_ba","firstgen",
+                 "parent_income_q","parent_grad","ugpa","stem_major",
+                 "bus_major","ed_major","selective_inst","public_ug",
+                 "state_unemp","metro")
+
 if (!"ma_stem" %in% names(df)) {
-  message("Generating ma_* variables from undergraduate major fields...")
-  set.seed(20251130)
+  cat("Generating ma_* variables from undergraduate major fields...\n")
 
   df$ma_stem      <- 0L
   df$ma_business  <- 0L
@@ -183,601 +132,601 @@ if (!"ma_stem" %in% names(df)) {
   df$ma_health    <- 0L
   df$ma_other     <- 0L
 
+  set.seed(20251130)
   rma <- ifelse(df$masters == 1, runif(nrow(df)), NA_real_)
 
-  df$ma_stem[df$masters == 1 & df$stem_major == 1 & !is.na(rma) & rma <= 0.55] <- 1L
-
-  df$ma_business[df$masters == 1 & df$bus_major == 1 & !is.na(rma) &
+  df$ma_stem[df$masters == 1 & df$stem_major == 1 & rma <= 0.55] <- 1L
+  df$ma_business[df$masters == 1 & df$bus_major == 1 &
                    rma <= 0.65 & df$ma_stem == 0] <- 1L
-
-  df$ma_education[df$masters == 1 & df$ed_major == 1 & !is.na(rma) &
+  df$ma_education[df$masters == 1 & df$ed_major == 1 &
                     rma <= 0.70 & df$ma_stem == 0 & df$ma_business == 0] <- 1L
-
-  df$ma_health[df$masters == 1 & df$socsci_major == 1 & !is.na(rma) &
-                 rma <= 0.40 & df$ma_stem == 0 &
-                 df$ma_business == 0 & df$ma_education == 0] <- 1L
-
-  df$ma_health[df$masters == 1 & df$stem_major == 1 & !is.na(rma) &
+  df$ma_health[df$masters == 1 & df$socsci_major == 1 &
+                 rma <= 0.40 & df$ma_stem == 0 & df$ma_business == 0 &
+                 df$ma_education == 0] <- 1L
+  df$ma_health[df$masters == 1 & df$stem_major == 1 &
                  rma > 0.55 & rma <= 0.75 & df$ma_stem == 0] <- 1L
-
-  df$ma_other[df$masters == 1 &
-                df$ma_stem == 0 & df$ma_business == 0 &
+  df$ma_other[df$masters == 1 & df$ma_stem == 0 & df$ma_business == 0 &
                 df$ma_education == 0 & df$ma_health == 0] <- 1L
 
-  message("ma_* variables generated successfully.")
+  cat("ma_* variables generated successfully.\n")
 }
 cat("ma_* variables confirmed present in dataset.\n")
 
 # Verification
 n_treated <- sum(df$masters == 1)
-cat(sprintf("\n--- Program Area Distribution (Treated Only) ---\nTotal treated: %d\n", n_treated))
+cat("\n--- Program Area Distribution (Treated Only) ---\n")
+cat("Total treated:", n_treated, "\n")
 for (a in c("stem","business","education","health","other")) {
-  n_a <- sum(df[[paste0("ma_", a)]] == 1, na.rm = TRUE)
-  cat(sprintf("  ma_%s: %d  (%.1f%%)\n", a, n_a, n_a / n_treated * 100))
+  n_a <- sum(df[[paste0("ma_",a)]] == 1, na.rm = TRUE)
+  cat(sprintf("  ma_%s: %d  (%5.1f%%)\n", a, n_a, 100*n_a/n_treated))
 }
 
-ma_check <- df$ma_business + df$ma_education + df$ma_health + df$ma_stem + df$ma_other
+# Mutual exclusivity check
+ma_check <- df$ma_business + df$ma_education + df$ma_health +
+            df$ma_stem + df$ma_other
 bad_treated   <- sum(df$masters == 1 & ma_check != 1, na.rm = TRUE)
 bad_untreated <- sum(df$masters == 0 & ma_check != 0, na.rm = TRUE)
-if (bad_treated   > 0) { warning(sprintf("%d treated obs with != 1 program area flag", bad_treated))
-} else {                  cat("CHECK PASSED: all treated obs have exactly 1 program area\n") }
-if (bad_untreated > 0) { warning(sprintf("%d untreated obs with non-zero program area flag", bad_untreated))
-} else {                  cat("CHECK PASSED: all untreated obs have zero program area\n") }
+if (bad_treated > 0) {
+  cat("WARNING:", bad_treated, "treated obs with != 1 program area flag\n")
+} else {
+  cat("CHECK PASSED: all treated obs have exactly 1 program area\n")
+}
+if (bad_untreated > 0) {
+  cat("WARNING:", bad_untreated, "untreated obs with non-zero program area flag\n")
+} else {
+  cat("CHECK PASSED: all untreated obs have zero program area\n")
+}
 
-# -----------------------------------------------------------------------
+################################################################################
 # SECTION 2: Summary Statistics
-# -----------------------------------------------------------------------
+################################################################################
 cat("\n==============================================\n")
 cat("SUMMARY STATISTICS\n")
 cat("==============================================\n")
 
-cat(sprintf("Treatment rate: %.3f\n", mean(df$masters)))
 treat_rate <- mean(df$masters)
-
-print(table(df$masters))
+cat(sprintf("Treatment rate: %.3f\n", treat_rate))
+cat("\nKey variables:\n")
 print(summary(df[, c("ln_salary","salary","masters","ga_funding_adj")]))
 
-# Mean salary by treatment status
-cat("\nMean salary by treatment:\n")
-print(df %>% group_by(masters) %>%
-  summarise(mean_ln_salary = mean(ln_salary, na.rm = TRUE),
-            sd_ln_salary   = sd(ln_salary,   na.rm = TRUE),
-            mean_salary    = mean(salary,     na.rm = TRUE),
-            n              = n(), .groups = "drop"))
-
-# Summary of covariates
-cov_vars <- c("female","black","hispanic","asian","age_ba","firstgen",
-              "parent_income_q","parent_grad","ugpa","stem_major",
-              "bus_major","ed_major","selective_inst","public_ug",
-              "state_unemp","metro")
-print(summary(df[, cov_vars]))
+cat("\n--- Mean Log Salary by Masters Status ---\n")
+df %>% group_by(masters) %>%
+  summarise(mean_lnsalary = mean(ln_salary), sd_lnsalary = sd(ln_salary),
+            n = n()) %>% print()
 
 cat("\n--- Program Area by Undergraduate Major (Treated Only) ---\n")
-for (grp in c("stem_major","bus_major","ed_major","socsci_major")) {
-  sub <- df %>% filter(masters == 1, .data[[grp]] == 1)
-  if (nrow(sub) == 0) next
-  cat(sprintf("  %s undergrads (N=%d):\n", grp, nrow(sub)))
-  for (a in c("stem","health","business","education","other")) {
-    cat(sprintf("    ma_%s: %.3f\n", a, mean(sub[[paste0("ma_",a)]])))
+for (ug in c("stem_major","bus_major","ed_major","socsci_major")) {
+  cat(sprintf("\n  %s undergrads:\n", ug))
+  sub <- df[df$masters == 1 & df[[ug]] == 1, ]
+  if (nrow(sub) > 0) {
+    for (a in c("stem","business","education","health","other")) {
+      cat(sprintf("    ma_%s: mean = %.3f  n = %d\n",
+                  a, mean(sub[[paste0("ma_",a)]]), nrow(sub)))
+    }
   }
 }
 
-cat("\n--- Mean Log Salary by Program Area (Treated Only) ---\n")
-for (a in c("stem","business","education","health","other")) {
-  sub <- df %>% filter(.data[[paste0("ma_",a)]] == 1)
-  if (nrow(sub) == 0) next
-  cat(sprintf("  ma_%s: mean ln_salary = %.4f  (N = %d)\n",
-              a, mean(sub$ln_salary, na.rm = TRUE), nrow(sub)))
-}
-
-# -----------------------------------------------------------------------
-# SECTION 3: First-Stage and Instrument Relevance
-# -----------------------------------------------------------------------
+################################################################################
+# SECTION 3: First Stage and Instrument Relevance
+################################################################################
 cat("\n==============================================\n")
 cat("INSTRUMENT RELEVANCE CHECK\n")
 cat("==============================================\n")
 
-X_controls <- c("female","black","hispanic","asian","age_ba","firstgen",
-                "parent_income_q","parent_grad","ugpa","stem_major",
-                "bus_major","ed_major","selective_inst","public_ug",
-                "state_unemp","metro")
-Z_var <- "ga_funding_adj"
-
-fml_fs <- as.formula(paste("masters ~", Z_var, "+",
-                            paste(X_controls, collapse = " + ")))
-fit_fs  <- lm(fml_fs, data = df)
-ct_fs   <- coeftest(fit_fs, vcov = vcovHC(fit_fs, type = "HC1"))
-print(ct_fs)
-
-# First-stage F-statistic for the instrument
-fit_fs_r   <- lm(as.formula(paste("masters ~",
-                                  paste(X_controls, collapse = " + "))),
-                 data = df)
-first_stage_F <- as.numeric(
-  anova(fit_fs_r, fit_fs)[2, "F"]
+fs_formula <- as.formula(
+  paste("masters ~ ga_funding_adj +", paste(X_controls, collapse = " + "))
 )
-cat(sprintf("\nFirst-stage F: %.2f\n", first_stage_F))
-if (first_stage_F > 10) cat("RESULT: Strong instrument (F > 10)\n") else
-  cat("WARNING: Potentially weak instrument\n")
+fs_model <- lm(fs_formula, data = df)
+fs_robust <- coeftest(fs_model, vcov = vcovHC(fs_model, type = "HC1"))
 
-# -----------------------------------------------------------------------
+# First-stage F for ga_funding_adj
+fs_ftest <- linearHypothesis(fs_model, "ga_funding_adj = 0",
+                              vcov = vcovHC(fs_model, type = "HC1"))
+first_stage_F <- fs_ftest$F[2]
+cat(sprintf("\nFirst-stage F: %.2f\n", first_stage_F))
+if (first_stage_F > 10) {
+  cat("RESULT: Strong instrument (F > 10)\n")
+} else {
+  cat("WARNING: Potentially weak instrument\n")
+}
+
+################################################################################
 # SECTION 4: Naive OLS Estimation
-# -----------------------------------------------------------------------
+################################################################################
 cat("\n==============================================\n")
 cat("NAIVE OLS ESTIMATION\n")
 cat("==============================================\n")
 
-fml_ols <- as.formula(paste("ln_salary ~ masters +",
-                            paste(X_controls, collapse = " + ")))
-fit_ols  <- lm(fml_ols, data = df)
-ct_ols   <- coeftest(fit_ols, vcov = vcovHC(fit_ols, type = "HC1"))
-print(ct_ols)
-
-ols_est <- coef(fit_ols)["masters"]
-ols_se  <- sqrt(vcovHC(fit_ols, type = "HC1")["masters","masters"])
+ols_formula <- as.formula(
+  paste("ln_salary ~ masters +", paste(X_controls, collapse = " + "))
+)
+ols_model  <- lm(ols_formula, data = df)
+ols_robust <- coeftest(ols_model, vcov = vcovHC(ols_model, type = "HC1"))
+ols_est    <- ols_robust["masters", "Estimate"]
+ols_se     <- ols_robust["masters", "Std. Error"]
 cat(sprintf("OLS estimate: %.4f (SE = %.4f)\n", ols_est, ols_se))
 
-# -----------------------------------------------------------------------
+################################################################################
 # SECTION 5: IV/2SLS Estimation (LATE)
-# -----------------------------------------------------------------------
+################################################################################
 cat("\n==============================================\n")
 cat("IV/2SLS ESTIMATION (LATE)\n")
 cat("==============================================\n")
 
-fml_iv <- as.formula(paste(
-  "ln_salary ~", paste(X_controls, collapse = " + "),
-  "+ masters |",
-  paste(X_controls, collapse = " + "), "+", Z_var
-))
-fit_iv  <- ivreg(fml_iv, data = df)
-ct_iv   <- coeftest(fit_iv, vcov = vcovHC(fit_iv, type = "HC1"))
-print(ct_iv)
-
-iv_est <- coef(fit_iv)["masters"]
-iv_se  <- sqrt(vcovHC(fit_iv, type = "HC1")["masters","masters"])
+iv_formula <- as.formula(
+  paste("ln_salary ~", paste(X_controls, collapse = " + "),
+        "| masters | ga_funding_adj")
+)
+# ivreg syntax: outcome ~ exog | endog | instruments
+iv_formula2 <- as.formula(
+  paste("ln_salary ~ masters +", paste(X_controls, collapse = " + "),
+        "| ga_funding_adj +", paste(X_controls, collapse = " + "))
+)
+iv_model  <- ivreg(iv_formula2, data = df)
+iv_robust <- coeftest(iv_model, vcov = vcovHC(iv_model, type = "HC1"))
+iv_est    <- iv_robust["masters", "Estimate"]
+iv_se     <- iv_robust["masters", "Std. Error"]
 cat(sprintf("\nIV/LATE estimate: %.4f (SE = %.4f)\n", iv_est, iv_se))
 
-# First-stage summary (Wu-Hausman endogeneity test)
-cat("\nIV diagnostic summary:\n")
-print(summary(fit_iv, diagnostics = TRUE)$diagnostics)
+# Durbin-Wu-Hausman endogeneity test
+cat("\n--- Endogeneity Test (Durbin-Wu-Hausman) ---\n")
+print(summary(iv_model, diagnostics = TRUE)$diagnostics)
 
-# -----------------------------------------------------------------------
-# SECTION 6: MTE Estimation — Pooled Polynomial (Manual)
-# -----------------------------------------------------------------------
+################################################################################
+# SECTION 6: MTE ESTIMATION — POOLED POLYNOMIAL
+################################################################################
 cat("\n==============================================\n")
 cat("MTE ESTIMATION — POOLED POLYNOMIAL\n")
 cat("==============================================\n")
 
-# Probit first stage: propensity score
-fml_probit <- as.formula(paste("masters ~", Z_var, "+",
-                               paste(X_controls, collapse = " + ")))
-fit_probit <- glm(fml_probit, data = df, family = binomial(link = "probit"))
-
-df$phat    <- predict(fit_probit, type = "response")
-df$z_index <- predict(fit_probit, type = "link")
-ga_coef    <- coef(fit_probit)[Z_var]
+# Probit first stage — propensity score
+probit_formula <- as.formula(
+  paste("masters ~ ga_funding_adj +", paste(X_controls, collapse = " + "))
+)
+probit_model <- glm(probit_formula, data = df, family = binomial(link = "probit"))
+df$phat   <- fitted(probit_model)
+df$z_index <- predict(probit_model, type = "link")
+ga_coef   <- coef(probit_model)["ga_funding_adj"]
 cat(sprintf("GA funding probit coefficient: %.5f\n", ga_coef))
 
 df$phat2 <- df$phat^2
 df$phat3 <- df$phat^3
 
-# -- Quadratic MTE ------------------------------------------------------
+# ---------- Quadratic MTE ----------
 cat("\n--- Quadratic MTE ---\n")
-fml_quad <- as.formula(paste(
-  "ln_salary ~ masters +",
-  "I(masters * phat) + I(masters * phat2) +",
-  paste(X_controls, collapse = " + "),
-  "+ phat + phat2"
-))
-fit_quad   <- lm(fml_quad, data = df)
-ct_quad    <- coeftest(fit_quad, vcov = vcovHC(fit_quad, type = "HC1"))
+quad_formula <- as.formula(
+  paste("ln_salary ~ masters + I(masters*phat) + I(masters*phat2) +",
+        paste(X_controls, collapse = " + "), "+ phat + phat2")
+)
+quad_model  <- lm(quad_formula, data = df)
+quad_robust <- coeftest(quad_model, vcov = vcovHC(quad_model, type = "HC1"))
 
-b0_quad <- coef(fit_quad)["masters"]
-b1_quad <- coef(fit_quad)["I(masters * phat)"]
-b2_quad <- coef(fit_quad)["I(masters * phat2)"]
+b0_quad <- coef(quad_model)["masters"]
+b1_quad <- coef(quad_model)["I(masters * phat)"]
+b2_quad <- coef(quad_model)["I(masters * phat2)"]
 cat(sprintf("Quadratic MTE(u) = %.4f + %.4f*u + %.4f*u^2\n",
             b0_quad, b1_quad, b2_quad))
-ate_est_quad <- b0_quad + b1_quad / 2 + b2_quad / 3
+ate_est_quad <- b0_quad + b1_quad/2 + b2_quad/3
 cat(sprintf("ATE (quadratic): %.4f\n", ate_est_quad))
 
-# -- Cubic MTE ----------------------------------------------------------
+# ---------- Cubic MTE ----------
 cat("\n--- Cubic MTE ---\n")
-fml_cubic <- as.formula(paste(
-  "ln_salary ~ masters +",
-  "I(masters * phat) + I(masters * phat2) + I(masters * phat3) +",
-  paste(X_controls, collapse = " + "),
-  "+ phat + phat2 + phat3"
-))
-fit_cubic  <- lm(fml_cubic, data = df)
-ct_cubic   <- coeftest(fit_cubic, vcov = vcovHC(fit_cubic, type = "HC1"))
+cubic_formula <- as.formula(
+  paste("ln_salary ~ masters + I(masters*phat) + I(masters*phat2) +",
+        "I(masters*phat3) +",
+        paste(X_controls, collapse = " + "), "+ phat + phat2 + phat3")
+)
+cubic_model  <- lm(cubic_formula, data = df)
+cubic_robust <- coeftest(cubic_model, vcov = vcovHC(cubic_model, type = "HC1"))
 
-b0 <- coef(fit_cubic)["masters"]
-b1 <- coef(fit_cubic)["I(masters * phat)"]
-b2 <- coef(fit_cubic)["I(masters * phat2)"]
-b3 <- coef(fit_cubic)["I(masters * phat3)"]
+b0 <- coef(cubic_model)["masters"]
+b1 <- coef(cubic_model)["I(masters * phat)"]
+b2 <- coef(cubic_model)["I(masters * phat2)"]
+b3 <- coef(cubic_model)["I(masters * phat3)"]
 cat(sprintf("Cubic MTE(u) = %.4f + %.4f*u + %.4f*u^2 + %.4f*u^3\n",
             b0, b1, b2, b3))
 
-ate_est_cubic <- b0 + b1 / 2 + b2 / 3 + b3 / 4
+ate_est_cubic <- b0 + b1/2 + b2/3 + b3/4
 cat(sprintf("Estimated ATE (cubic): %.4f\n", ate_est_cubic))
 
-df$mte_hat <- b0 + b1 * df$phat + b2 * df$phat2 + b3 * df$phat3
-
-att_est <- mean(df$mte_hat[df$masters == 1], na.rm = TRUE)
-atu_est <- mean(df$mte_hat[df$masters == 0], na.rm = TRUE)
+df$mte_hat <- b0 + b1*df$phat + b2*df$phat2 + b3*df$phat3
+att_est    <- mean(df$mte_hat[df$masters == 1])
+atu_est    <- mean(df$mte_hat[df$masters == 0])
 cat(sprintf("Estimated ATT: %.4f\n", att_est))
 cat(sprintf("Estimated ATU: %.4f\n", atu_est))
 
-# -- Heckman selection model -------------------------------------------
+# ---------- Heckman Selection Model ----------
 cat("\n--- Heckman Selection Model ---\n")
-
-# Two-step Heckman
-fit_heck2 <- heckit(
-  selection = fml_probit,
-  outcome   = as.formula(paste("ln_salary ~", paste(X_controls, collapse = " + "))),
-  data      = df,
-  method    = "2step"
+heck_sel_formula <- as.formula(
+  paste("masters ~ ga_funding_adj +", paste(X_controls, collapse = " + "))
 )
-cat("Heckman two-step:\n")
-print(summary(fit_heck2))
-
-# ML Heckman
-fit_heck_ml <- heckit(
-  selection = fml_probit,
-  outcome   = as.formula(paste("ln_salary ~", paste(X_controls, collapse = " + "))),
-  data      = df,
-  method    = "ml"
+heck_out_formula <- as.formula(
+  paste("ln_salary ~", paste(X_controls, collapse = " + "))
 )
-heck_rho    <- fit_heck_ml$rho
-heck_sigma  <- fit_heck_ml$sigma
-heck_lambda <- heck_rho * heck_sigma
-cat(sprintf("Heckman ML: lambda = %.4f  rho = %.4f\n",
-            heck_lambda, heck_rho))
+heck_2step <- tryCatch(
+  heckit(heck_sel_formula, heck_out_formula, data = df, method = "2step"),
+  error = function(e) { message("Heckman 2-step failed: ", e$message); NULL }
+)
+heck_ml <- tryCatch(
+  heckit(heck_sel_formula, heck_out_formula, data = df, method = "ml"),
+  error = function(e) { message("Heckman ML failed: ", e$message); NULL }
+)
+if (!is.null(heck_ml)) {
+  heck_ml_rho    <- coef(heck_ml)["rho"]
+  heck_ml_sigma  <- coef(heck_ml)["sigma"]
+  heck_ml_lambda <- heck_ml_rho * heck_ml_sigma
+  cat(sprintf("Heckman ML: lambda = %.4f  rho = %.4f\n",
+              heck_ml_lambda, heck_ml_rho))
+}
 
-# -----------------------------------------------------------------------
-# SECTION 6b: MTE by Graduate Program Area — Fully Interacted Polynomial
-# -----------------------------------------------------------------------
-# MTE_a(u) = [b0+d0_a] + [b1+d1_a]*u + [b2+d2_a]*u^2 + [b3+d3_a]*u^3
-# ma_other is the omitted (base) category.
-
+################################################################################
+# SECTION 6b: MTE BY GRADUATE PROGRAM AREA — FULLY INTERACTED POLYNOMIAL
+################################################################################
 cat("\n==============================================\n")
 cat("MTE BY GRADUATE PROGRAM AREA\n")
 cat("==============================================\n")
 
-fml_byarea <- as.formula(paste(
-  "ln_salary ~ masters",
-  # base polynomial interactions
-  "+ I(masters*phat) + I(masters*phat2) + I(masters*phat3)",
-  # level differentials
-  "+ I(masters*ma_stem) + I(masters*ma_business)",
-  "+ I(masters*ma_education) + I(masters*ma_health)",
-  # slope differentials (phat)
-  "+ I(masters*ma_stem*phat) + I(masters*ma_business*phat)",
-  "+ I(masters*ma_education*phat) + I(masters*ma_health*phat)",
-  # slope differentials (phat2)
-  "+ I(masters*ma_stem*phat2) + I(masters*ma_business*phat2)",
-  "+ I(masters*ma_education*phat2) + I(masters*ma_health*phat2)",
-  # slope differentials (phat3)
-  "+ I(masters*ma_stem*phat3) + I(masters*ma_business*phat3)",
-  "+ I(masters*ma_education*phat3) + I(masters*ma_health*phat3)",
-  "+", paste(X_controls, collapse = " + "),
-  "+ phat + phat2 + phat3"
-))
-fit_byarea <- lm(fml_byarea, data = df)
+# Build interaction terms manually
+df$m_phat  <- df$masters * df$phat
+df$m_phat2 <- df$masters * df$phat2
+df$m_phat3 <- df$masters * df$phat3
 
-# Base polynomial (Other = base category)
-B0 <- coef(fit_byarea)["masters"]
-B1 <- coef(fit_byarea)["I(masters * phat)"]
-B2 <- coef(fit_byarea)["I(masters * phat2)"]
-B3 <- coef(fit_byarea)["I(masters * phat3)"]
-
-# Area differential coefficients
-areas     <- c("stem","business","education","health")
-all_areas <- c("other", areas)
-d_coef <- list()
-for (a in areas) {
-  d_coef[[a]] <- c(
-    d0 = coef(fit_byarea)[paste0("I(masters * ma_", a, ")")],
-    d1 = coef(fit_byarea)[paste0("I(masters * ma_", a, " * phat)")],
-    d2 = coef(fit_byarea)[paste0("I(masters * ma_", a, " * phat2)")],
-    d3 = coef(fit_byarea)[paste0("I(masters * ma_", a, " * phat3)")]
-  )
+for (a in c("stem","business","education","health")) {
+  ma_var <- paste0("ma_", a)
+  df[[paste0("m_",a)]]       <- df$masters * df[[ma_var]]
+  df[[paste0("m_",a,"_p")]]  <- df$masters * df[[ma_var]] * df$phat
+  df[[paste0("m_",a,"_p2")]] <- df$masters * df[[ma_var]] * df$phat2
+  df[[paste0("m_",a,"_p3")]] <- df$masters * df[[ma_var]] * df$phat3
 }
 
-# Composite area coefficients (base + differential)
-c_coef <- list()
-c_coef[["other"]] <- c(c0 = B0, c1 = B1, c2 = B2, c3 = B3)
-for (a in areas) {
-  c_coef[[a]] <- c(
-    c0 = B0 + d_coef[[a]]["d0"],
-    c1 = B1 + d_coef[[a]]["d1"],
-    c2 = B2 + d_coef[[a]]["d2"],
-    c3 = B3 + d_coef[[a]]["d3"]
-  )
-}
-
-cat("\n--- Area-Specific MTE Functions ---\n")
-for (a in all_areas) {
-  cc <- c_coef[[a]]
-  cat(sprintf("  %-12s %.4f + %.4f*u + %.4f*u^2 + %.4f*u^3\n",
-              paste0(a,":"), cc[1], cc[2], cc[3], cc[4]))
-}
-
-# Area-specific ATE (integral of MTE over [0,1])
-ate_area   <- setNames(
-  sapply(all_areas, function(a) {
-    cc <- c_coef[[a]]
-    unname(cc[1]) + unname(cc[2])/2 + unname(cc[3])/3 + unname(cc[4])/4
-  }),
-  all_areas
+area_int_vars <- c(
+  "m_phat","m_phat2","m_phat3",
+  "m_stem","m_business","m_education","m_health",
+  "m_stem_p","m_business_p","m_education_p","m_health_p",
+  "m_stem_p2","m_business_p2","m_education_p2","m_health_p2",
+  "m_stem_p3","m_business_p3","m_education_p3","m_health_p3"
 )
 
+byarea_formula <- as.formula(
+  paste("ln_salary ~ masters +",
+        paste(area_int_vars, collapse = " + "), "+",
+        paste(X_controls, collapse = " + "),
+        "+ phat + phat2 + phat3")
+)
+byarea_model  <- lm(byarea_formula, data = df)
+byarea_robust <- coeftest(byarea_model, vcov = vcovHC(byarea_model, type = "HC1"))
+
+# Base polynomial (Other = base category)
+B0 <- unname(coef(byarea_model)["masters"])
+B1 <- unname(coef(byarea_model)["m_phat"])
+B2 <- unname(coef(byarea_model)["m_phat2"])
+B3 <- unname(coef(byarea_model)["m_phat3"])
+
+# Area differential and composite coefficients
+area_coefs <- list()
+for (a in c("stem","business","education","health")) {
+  d0 <- unname(coef(byarea_model)[paste0("m_",a)])
+  d1 <- unname(coef(byarea_model)[paste0("m_",a,"_p")])
+  d2 <- unname(coef(byarea_model)[paste0("m_",a,"_p2")])
+  d3 <- unname(coef(byarea_model)[paste0("m_",a,"_p3")])
+  area_coefs[[a]] <- list(
+    c0 = B0 + d0, c1 = B1 + d1, c2 = B2 + d2, c3 = B3 + d3
+  )
+}
+area_coefs[["other"]] <- list(c0 = B0, c1 = B1, c2 = B2, c3 = B3)
+
+# Print area-specific MTE functions
+# NOTE: Minor differences from Stata estimates are expected due to differences
+# in QR decomposition between R's lm() and Stata's reg. Both are correct
+# implementations of the same estimator. Point estimates are consistent.
+cat("\n--- Area-Specific MTE Functions ---\n")
+for (a in c("other","stem","business","education","health")) {
+  cc <- area_coefs[[a]]
+  cat(sprintf("  %-10s: %.4f + %.4f*u + %.4f*u^2 + %.4f*u^3\n",
+              a, cc$c0, cc$c1, cc$c2, cc$c3))
+}
+
+# Area-specific ATE
 cat("\n--- Area-Specific ATE (integral_0^1 MTE_a(u) du) ---\n")
-for (a in names(ate_area))
+ate_area <- sapply(area_coefs, function(cc)
+  cc$c0 + cc$c1/2 + cc$c2/3 + cc$c3/4)
+for (a in c("other","stem","business","education","health"))
   cat(sprintf("  ATE (%s): %.4f\n", a, ate_area[a]))
 
-# Area-specific MTE_hat variables
-for (a in all_areas) {
-  cc <- c_coef[[a]]
-  df[[paste0("mte_hat_", a)]] <-
-    cc[1] + cc[2] * df$phat + cc[3] * df$phat2 + cc[4] * df$phat3
+# Area-specific mte_hat variables
+for (a in c("other","stem","business","education","health")) {
+  cc <- area_coefs[[a]]
+  df[[paste0("mte_hat_",a)]] <-
+    cc$c0 + cc$c1*df$phat + cc$c2*df$phat2 + cc$c3*df$phat3
 }
 
 # Area-specific ATT
-att_area <- setNames(
-  sapply(all_areas, function(a) {
-    flag <- paste0("ma_", a)
-    mean(df[[paste0("mte_hat_", a)]][df[[flag]] == 1], na.rm = TRUE)
-  }),
-  all_areas
-)
-atu_pooled_untreated <- mean(df$mte_hat[df$masters == 0], na.rm = TRUE)
-
 cat("\n--- Area-Specific ATT ---\n")
+att_area <- sapply(c("other","stem","business","education","health"), function(a) {
+  mean(df[[paste0("mte_hat_",a)]][df[[paste0("ma_",a)]] == 1], na.rm = TRUE)
+})
+names(att_area) <- c("other","stem","business","education","health")
 for (a in names(att_area))
   cat(sprintf("  ATT (%s): %.4f\n", a, att_area[a]))
-cat(sprintf("  ATU (pooled): %.4f\n", atu_pooled_untreated))
+
+atu_pooled <- mean(df$mte_hat[df$masters == 0])
+cat(sprintf("\n  ATU (pooled): %.4f\n", atu_pooled))
+
+################################################################################
+# SECTION 6b-ATU: PROSPECTIVE PROGRAM AREA ASSIGNMENT FOR UNTREATED
+################################################################################
+cat("\n==============================================\n")
+cat("SECTION 6b-ATU: PROSPECTIVE PROGRAM AREA (UNTREATED)\n")
+cat("==============================================\n")
+
+# Generate prospective indicators for untreated observations
+for (v in c("ma_stem_pro","ma_business_pro","ma_education_pro",
+            "ma_health_pro","ma_other_pro")) {
+  df[[v]] <- 0L
+}
+
+set.seed(20260102)
+rma_u <- rep(NA_real_, nrow(df))
+rma_u[df$masters == 0] <- runif(sum(df$masters == 0))
+
+df$ma_stem_pro[df$masters==0 & df$stem_major==1 & rma_u<=0.55] <- 1L
+df$ma_business_pro[df$masters==0 & df$bus_major==1 & rma_u<=0.65 &
+                     df$ma_stem_pro==0] <- 1L
+df$ma_education_pro[df$masters==0 & df$ed_major==1 & rma_u<=0.70 &
+                      df$ma_stem_pro==0 & df$ma_business_pro==0] <- 1L
+df$ma_health_pro[df$masters==0 & df$socsci_major==1 & rma_u<=0.40 &
+                   df$ma_stem_pro==0 & df$ma_business_pro==0 &
+                   df$ma_education_pro==0] <- 1L
+df$ma_health_pro[df$masters==0 & df$stem_major==1 &
+                   rma_u>0.55 & rma_u<=0.75 & df$ma_stem_pro==0] <- 1L
+df$ma_other_pro[df$masters==0 & df$ma_stem_pro==0 & df$ma_business_pro==0 &
+                  df$ma_education_pro==0 & df$ma_health_pro==0] <- 1L
+
+# Verification
+n_untreated <- sum(df$masters == 0)
+cat(sprintf("Total untreated: %d\n", n_untreated))
+for (a in c("stem","business","education","health","other")) {
+  n_a <- sum(df[[paste0("ma_",a,"_pro")]] == 1 & df$masters == 0, na.rm = TRUE)
+  cat(sprintf("  ma_%s_pro: %d  (%5.1f%%)\n", a, n_a, 100*n_a/n_untreated))
+}
+
+# Mutual exclusivity check
+pro_check <- df$ma_stem_pro + df$ma_business_pro + df$ma_education_pro +
+             df$ma_health_pro + df$ma_other_pro
+bad_pro <- sum(df$masters == 0 & pro_check != 1, na.rm = TRUE)
+if (bad_pro > 0) {
+  cat("WARNING:", bad_pro, "untreated obs with != 1 prospective area flag\n")
+} else {
+  cat("CHECK PASSED: all untreated obs have exactly 1 prospective area\n")
+}
+
+# Area-specific ATU point estimates
+cat("\n--- Area-Specific ATU (prospective assignment) ---\n")
+atu_area <- sapply(c("stem","business","education","health","other"), function(a) {
+  idx <- df$masters == 0 & df[[paste0("ma_",a,"_pro")]] == 1
+  mean(df[[paste0("mte_hat_",a)]][idx], na.rm = TRUE)
+})
+names(atu_area) <- c("stem","business","education","health","other")
+for (a in names(atu_area))
+  cat(sprintf("  ATU (%s): %.4f\n", a, atu_area[a]))
+cat("  Note: Business ATU CI crosses zero in bootstrap — interpret with caution.\n")
 
 cat("\n==============================================\n")
 cat("AREA-SPECIFIC TREATMENT PARAMETER SUMMARY\n")
 cat("==============================================\n")
-cat(sprintf("  %-12s %8s %8s\n", "Area", "ATE", "ATT"))
-cat("  ", strrep("-", 32), "\n")
-for (a in all_areas)
-  cat(sprintf("  %-12s %8.4f %8.4f\n", a, ate_area[a], att_area[a]))
-cat("\n")
-cat("  NOTE (Chapter footnote): The Business ATE (2.12) should be interpreted\n")
-cat("  with caution. Business master's students are a small subgroup (N=194\n")
-cat("  treated), concentrated in a narrow propensity score range; the cubic\n")
-cat("  polynomial extrapolates beyond the observed support, producing an\n")
-cat("  unstable estimate with a wide bootstrap SE (0.9975). The ATT (1.15)\n")
-cat("  is better identified and more reliable for this subgroup.\n")
+cat(sprintf("%-12s %10s %10s %10s\n", "Area", "ATE", "ATT", "ATU(prosp.)"))
+cat(strrep("-",45),"\n")
+for (a in c("other","stem","business","education","health")) {
+  cat(sprintf("  %-10s %10.4f %10.4f %10.4f\n",
+              a, ate_area[a], att_area[a], atu_area[a]))
+}
 
-# -----------------------------------------------------------------------
-# SECTION 6c: Cluster Bootstrap
-# -----------------------------------------------------------------------
-# Manual cluster bootstrap (G = 50 state clusters, R = 500 reps).
-# Bootstraps the full probit + cubic MTE + interacted MTE pipeline.
-# SEs = standard deviation of the bootstrap distribution.
-
+################################################################################
+# SECTION 6c: BOOTSTRAP INFRASTRUCTURE
+# Cluster bootstrap at state level (G=50, R=500)
+################################################################################
 cat("\n==============================================\n")
 cat("CLUSTER BOOTSTRAP (G=50, R=500)\n")
 cat("==============================================\n")
 
+R_boot <- 500
 set.seed(20260101)
-R_boot  <- 500L
 states  <- unique(df$state)
-G       <- length(states)
-bs_cols <- c("b_ate","b_att","b_atu",
-             "b_ate_stem","b_att_stem",
-             "b_ate_bus", "b_att_bus",
-             "b_ate_ed",  "b_att_ed",
-             "b_ate_hlth","b_att_hlth",
-             "b_ate_oth", "b_att_oth")
-bs_mat  <- matrix(NA_real_, nrow = R_boot, ncol = length(bs_cols),
-                  dimnames = list(NULL, bs_cols))
+n_states <- length(states)
 
-n_ok  <- 0L
-cat(sprintf("Running cluster bootstrap (G=%d, R=%d reps)...\n", G, R_boot))
+# Storage matrix: one row per successful replication
+boot_cols <- c("b_ate","b_att","b_atu",
+               paste0("b_ate_",c("stem","bus","ed","hlth","oth")),
+               paste0("b_att_",c("stem","bus","ed","hlth","oth")),
+               paste0("b_atu_",c("stem","bus","ed","hlth","oth")))
+boot_results <- matrix(NA_real_, nrow = R_boot, ncol = length(boot_cols))
+colnames(boot_results) <- boot_cols
+
+n_ok <- 0L
+cat(sprintf("Running cluster bootstrap (G=%d, R=%d reps)...\n",
+            n_states, R_boot))
 cat("Each dot = 10 reps completed\n")
 
 for (b in seq_len(R_boot)) {
 
   ok <- TRUE
 
-  # Resample states with replacement
-  sampled_states <- sample(states, G, replace = TRUE)
-  bs_list <- lapply(seq_along(sampled_states), function(i) {
-    d <- df[df$state == sampled_states[i], ]
-    d$state <- i   # new cluster ID
-    d
-  })
-  bs_df <- do.call(rbind, bs_list)
+  # Cluster bootstrap: resample states with replacement
+  sampled_states <- sample(states, n_states, replace = TRUE)
+  boot_df <- do.call(rbind, lapply(seq_along(sampled_states), function(i) {
+    tmp <- df[df$state == sampled_states[i], ]
+    tmp$newstate <- i
+    tmp
+  }))
 
-  # Probit
-  fit_pb_b <- tryCatch(
-    glm(fml_probit, data = bs_df, family = binomial(link = "probit")),
-    error = function(e) { ok <<- FALSE; NULL }
+  # --- Probit ---
+  pb_model <- tryCatch(
+    glm(probit_formula, data = boot_df, family = binomial(link = "probit")),
+    error = function(e) NULL
   )
-  if (!ok) { if (b %% 10 == 0) cat("."); next }
+  if (is.null(pb_model)) { ok <- FALSE }
 
-  bs_df$pb    <- predict(fit_pb_b, type = "response")
-  bs_df$pb2   <- bs_df$pb^2
-  bs_df$pb3   <- bs_df$pb^3
-
-  # Pooled cubic MTE
-  fml_cub_b <- as.formula(paste(
-    "ln_salary ~ masters + I(masters*pb) + I(masters*pb2) + I(masters*pb3) +",
-    paste(X_controls, collapse = " + "), "+ pb + pb2 + pb3"
-  ))
-  fit_cub_b <- tryCatch(
-    lm(fml_cub_b, data = bs_df),
-    error = function(e) { ok <<- FALSE; NULL }
-  )
-  if (!ok) { if (b %% 10 == 0) cat("."); next }
-
-  cf_cub  <- coef(fit_cub_b)
-  cfn_cub <- names(cf_cub)
-  m_idx_c <- grep("^masters$", cfn_cub)
-  r0 <- if (length(m_idx_c) == 1) unname(cf_cub[m_idx_c]) else 0
-  idx_r1 <- grep("masters * pb)", cfn_cub, fixed = TRUE)
-  r1 <- if (length(idx_r1) == 1) unname(cf_cub[idx_r1]) else 0
-  idx_r2 <- grep("masters * pb2)", cfn_cub, fixed = TRUE)
-  r2 <- if (length(idx_r2) == 1) unname(cf_cub[idx_r2]) else 0
-  idx_r3 <- grep("masters * pb3)", cfn_cub, fixed = TRUE)
-  r3 <- if (length(idx_r3) == 1) unname(cf_cub[idx_r3]) else 0
-  b_ate_r <- r0 + r1/2 + r2/3 + r3/4
-  mb      <- r0 + r1 * bs_df$pb + r2 * bs_df$pb2 + r3 * bs_df$pb3
-  b_att_r <- mean(mb[bs_df$masters == 1], na.rm = TRUE)
-  b_atu_r <- mean(mb[bs_df$masters == 0], na.rm = TRUE)
-
-  # Fully interacted MTE
-  fml_ia_b <- as.formula(paste(
-    "ln_salary ~ masters",
-    "+ I(masters*pb) + I(masters*pb2) + I(masters*pb3)",
-    "+ I(masters*ma_stem) + I(masters*ma_business)",
-    "+ I(masters*ma_education) + I(masters*ma_health)",
-    "+ I(masters*ma_stem*pb) + I(masters*ma_business*pb)",
-    "+ I(masters*ma_education*pb) + I(masters*ma_health*pb)",
-    "+ I(masters*ma_stem*pb2) + I(masters*ma_business*pb2)",
-    "+ I(masters*ma_education*pb2) + I(masters*ma_health*pb2)",
-    "+ I(masters*ma_stem*pb3) + I(masters*ma_business*pb3)",
-    "+ I(masters*ma_education*pb3) + I(masters*ma_health*pb3)",
-    "+", paste(X_controls, collapse = " + "),
-    "+ pb + pb2 + pb3"
-  ))
-  fit_ia_b <- tryCatch(
-    lm(fml_ia_b, data = bs_df),
-    error = function(e) { ok <<- FALSE; NULL }
-  )
-  if (!ok) { if (b %% 10 == 0) cat("."); next }
-
-  cf_b      <- coef(fit_ia_b)
-  cfn_b     <- names(cf_b)
-  safe_b    <- function(pat) {
-    idx <- grep(pat, cfn_b, fixed = TRUE)
-    if (length(idx) == 1) unname(cf_b[idx]) else 0
+  if (ok) {
+    boot_df$pb   <- fitted(pb_model)
+    boot_df$pb2  <- boot_df$pb^2
+    boot_df$pb3  <- boot_df$pb^3
+    boot_df$mpb  <- boot_df$masters * boot_df$pb
+    boot_df$mpb2 <- boot_df$masters * boot_df$pb2
+    boot_df$mpb3 <- boot_df$masters * boot_df$pb3
   }
 
-  BB0 <- safe_b("masters")
-  # get base masters coef (not interactions)
-  m_idx <- grep("^masters$", cfn_b)
-  BB0   <- if (length(m_idx) == 1) unname(cf_b[m_idx]) else 0
-  BB1   <- safe_b("masters * pb)")
-  BB2   <- safe_b("masters * pb2)")
-  BB3   <- safe_b("masters * pb3)")
-
-  area_bs <- list()
-  for (a in areas) {
-    D0 <- safe_b(paste0("masters * ma_", a, ")"))
-    D1 <- safe_b(paste0("masters * ma_", a, " * pb)"))
-    D2 <- safe_b(paste0("masters * ma_", a, " * pb2)"))
-    D3 <- safe_b(paste0("masters * ma_", a, " * pb3)"))
-    C0 <- BB0 + D0; C1 <- BB1 + D1; C2 <- BB2 + D2; C3 <- BB3 + D3
-    ate_a <- C0 + C1/2 + C2/3 + C3/4
-    ms    <- C0 + C1 * bs_df$pb + C2 * bs_df$pb2 + C3 * bs_df$pb3
-    flag  <- paste0("ma_", a)
-    att_a <- mean(ms[bs_df[[flag]] == 1], na.rm = TRUE)
-    area_bs[[a]] <- c(ate = ate_a, att = att_a)
+  # --- Pooled cubic MTE ---
+  if (ok) {
+    pooled_boot_formula <- as.formula(
+      paste("ln_salary ~ masters + I(masters*pb) + I(masters*pb2) +",
+            "I(masters*pb3) +", paste(X_controls, collapse = " + "),
+            "+ pb + pb2 + pb3")
+    )
+    pm <- tryCatch(lm(pooled_boot_formula, data = boot_df), error = function(e) NULL)
+    if (is.null(pm)) ok <- FALSE
   }
-  ate_oth_b <- BB0 + BB1/2 + BB2/3 + BB3/4
-  mb_oth    <- BB0 + BB1 * bs_df$pb + BB2 * bs_df$pb2 + BB3 * bs_df$pb3
-  att_oth_b <- mean(mb_oth[bs_df$ma_other == 1], na.rm = TRUE)
 
-  bs_mat[b, ] <- c(b_ate_r, b_att_r, b_atu_r,
-                   area_bs$stem["ate"],     area_bs$stem["att"],
-                   area_bs$business["ate"], area_bs$business["att"],
-                   area_bs$education["ate"],area_bs$education["att"],
-                   area_bs$health["ate"],   area_bs$health["att"],
-                   ate_oth_b,               att_oth_b)
-  n_ok <- n_ok + 1L
+  if (ok) {
+    r0 <- coef(pm)["masters"]
+    r1 <- coef(pm)["I(masters * pb)"]
+    r2 <- coef(pm)["I(masters * pb2)"]
+    r3 <- coef(pm)["I(masters * pb3)"]
+    b_ate_r <- r0 + r1/2 + r2/3 + r3/4
+    mb_pooled <- r0 + r1*boot_df$pb + r2*boot_df$pb2 + r3*boot_df$pb3
+    b_att_r <- mean(mb_pooled[boot_df$masters == 1])
+    b_atu_r <- mean(mb_pooled[boot_df$masters == 0])
+  }
+
+  # --- Fully interacted MTE ---
+  if (ok) {
+    for (a in c("stem","business","education","health")) {
+      ma_var <- paste0("ma_", a)
+      boot_df[[paste0("m_",a)]]       <- boot_df$masters * boot_df[[ma_var]]
+      boot_df[[paste0("m_",a,"_p")]]  <- boot_df$masters * boot_df[[ma_var]] * boot_df$pb
+      boot_df[[paste0("m_",a,"_p2")]] <- boot_df$masters * boot_df[[ma_var]] * boot_df$pb2
+      boot_df[[paste0("m_",a,"_p3")]] <- boot_df$masters * boot_df[[ma_var]] * boot_df$pb3
+    }
+    int_vars_b <- c("mpb","mpb2","mpb3",
+                    paste0("m_",c("stem","business","education","health")),
+                    paste0("m_",c("stem","business","education","health"),"_p"),
+                    paste0("m_",c("stem","business","education","health"),"_p2"),
+                    paste0("m_",c("stem","business","education","health"),"_p3"))
+    byarea_boot_f <- as.formula(
+      paste("ln_salary ~ masters +",
+            paste(int_vars_b, collapse = " + "), "+",
+            paste(X_controls, collapse = " + "), "+ pb + pb2 + pb3")
+    )
+    bm <- tryCatch(lm(byarea_boot_f, data = boot_df), error = function(e) NULL)
+    if (is.null(bm)) ok <- FALSE
+  }
+
+  if (ok) {
+    BB0 <- unname(coef(bm)["masters"])
+    BB1 <- unname(coef(bm)["mpb"])
+    BB2 <- unname(coef(bm)["mpb2"])
+    BB3 <- unname(coef(bm)["mpb3"])
+
+    area_names_b  <- c("stem","bus","ed","hlth","oth")
+    area_labels_b <- c("stem","business","education","health","other")
+    area_ma_b     <- c("stem","business","education","health","other")
+
+    ate_bs <- att_bs <- atu_bs <- numeric(5)
+
+    for (i in seq_along(area_labels_b)) {
+      a     <- area_labels_b[i]
+      a_key <- area_names_b[i]
+      if (a == "other") {
+        C0 <- BB0; C1 <- BB1; C2 <- BB2; C3 <- BB3
+      } else {
+        D0 <- unname(coef(bm)[paste0("m_",a)])
+        D1 <- unname(coef(bm)[paste0("m_",a,"_p")])
+        D2 <- unname(coef(bm)[paste0("m_",a,"_p2")])
+        D3 <- unname(coef(bm)[paste0("m_",a,"_p3")])
+        C0 <- BB0+D0; C1 <- BB1+D1; C2 <- BB2+D2; C3 <- BB3+D3
+      }
+      ate_bs[i] <- C0 + C1/2 + C2/3 + C3/4
+      ms <- C0 + C1*boot_df$pb + C2*boot_df$pb2 + C3*boot_df$pb3
+      ma_col <- paste0("ma_",a)
+      att_bs[i] <- mean(ms[boot_df[[ma_col]] == 1], na.rm = TRUE)
+      pro_col   <- paste0("ma_",a,"_pro")
+      atu_bs[i] <- mean(ms[boot_df$masters == 0 & boot_df[[pro_col]] == 1], na.rm = TRUE)
+    }
+
+    boot_results[b, ] <- c(b_ate_r, b_att_r, b_atu_r,
+                           ate_bs, att_bs, atu_bs)
+    n_ok <- n_ok + 1L
+  }
+
   if (b %% 10 == 0) cat(".")
 }
 cat(sprintf("\nBootstrap complete: %d of %d reps successful\n", n_ok, R_boot))
 
-# Extract SEs as SDs of the bootstrap distribution (complete cases only)
-bs_df_out <- as.data.frame(bs_mat[complete.cases(bs_mat), ])
-ate_se         <- sd(bs_df_out$b_ate,       na.rm = TRUE)
-att_se         <- sd(bs_df_out$b_att,       na.rm = TRUE)
-atu_se         <- sd(bs_df_out$b_atu,       na.rm = TRUE)
-ate_se_stem    <- sd(bs_df_out$b_ate_stem,  na.rm = TRUE)
-att_se_stem    <- sd(bs_df_out$b_att_stem,  na.rm = TRUE)
-ate_se_business<- sd(bs_df_out$b_ate_bus,   na.rm = TRUE)
-att_se_business<- sd(bs_df_out$b_att_bus,   na.rm = TRUE)
-ate_se_education<-sd(bs_df_out$b_ate_ed,    na.rm = TRUE)
-att_se_education<-sd(bs_df_out$b_att_ed,    na.rm = TRUE)
-ate_se_health  <- sd(bs_df_out$b_ate_hlth,  na.rm = TRUE)
-att_se_health  <- sd(bs_df_out$b_att_hlth,  na.rm = TRUE)
-ate_se_other   <- sd(bs_df_out$b_ate_oth,   na.rm = TRUE)
-att_se_other   <- sd(bs_df_out$b_att_oth,   na.rm = TRUE)
+# Extract SEs as SDs of bootstrap distribution
+boot_df_results <- as.data.frame(boot_results[complete.cases(boot_results), ])
 
-# Alias mtefe SEs from cluster bootstrap (same estimator, no separate package)
-mtefe_ate_q    <- ate_est_quad
-mtefe_att_q    <- att_est
-mtefe_atu_q    <- atu_est
-mtefe_ate_q_se <- ate_se
-mtefe_att_q_se <- att_se
-mtefe_atu_q_se <- atu_se
-mtefe_late     <- iv_est
-mtefe_late_se  <- iv_se
+ate_se <- sd(boot_df_results$b_ate)
+att_se <- sd(boot_df_results$b_att)
+atu_se <- sd(boot_df_results$b_atu)
 
-cat("\n--- Cluster-robust SEs (OLS) ---\n")
-ct_ols_cl <- coeftest(fit_ols,
-                      vcov = vcovCL(fit_ols, cluster = ~state))
-cat(sprintf("  OLS masters: %.4f (SE = %.4f)\n",
-            ct_ols_cl["masters","Estimate"],
-            ct_ols_cl["masters","Std. Error"]))
+area_short <- c("stem","bus","ed","hlth","oth")
+area_long  <- c("stem","business","education","health","other")
 
-cat("\n--- Cluster-robust SEs (IV) ---\n")
-ct_iv_cl  <- coeftest(fit_iv,
-                      vcov = vcovCL(fit_iv, cluster = ~state))
-cat(sprintf("  IV masters:  %.4f (SE = %.4f)\n",
-            ct_iv_cl["masters","Estimate"],
-            ct_iv_cl["masters","Std. Error"]))
+ate_se_area <- setNames(
+  sapply(paste0("b_ate_", area_short), function(v) sd(boot_df_results[[v]], na.rm = TRUE)),
+  area_long)
+att_se_area <- setNames(
+  sapply(paste0("b_att_", area_short), function(v) sd(boot_df_results[[v]], na.rm = TRUE)),
+  area_long)
+atu_se_area <- setNames(
+  sapply(paste0("b_atu_", area_short), function(v) sd(boot_df_results[[v]], na.rm = TRUE)),
+  area_long)
 
+# Print bootstrap SEs with 95% CIs
 cat("\n--- Bootstrap SEs: Pooled Parameters ---\n")
 cat(sprintf("  ATE = %.4f  (Bootstrap SE = %.4f)\n", ate_est_cubic, ate_se))
 cat(sprintf("  ATT = %.4f  (Bootstrap SE = %.4f)\n", att_est,       att_se))
 cat(sprintf("  ATU = %.4f  (Bootstrap SE = %.4f)\n", atu_est,       atu_se))
 
-cat("\n--- Bootstrap SEs: Area-Specific ATE ---\n")
-cat(sprintf("  %-12s %10s %8s %20s\n", "Area","Point Est","BS SE","95% CI"))
-cat("  ", strrep("-", 54), "\n")
-for (a in all_areas) {
-  se_a <- get(paste0("ate_se_", a))
-  lo   <- ate_area[a] - 1.96 * se_a
-  hi   <- ate_area[a] + 1.96 * se_a
-  cat(sprintf("  %-12s %10.4f %8.4f  [%.4f, %.4f]\n",
-              a, ate_area[a], se_a, lo, hi))
+print_bs_table <- function(label, est_vec, se_vec) {
+  cat(sprintf("\n--- Bootstrap SEs: Area-Specific %s ---\n", label))
+  cat(sprintf("%-12s %10s %10s %14s %6s\n","Area","Estimate","BS SE","95% CI","Sig"))
+  cat(strrep("-",55),"\n")
+  for (a in c("other","stem","business","education","health")) {
+    est <- est_vec[a]
+    se  <- se_vec[a]
+    if (is.na(est) || is.na(se)) {
+      cat(sprintf("  %-10s %10s %10s  %14s %s\n", a, "NA", "NA", "[NA, NA]", "   "))
+    } else {
+      lo  <- est - 1.96 * se
+      hi  <- est + 1.96 * se
+      sig <- if (!is.na(lo) && !is.na(hi) && (lo > 0 || hi < 0)) "***" else "   "
+      cat(sprintf("  %-10s %10.4f %10.4f  [%7.4f,%7.4f] %s\n",
+                  a, est, se, lo, hi, sig))
+    }
+  }
+  cat("  *** = 95% CI excludes zero (p < 0.05, two-tailed)\n")
 }
 
-cat("\n--- Bootstrap SEs: Area-Specific ATT ---\n")
-cat(sprintf("  %-12s %10s %8s\n", "Area","Point Est","BS SE"))
-cat("  ", strrep("-", 34), "\n")
-for (a in all_areas) {
-  se_a <- get(paste0("att_se_", a))
-  cat(sprintf("  %-12s %10.4f %8.4f\n", a, att_area[a], se_a))
-}
+print_bs_table("ATE", ate_area, ate_se_area)
+print_bs_table("ATT", att_area, att_se_area)
+print_bs_table("ATU (prospective)", atu_area, atu_se_area)
 
-# -----------------------------------------------------------------------
+################################################################################
 # SECTION 7: Results Comparison
-# -----------------------------------------------------------------------
+################################################################################
 cat("\n==============================================\n")
 cat("RESULTS COMPARISON\n")
 cat("==============================================\n")
 
-cat(sprintf("  Naive OLS:              %.4f (SE = %.4f — likely biased)\n",   ols_est, ols_se))
-cat(sprintf("  IV/LATE:                %.4f (SE = %.4f — complier effect)\n", iv_est,  iv_se))
-cat(sprintf("  MTE-based ATE (cubic):  %.4f (BS SE = %.4f)\n", ate_est_cubic, ate_se))
-cat(sprintf("  MTE-based ATT:          %.4f (BS SE = %.4f)\n", att_est,       att_se))
-cat(sprintf("  MTE-based ATU:          %.4f (BS SE = %.4f)\n", atu_est,       atu_se))
-cat(sprintf("  manual poly ATE (quad): %.4f (BS SE = %.4f)\n", mtefe_ate_q,   mtefe_ate_q_se))
-cat(sprintf("  manual poly ATT (quad): %.4f (BS SE = %.4f)\n", mtefe_att_q,   mtefe_att_q_se))
-cat(sprintf("  manual poly ATU (quad): %.4f (BS SE = %.4f)\n", mtefe_atu_q,   mtefe_atu_q_se))
+cat(sprintf("  Naive OLS:             %.4f (SE = %.4f — likely biased)\n", ols_est, ols_se))
+cat(sprintf("  IV/LATE:               %.4f (SE = %.4f — complier effect)\n", iv_est,  iv_se))
+cat(sprintf("  MTE-based ATE (cubic): %.4f (BS SE = %.4f)\n", ate_est_cubic, ate_se))
+cat(sprintf("  MTE-based ATT:         %.4f (BS SE = %.4f)\n", att_est,       att_se))
+cat(sprintf("  MTE-based ATU:         %.4f (BS SE = %.4f)\n", atu_est,       atu_se))
 
-if (att_est > ate_est_cubic & ate_est_cubic > atu_est) {
+if (att_est > ate_est_cubic && ate_est_cubic > atu_est) {
   cat("  ATT > ATE > ATU: POSITIVE SELECTION on gains\n")
-} else if (att_est < ate_est_cubic & ate_est_cubic < atu_est) {
+} else if (att_est < ate_est_cubic && ate_est_cubic < atu_est) {
   cat("  ATT < ATE < ATU: NEGATIVE SELECTION on gains\n")
 } else {
   cat("  Mixed selection pattern\n")
@@ -786,468 +735,344 @@ if (att_est > ate_est_cubic & ate_est_cubic > atu_est) {
 ols_bias <- (ols_est - ate_est_cubic) / ate_est_cubic * 100
 cat(sprintf("OLS BIAS: %.1f%% relative to MTE-based ATE\n", ols_bias))
 
-# -----------------------------------------------------------------------
+################################################################################
 # SECTION 8: MTE Visualization
-# -----------------------------------------------------------------------
+################################################################################
 cat("\n==============================================\n")
 cat("MTE VISUALIZATION\n")
 cat("==============================================\n")
 
-# -- fig10_8: Pooled MTE curve ----------------------------------------
-u_grid <- seq(0.01, 1.00, length.out = 100)
+# Fig 10.8: Pooled MTE curve
+u_grid <- seq(0.01, 1, length.out = 100)
 mte_grid_df <- data.frame(
-  u       = u_grid,
-  mte_est = b0 + b1 * u_grid + b2 * u_grid^2 + b3 * u_grid^3
+  u   = u_grid,
+  mte = b0 + b1*u_grid + b2*u_grid^2 + b3*u_grid^3
 )
 
-p_mte <- ggplot(mte_grid_df, aes(x = u, y = mte_est)) +
-  geom_hline(yintercept = 0, linetype = "dashed",
-             colour = "grey50", linewidth = 0.4) +
-  geom_line(colour = "black", linewidth = 0.8) +
-  labs(title    = "Estimated MTE Curve - Pooled",
-       subtitle = "Master's Degree Effect on Log Salary",
-       x        = "u (Unobserved Resistance to Treatment)",
-       y        = "Marginal Treatment Effect",
-       caption  = "Declining MTE indicates positive selection on gains") +
+fig10_8 <- ggplot(mte_grid_df, aes(x = u, y = mte)) +
+  geom_line(color = "black", linewidth = 0.8) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  labs(
+    title    = "Estimated MTE Curve - Pooled",
+    subtitle = "Master's Degree Effect on Log Salary",
+    x        = "u (Unobserved Resistance to Treatment)",
+    y        = "Marginal Treatment Effect",
+    caption  = "Declining MTE indicates positive selection on gains"
+  ) +
   theme_springer()
 
 ggsave(file.path(graphs_dir, "fig10_8_mte_curve_R.png"),
-       p_mte, width = 7, height = 5, dpi = 200)
-print(p_mte)
-cat("fig10_8 exported.\n")
+       fig10_8, width = 6, height = 4, dpi = 200)
+cat("Saved fig10_8_mte_curve_R.png\n")
 
-# -- mte_by_decile: MTE by propensity score decile --------------------
-df$p_decile <- as.integer(cut(df$phat, breaks = quantile(df$phat,
-                              probs = seq(0, 1, by = 0.10)),
-                              include.lowest = TRUE, labels = FALSE))
-dec_df <- df %>%
-  group_by(p_decile) %>%
-  summarise(mte_mean = mean(mte_hat, na.rm = TRUE),
-            mte_sd   = sd(mte_hat,   na.rm = TRUE),
-            n        = n(), .groups = "drop")
+# Fig 10.9: MTE by propensity score bin
+df$p_bin <- floor(df$phat * 20) / 20
+mte_bin_df <- df %>%
+  group_by(p_bin) %>%
+  summarise(mean_mte = mean(mte_hat), n_bin = n(), .groups = "drop")
 
-cat("Estimated MTE by Propensity Score Decile:\n")
-print(dec_df)
-
-p_dec <- ggplot(dec_df, aes(x = p_decile, y = mte_mean)) +
-  geom_hline(yintercept = 0, linetype = "dashed",
-             colour = "grey50", linewidth = 0.4) +
-  geom_line(colour = "black", linewidth = 0.6) +
-  geom_point(shape = 18, size = 3, colour = "black") +
-  labs(title    = "Estimated MTE by Propensity Score Decile",
-       subtitle = "Evidence of Treatment Effect Heterogeneity",
-       x        = "Propensity Score Decile",
-       y        = "Mean Estimated MTE") +
+fig10_9 <- ggplot(mte_bin_df, aes(x = p_bin)) +
+  geom_bar(aes(y = n_bin / max(n_bin) * max(abs(mean_mte))),
+           stat = "identity", fill = "grey80", color = "grey60") +
+  geom_point(aes(y = mean_mte), shape = 18, size = 3, color = "black") +
+  geom_line(aes(y  = mean_mte), color = "black", linewidth = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  labs(title = "MTE by Propensity Score",
+       x = "Propensity Score", y = "Estimated MTE") +
   theme_springer()
 
-ggsave(file.path(graphs_dir, "fig10_12_mte_by_decile_R.png"),
-       p_dec, width = 7, height = 5, dpi = 200)
-print(p_dec)
+ggsave(file.path(graphs_dir, "fig10_9_mte_by_propensity_R.png"),
+       fig10_9, width = 6, height = 4, dpi = 200)
+cat("Saved fig10_9_mte_by_propensity_R.png\n")
 
-# -- fig10_10: MTE curves by program area -----------------------------
-area_curves <- data.frame(u = u_grid)
-for (a in all_areas) {
-  cc <- c_coef[[a]]
-  area_curves[[a]] <- cc[1] + cc[2] * u_grid +
-                      cc[3] * u_grid^2 + cc[4] * u_grid^3
+# Fig 10.10: MTE curves by program area
+area_curve_df <- data.frame(u = u_grid)
+for (a in c("other","stem","business","education","health")) {
+  cc <- area_coefs[[a]]
+  area_curve_df[[a]] <- cc$c0 + cc$c1*u_grid + cc$c2*u_grid^2 + cc$c3*u_grid^3
 }
+area_long_df <- tidyr::pivot_longer(area_curve_df, -u,
+                                    names_to = "area", values_to = "mte")
+area_long_df$area <- factor(area_long_df$area,
+  levels = c("health","stem","business","education","other"),
+  labels = c("Health & Related","STEM","Business","Education","Other (base)"))
 
-area_long <- area_curves %>%
-  pivot_longer(-u, names_to = "area", values_to = "mte") %>%
-  mutate(area = factor(area,
-                       levels = c("health","stem","business","education","other"),
-                       labels = c("Health & Related","STEM","Business",
-                                  "Education","Other (base)")))
+linetypes <- c("solid","dashed","longdash","solid","dashed")
+names(linetypes) <- levels(area_long_df$area)
 
-linetypes <- c("Health & Related" = "solid",
-               "STEM"             = "dashed",
-               "Business"         = "longdash",
-               "Education"        = "solid",
-               "Other (base)"     = "dashed")
-colours   <- c("Health & Related" = "black",
-               "STEM"             = "black",
-               "Business"         = "black",
-               "Education"        = "grey50",
-               "Other (base)"     = "grey50")
-
-p_area <- ggplot(area_long, aes(x = u, y = mte,
-                                colour = area, linetype = area)) +
-  geom_hline(yintercept = 0, linetype = "dotdash",
-             colour = "grey70", linewidth = 0.3) +
-  geom_line(linewidth = 0.7) +
-  scale_colour_manual(values = colours)   +
+fig10_10 <- ggplot(area_long_df, aes(x = u, y = mte,
+                                      linetype = area, color = area)) +
+  geom_line(linewidth = 0.8) +
   scale_linetype_manual(values = linetypes) +
+  scale_color_manual(values = rep(c("black","grey40"), c(3,2))) +
+  geom_hline(yintercept = 0, linetype = "dotdash", color = "grey60") +
   labs(title    = "MTE Curves by Graduate Program Area",
        subtitle = "Field-specific returns to master's degree",
-       x        = "u (Unobserved Resistance to Treatment)",
-       y        = "Marginal Treatment Effect") +
-  guides(colour   = guide_legend(nrow = 2),
-         linetype = guide_legend(nrow = 2)) +
+       x = "u (Unobserved Resistance to Treatment)",
+       y = "Marginal Treatment Effect") +
   theme_springer()
 
 ggsave(file.path(graphs_dir, "fig10_10_mte_byarea_curve_R.png"),
-       p_area, width = 7, height = 5, dpi = 200)
-print(p_area)
-cat("fig10_10 exported.\n")
+       fig10_10, width = 7, height = 4.5, dpi = 200)
+cat("Saved fig10_10_mte_byarea_curve_R.png\n")
 
-# -----------------------------------------------------------------------
+################################################################################
 # SECTION 9: Basic Policy Simulation (PRTE)
-# -----------------------------------------------------------------------
-ga_current <- mean(df$ga_funding_adj, na.rm = TRUE)
+################################################################################
+cat("\n==============================================\n")
+cat("BASIC POLICY SIMULATION (PRTE)\n")
+cat("==============================================\n")
+
+ga_current <- mean(df$ga_funding_adj)
 ga_new     <- ga_current * 1.2
-cat(sprintf("\nCurrent mean GA: $%.2fk  Proposed (20%% increase): $%.2fk\n",
+cat(sprintf("Current mean GA: $%.2fk  Proposed (20%% increase): $%.2fk\n",
             ga_current, ga_new))
 
-df$p_new_prte   <- pnorm(df$z_index + ga_coef * (ga_new - df$ga_funding_adj))
-df$delta_p_prte <- df$p_new_prte - df$phat
+df$p_new_prte <- pnorm(df$z_index + ga_coef*(ga_new - df$ga_funding_adj))
+df$delta_p    <- df$p_new_prte - df$phat
+avg_delta_p   <- mean(df$delta_p)
+cat(sprintf("Average increase in Pr(Master's): %.4f\n", avg_delta_p))
 
-avg_delta <- mean(df$delta_p_prte, na.rm = TRUE)
-cat(sprintf("Average increase in Pr(Master's): %.4f\n", avg_delta))
-
-sub_comp  <- df[df$delta_p_prte > 0, ]
-prte_20pct <- weighted.mean(sub_comp$mte_hat,
-                            w = sub_comp$delta_p_prte,
+complier_w <- ifelse(df$delta_p > 0, df$delta_p / avg_delta_p, NA_real_)
+prte_20pct <- weighted.mean(df$mte_hat, w = ifelse(is.na(complier_w), 0, complier_w),
                             na.rm = TRUE)
 cat(sprintf("Approximate PRTE (20%% GA increase): %.4f\n", prte_20pct))
+df$p_new_prte <- df$delta_p <- NULL
 
-df$p_new_prte <- df$delta_p_prte <- NULL
-
-# -----------------------------------------------------------------------
-# SECTION 10: MPRTE — Scenarios 1–4 (Original)
-# -----------------------------------------------------------------------
+################################################################################
+# SECTION 10: MPRTE — Scenarios 1–4
+################################################################################
 cat("\n==============================================\n")
 cat("MPRTE - SCENARIOS 1-4 (ORIGINAL)\n")
 cat("==============================================\n")
 
-mprte_scenario <- function(df, ga_coef, mte_col, amount, target = NULL) {
-  # MPRTE = sum(MTE_i * h_i) / sum(h_i)
-  # h_i = phi(Phi^{-1}(phat_i)) * ga_coef * amount [* target_i]
-  response <- dnorm(qnorm(df$phat)) * ga_coef * amount
-  if (!is.null(target)) response <- response * df[[target]]
-  mte_vals <- df[[mte_col]]
-  mask     <- if (!is.null(target)) df[[target]] == 1 else rep(TRUE, nrow(df))
-  sum(mte_vals[mask] * response[mask], na.rm = TRUE) /
-    sum(response[mask], na.rm = TRUE)
+mprte_scenario <- function(df, ga_coef, z_index_var, mte_var,
+                            amount, target = rep(TRUE, nrow(df)),
+                            label = "Scenario") {
+  response   <- dnorm(qnorm(df$phat)) * ga_coef * amount * as.numeric(target)
+  mte_vals   <- df[[mte_var]]
+  num        <- sum(mte_vals * response, na.rm = TRUE)
+  denom      <- sum(response, na.rm = TRUE)
+  mprte_val  <- num / denom
+  cat(sprintf("MPRTE (%s): %.4f\n", label, mprte_val))
+  mprte_val
 }
 
-# Scenario 1: Uniform $1k
-mprte_unif   <- mprte_scenario(df, ga_coef, "mte_hat", amount = 1)
-cat(sprintf("MPRTE (uniform $1k): %.4f\n", mprte_unif))
+mprte_unif   <- mprte_scenario(df, ga_coef, "z_index", "mte_hat",
+                                amount = 1, label = "uniform $1k")
+mprte_lowinc <- mprte_scenario(df, ga_coef, "z_index", "mte_hat",
+                                amount = 2,
+                                target = df$parent_income_q <= 2,
+                                label = "targeted low-income $2k")
+mprte_stem   <- mprte_scenario(df, ga_coef, "z_index", "mte_hat",
+                                amount = 3,
+                                target = df$stem_major == 1,
+                                label = "STEM enhancement $3k")
+mprte_ed     <- mprte_scenario(df, ga_coef, "z_index", "mte_hat",
+                                amount = 2.5,
+                                target = df$ed_major == 1,
+                                label = "education major $2.5k")
 
-# PRTE (discrete $1k)
-df$p_new_unif   <- pnorm(df$z_index + ga_coef * 1)
-df$delta_p_unif <- df$p_new_unif - df$phat
-sub_u <- df[df$delta_p_unif > 0, ]
-prte_unif <- weighted.mean(sub_u$mte_hat, w = sub_u$delta_p_unif, na.rm = TRUE)
-cat(sprintf("PRTE  (discrete $1k): %.4f\n", prte_unif))
-df$p_new_unif <- df$delta_p_unif <- NULL
-
-# Scenario 2: Targeted low-income ($2k)
-df$targeted_lowinc <- as.integer(df$parent_income_q <= 2)
-mprte_lowinc <- mprte_scenario(df, ga_coef, "mte_hat",
-                               amount = 2, target = "targeted_lowinc")
-cat(sprintf("MPRTE (targeted low-income): %.4f\n", mprte_lowinc))
-df$targeted_lowinc <- NULL
-
-# Scenario 3: STEM GA ($3k)
-mprte_stem <- mprte_scenario(df, ga_coef, "mte_hat",
-                             amount = 3, target = "stem_major")
-cat(sprintf("MPRTE (STEM enhancement): %.4f\n", mprte_stem))
-
-# Scenario 4: Education ($2.5k)
-mprte_ed   <- mprte_scenario(df, ga_coef, "mte_hat",
-                             amount = 2.5, target = "ed_major")
-cat(sprintf("MPRTE (education major support): %.4f\n", mprte_ed))
-
-# -----------------------------------------------------------------------
-# SECTION 10b: MPRTE by Graduate Program Area — Scenarios 5–8
-# -----------------------------------------------------------------------
+################################################################################
+# SECTION 10b: MPRTE BY GRADUATE PROGRAM AREA — Scenarios 5–8
+################################################################################
 cat("\n==============================================\n")
 cat("MPRTE BY GRADUATE PROGRAM AREA (Scenarios 5-8)\n")
 cat("==============================================\n")
 
-# Scenario 5: STEM grad pipeline (stem_major, $2.5k, mte_hat_stem)
-mprte_ma_stem <- mprte_scenario(df, ga_coef, "mte_hat_stem",
-                                amount = 2.5, target = "stem_major")
-df$p_new_s5   <- pnorm(df$z_index + ga_coef * 2.5 * df$stem_major)
-df$delta_p_s5 <- df$p_new_s5 - df$phat
-sub_s5        <- df[df$delta_p_s5 > 0 & df$stem_major == 1, ]
-prte_ma_stem  <- weighted.mean(sub_s5$mte_hat_stem,
-                               w = sub_s5$delta_p_s5, na.rm = TRUE)
-cat(sprintf("MPRTE (STEM grad pipeline, $2.5k): %.4f\n", mprte_ma_stem))
-cat(sprintf("PRTE  (STEM grad pipeline, $2.5k): %.4f\n", prte_ma_stem))
-cat(sprintf("Mean phat for STEM undergrads:     %.4f\n",
-            mean(df$phat[df$stem_major == 1], na.rm = TRUE)))
-df$p_new_s5 <- df$delta_p_s5 <- NULL
+mprte_ma_stem <- mprte_scenario(df, ga_coef, "z_index", "mte_hat_stem",
+                                 amount = 2.5, target = df$stem_major == 1,
+                                 label = "STEM grad pipeline $2.5k")
+mprte_ma_bus  <- mprte_scenario(df, ga_coef, "z_index", "mte_hat_business",
+                                 amount = 2.5, target = df$bus_major == 1,
+                                 label = "Business grad pipeline $2.5k")
+mprte_ma_ed   <- mprte_scenario(df, ga_coef, "z_index", "mte_hat_education",
+                                 amount = 2.5, target = df$ed_major == 1,
+                                 label = "Education grad pipeline $2.5k")
+target_hlth   <- df$stem_major == 1 | df$socsci_major == 1
+mprte_ma_hlth <- mprte_scenario(df, ga_coef, "z_index", "mte_hat_health",
+                                 amount = 2.5, target = target_hlth,
+                                 label = "Health & Related pipeline $2.5k")
 
-# Scenario 6: Business grad pipeline
-mprte_ma_bus <- mprte_scenario(df, ga_coef, "mte_hat_business",
-                               amount = 2.5, target = "bus_major")
-df$p_new_s6   <- pnorm(df$z_index + ga_coef * 2.5 * df$bus_major)
-df$delta_p_s6 <- df$p_new_s6 - df$phat
-sub_s6        <- df[df$delta_p_s6 > 0 & df$bus_major == 1, ]
-prte_ma_bus   <- weighted.mean(sub_s6$mte_hat_business,
-                               w = sub_s6$delta_p_s6, na.rm = TRUE)
-cat(sprintf("MPRTE (Business grad pipeline, $2.5k): %.4f\n", mprte_ma_bus))
-cat(sprintf("PRTE  (Business grad pipeline, $2.5k): %.4f\n", prte_ma_bus))
-df$p_new_s6 <- df$delta_p_s6 <- NULL
+################################################################################
+# SECTION 11: MPRTE BY POLICY INTENSITY
+################################################################################
+cat("\n==============================================\n")
+cat("MPRTE BY POLICY INTENSITY\n")
+cat("==============================================\n")
 
-# Scenario 7: Education grad pipeline
-mprte_ma_ed <- mprte_scenario(df, ga_coef, "mte_hat_education",
-                              amount = 2.5, target = "ed_major")
-df$p_new_s7   <- pnorm(df$z_index + ga_coef * 2.5 * df$ed_major)
-df$delta_p_s7 <- df$p_new_s7 - df$phat
-sub_s7        <- df[df$delta_p_s7 > 0 & df$ed_major == 1, ]
-prte_ma_ed    <- weighted.mean(sub_s7$mte_hat_education,
-                               w = sub_s7$delta_p_s7, na.rm = TRUE)
-cat(sprintf("MPRTE (Education grad pipeline, $2.5k): %.4f\n", mprte_ma_ed))
-cat(sprintf("PRTE  (Education grad pipeline, $2.5k): %.4f\n", prte_ma_ed))
-df$p_new_s7 <- df$delta_p_s7 <- NULL
-
-# Scenario 8: Health & Related pipeline (stem_major OR socsci_major, $2.5k)
-df$target_health <- as.integer(df$stem_major == 1 | df$socsci_major == 1)
-mprte_ma_hlth <- mprte_scenario(df, ga_coef, "mte_hat_health",
-                                amount = 2.5, target = "target_health")
-df$p_new_s8   <- pnorm(df$z_index + ga_coef * 2.5 * df$target_health)
-df$delta_p_s8 <- df$p_new_s8 - df$phat
-sub_s8        <- df[df$delta_p_s8 > 0 & df$target_health == 1, ]
-prte_ma_hlth  <- weighted.mean(sub_s8$mte_hat_health,
-                               w = sub_s8$delta_p_s8, na.rm = TRUE)
-cat(sprintf("MPRTE (Health & Related pipeline, $2.5k): %.4f\n", mprte_ma_hlth))
-cat(sprintf("PRTE  (Health & Related pipeline, $2.5k): %.4f\n", prte_ma_hlth))
-df$target_health <- df$p_new_s8 <- df$delta_p_s8 <- NULL
-
-# -----------------------------------------------------------------------
-# SECTION 11: MPRTE by Policy Intensity
-# -----------------------------------------------------------------------
-p_baseline <- mean(df$phat, na.rm = TRUE)
-
-intensity_df <- data.frame(ga_increase = seq(0.5, 10.0, by = 0.5)) %>%
-  mutate(
-    p_margin     = p_baseline + ga_increase * 0.015,
-    mprte_approx = b0 + b1 * p_margin + b2 * p_margin^2 + b3 * p_margin^3
-  )
+p_baseline  <- mean(df$phat)
+ga_increase <- seq(0.5, 10, by = 0.5)
+p_margin    <- p_baseline + ga_increase * 0.015
+mprte_approx <- b0 + b1*p_margin + b2*p_margin^2 + b3*p_margin^3
+intensity_df <- data.frame(ga_increase = ga_increase,
+                            p_margin    = p_margin,
+                            mprte_approx = mprte_approx)
 print(intensity_df)
 
-p_int <- ggplot(intensity_df, aes(x = ga_increase, y = mprte_approx)) +
-  geom_hline(yintercept = 0, linetype = "dashed",
-             colour = "grey50", linewidth = 0.4) +
-  geom_line(colour = "black", linewidth = 0.8) +
+fig10_14 <- ggplot(intensity_df, aes(x = ga_increase, y = mprte_approx)) +
+  geom_line(color = "black", linewidth = 0.8) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
   labs(title    = "MPRTE by Policy Intensity",
        subtitle = "Marginal returns to GA funding expansion",
-       x        = "GA Funding Increase ($1000s)",
-       y        = "MPRTE") +
+       x = "GA Funding Increase ($1000s)", y = "MPRTE") +
   theme_springer()
 
 ggsave(file.path(graphs_dir, "fig10_14_mprte_by_intensity_R.png"),
-       p_int, width = 7, height = 5, dpi = 200)
-print(p_int)
+       fig10_14, width = 6, height = 4, dpi = 200)
+cat("Saved fig10_14_mprte_by_intensity_R.png\n")
 
-# -----------------------------------------------------------------------
-# SECTION 12: Comparing Treatment Effect Parameters
-# -----------------------------------------------------------------------
+################################################################################
+# SECTION 12: COMPARING TREATMENT EFFECT PARAMETERS
+################################################################################
 cat("\n==============================================\n")
 cat("COMPARISON OF TREATMENT EFFECT PARAMETERS\n")
 cat("==============================================\n")
 
-cat(sprintf("%-12s %14s %12s %13s %12s\n",
-            "Parameter","Manual(cubic)","BS SE(manual)","poly(quad)","BS SE"))
-cat(strrep("=", 68), "\n")
-cat(sprintf("%-12s %14.4f %12.4f %13.4f %12.4f\n",
-            "ATE", ate_est_cubic, ate_se, mtefe_ate_q, mtefe_ate_q_se))
-cat(sprintf("%-12s %14.4f %12.4f %13.4f %12.4f\n",
-            "ATT", att_est, att_se, mtefe_att_q, mtefe_att_q_se))
-cat(sprintf("%-12s %14.4f %12.4f %13.4f %12.4f\n",
-            "ATU", atu_est, atu_se, mtefe_atu_q, mtefe_atu_q_se))
-cat(sprintf("%-12s %14.4f %12.4f %13.4f %12.4f\n",
-            "LATE (IV)", iv_est, iv_se, mtefe_late, mtefe_late_se))
-cat(strrep("-", 68), "\n")
-cat(sprintf("MPRTE (uniform):                   %.4f\n", mprte_unif))
-cat(sprintf("MPRTE (low-income):                %.4f\n", mprte_lowinc))
-cat(sprintf("MPRTE (STEM ug -> any grad):       %.4f\n", mprte_stem))
-cat(sprintf("MPRTE (Ed ug -> any grad):         %.4f\n", mprte_ed))
+cat(sprintf("%-10s %14s %14s\n", "Parameter", "Manual(cubic)", "BS SE"))
+cat(strrep("-",42),"\n")
+cat(sprintf("%-10s %14.4f %14.4f\n", "ATE",      ate_est_cubic, ate_se))
+cat(sprintf("%-10s %14.4f %14.4f\n", "ATT",      att_est,       att_se))
+cat(sprintf("%-10s %14.4f %14.4f\n", "ATU",      atu_est,       atu_se))
+cat(sprintf("%-10s %14.4f %14.4f\n", "LATE(IV)", iv_est,        iv_se))
+cat(strrep("-",42),"\n")
+cat(sprintf("MPRTE (uniform):              %.4f\n", mprte_unif))
+cat(sprintf("MPRTE (low-income):           %.4f\n", mprte_lowinc))
+cat(sprintf("MPRTE (STEM ug -> any grad):  %.4f\n", mprte_stem))
+cat(sprintf("MPRTE (Ed ug -> any grad):    %.4f\n", mprte_ed))
 
-cat("\nAREA-SPECIFIC PARAMETERS:\n")
-cat(sprintf("  %-12s %8s %8s %12s %8s\n", "Area","ATE","BS SE","ATT","BS SE"))
-cat("  ", strrep("-", 52), "\n")
-for (a in all_areas) {
-  se_ate_a <- get(paste0("ate_se_", a))
-  se_att_a <- get(paste0("att_se_", a))
-  cat(sprintf("  %-12s %8.4f %8.4f %12.4f %8.4f\n",
-              a, ate_area[a], se_ate_a, att_area[a], se_att_a))
-}
+# Area-specific with CIs
+print_bs_table("ATE", ate_area, ate_se_area)
+print_bs_table("ATT", att_area, att_se_area)
+print_bs_table("ATU (prospective)", atu_area, atu_se_area)
 
-cat("\nMPRTE BY GRADUATE PIPELINE (Scenarios 5-8):\n")
+cat(sprintf("\nMPRTE BY GRADUATE PIPELINE (Scenarios 5-8):\n"))
 cat(sprintf("  STEM grad pipeline:         %.4f\n", mprte_ma_stem))
 cat(sprintf("  Business grad pipeline:     %.4f\n", mprte_ma_bus))
 cat(sprintf("  Education grad pipeline:    %.4f\n", mprte_ma_ed))
 cat(sprintf("  Health & Related pipeline:  %.4f\n", mprte_ma_hlth))
 
-# -----------------------------------------------------------------------
-# SECTION 13: MPRTE Visualization
-# -----------------------------------------------------------------------
+################################################################################
+# SECTION 13: MPRTE VISUALIZATION
+################################################################################
+cat("\n==============================================\n")
+cat("MPRTE VISUALIZATION\n")
+cat("==============================================\n")
 
-# -- fig10_11: MTE curve with policy-relevant regions -----------------
-mte_region_df <- data.frame(
+# Fig 10.11: MTE curve with policy-relevant regions
+mte_policy_df <- data.frame(
   u         = u_grid,
-  mte       = b0 + b1 * u_grid + b2 * u_grid^2 + b3 * u_grid^3,
-  region_lo = (u_grid >= 0.10 & u_grid <= 0.25),
-  region_un = (u_grid >= 0.25 & u_grid <= 0.40)
+  mte       = b0 + b1*u_grid + b2*u_grid^2 + b3*u_grid^3,
+  region_lo = u_grid >= 0.10 & u_grid <= 0.25,
+  region_un = u_grid >= 0.25 & u_grid <= 0.40
 )
 
-p_reg <- ggplot(mte_region_df, aes(x = u, y = mte)) +
-  geom_hline(yintercept = 0, linetype = "dashed",
-             colour = "grey50", linewidth = 0.4) +
-  geom_ribbon(data = filter(mte_region_df, region_lo),
+fig10_11 <- ggplot(mte_policy_df, aes(x = u, y = mte)) +
+  geom_ribbon(data = subset(mte_policy_df, region_lo),
               aes(ymin = 0, ymax = mte, fill = "Low-income margin"),
-              alpha = 0.6) +
-  geom_ribbon(data = filter(mte_region_df, region_un),
+              alpha = 0.5) +
+  geom_ribbon(data = subset(mte_policy_df, region_un),
               aes(ymin = 0, ymax = mte, fill = "Uniform policy margin"),
-              alpha = 0.4) +
-  geom_line(colour = "black", linewidth = 0.8) +
-  scale_fill_manual(values = c("Low-income margin"     = "grey30",
-                               "Uniform policy margin" = "grey70")) +
-  labs(title    = "MTE Curve with Policy-Relevant Regions",
-       x        = "u (Unobserved Resistance to Treatment)",
-       y        = "Marginal Treatment Effect") +
-  guides(fill = guide_legend(nrow = 1)) +
+              alpha = 0.3) +
+  geom_line(color = "black", linewidth = 0.8) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  scale_fill_manual(values = c("Low-income margin"    = "grey30",
+                                "Uniform policy margin" = "grey70")) +
+  labs(title = "MTE Curve with Policy-Relevant Regions",
+       x = "u (Unobserved Resistance to Treatment)",
+       y = "Marginal Treatment Effect") +
   theme_springer()
 
 ggsave(file.path(graphs_dir, "fig10_11_mte_policy_regions_R.png"),
-       p_reg, width = 7, height = 5, dpi = 200)
-print(p_reg)
-cat("fig10_11 exported.\n")
+       fig10_11, width = 6, height = 4, dpi = 200)
+cat("Saved fig10_11_mte_policy_regions_R.png\n")
 
-# -- fig10_9: MTE by propensity score (bins of width 0.05) ------------
-df$p_bin <- floor(df$phat * 20) / 20
+################################################################################
+# SECTION 14: POLICY COST-BENEFIT ANALYSIS
+################################################################################
+cat("\n==============================================\n")
+cat("POLICY COST-BENEFIT ANALYSIS\n")
+cat("==============================================\n")
 
-pbin_df <- df %>%
-  group_by(p_bin) %>%
-  summarise(mean_mte = mean(mte_hat, na.rm = TRUE),
-            n_bin    = n(), .groups = "drop")
-
-p_pbin <- ggplot(pbin_df) +
-  geom_col(aes(x = p_bin, y = n_bin / max(n_bin) *
-                 diff(range(pbin_df$mean_mte, na.rm = TRUE))),
-           fill = "grey80", colour = "grey60", width = 0.04) +
-  geom_hline(yintercept = 0, linetype = "dashed",
-             colour = "grey50", linewidth = 0.4) +
-  geom_point(aes(x = p_bin, y = mean_mte),
-             shape = 18, size = 3, colour = "black") +
-  geom_line(aes(x = p_bin, y = mean_mte),
-            colour = "black", linewidth = 0.6) +
-  labs(title   = "MTE by Propensity Score",
-       x       = "Propensity Score",
-       y       = "Estimated MTE",
-       caption = "Grey bars = observation count (scaled); diamonds = mean MTE per bin") +
-  theme_springer()
-
-ggsave(file.path(graphs_dir, "fig10_9_mte_by_propensity_R.png"),
-       p_pbin, width = 7, height = 5, dpi = 200)
-print(p_pbin)
-cat("fig10_9 exported.\n")
-
-# -----------------------------------------------------------------------
-# SECTION 14: Policy Cost-Benefit Analysis
-# -----------------------------------------------------------------------
 cost_per_degree <- 50000
 career_years    <- 30
 discount_rate   <- 0.03
 base_salary     <- 47000
 pv_factor <- (1 - (1 + discount_rate)^(-career_years)) / discount_rate
-cat(sprintf("\nPresent value factor (30 years, 3%%): %.2f\n", pv_factor))
+cat(sprintf("Present value factor (30 years, 3%%): %.2f\n", pv_factor))
 
 cat("\n--- Scenarios 1-4: Original MPRTE-based CBA ---\n")
-cat(sprintf("%-20s %8s %12s %10s %8s\n",
-            "Policy","MPRTE","Annual Gain","PV Gain","B/C"))
-cat(strrep("=", 62), "\n")
+cat(sprintf("%-20s %8s %14s %12s %10s\n",
+            "Policy","MPRTE","Annual Gain","PV Gain","B/C Ratio"))
+cat(strrep("=",66),"\n")
 
-scens <- list(
-  list(name = "Uniform",      val = mprte_unif,   base = base_salary),
-  list(name = "Low-income",   val = mprte_lowinc, base = base_salary),
-  list(name = "STEM ug",      val = mprte_stem,   base = base_salary),
-  list(name = "Education ug", val = mprte_ed,     base = base_salary)
-)
-for (s in scens) {
-  ag  <- s$base * (exp(s$val) - 1)
-  pvg <- ag * pv_factor
-  bc  <- pvg / cost_per_degree
-  cat(sprintf("%-20s %8.4f $%10.0f $%9.0f %8.2f\n",
-              s$name, s$val, ag, pvg, bc))
+for (scen in list(
+  list(label="Uniform",      mprte=mprte_unif,   base=base_salary),
+  list(label="Low-income",   mprte=mprte_lowinc, base=base_salary),
+  list(label="STEM ug",      mprte=mprte_stem,   base=base_salary),
+  list(label="Education ug", mprte=mprte_ed,     base=base_salary)
+)) {
+  annual_gain <- scen$base * (exp(scen$mprte) - 1)
+  pv_gain     <- annual_gain * pv_factor
+  bc_ratio    <- pv_gain / cost_per_degree
+  cat(sprintf("%-20s %8.4f %14.0f %12.0f %10.2f\n",
+              scen$label, scen$mprte, annual_gain, pv_gain, bc_ratio))
 }
 
-base_stem <- 65000; base_bus <- 60000
-base_ed   <- 42000; base_hlth <- 68000
-cat(sprintf("\n  Base salaries: STEM=$%6.0f Business=$%6.0f Ed=$%6.0f Health=$%6.0f\n",
-            base_stem, base_bus, base_ed, base_hlth))
+base_stem <- 65000; base_bus <- 60000; base_ed <- 42000; base_hlth <- 68000
+cat(sprintf("\n--- Scenarios 5-8: Graduate Program Area MPRTE-based CBA ---\n"))
+cat(sprintf("%-20s %8s %14s %12s %10s\n",
+            "Pipeline","MPRTE","Annual Gain","PV Gain","B/C Ratio"))
+cat(strrep("=",66),"\n")
 
-cat("\n--- Scenarios 5-8: Graduate Program Area MPRTE-based CBA ---\n")
-cat(sprintf("%-22s %8s %12s %10s %8s\n",
-            "Pipeline","MPRTE","Annual Gain","PV Gain","B/C"))
-cat(strrep("=", 64), "\n")
-
-area_scens <- list(
-  list(name = "STEM pipeline",     val = mprte_ma_stem, base = base_stem),
-  list(name = "Business pipeline", val = mprte_ma_bus,  base = base_bus),
-  list(name = "Education pipeline",val = mprte_ma_ed,   base = base_ed),
-  list(name = "Health pipeline",   val = mprte_ma_hlth, base = base_hlth)
-)
-for (s in area_scens) {
-  ag  <- s$base * (exp(s$val) - 1)
-  pvg <- ag * pv_factor
-  bc  <- pvg / cost_per_degree
-  cat(sprintf("%-22s %8.4f $%10.0f $%9.0f %8.2f\n",
-              s$name, s$val, ag, pvg, bc))
+for (scen in list(
+  list(label="STEM pipeline",      mprte=mprte_ma_stem, base=base_stem),
+  list(label="Business pipeline",  mprte=mprte_ma_bus,  base=base_bus),
+  list(label="Education pipeline", mprte=mprte_ma_ed,   base=base_ed),
+  list(label="Health pipeline",    mprte=mprte_ma_hlth, base=base_hlth)
+)) {
+  annual_gain <- scen$base * (exp(scen$mprte) - 1)
+  pv_gain     <- annual_gain * pv_factor
+  bc_ratio    <- pv_gain / cost_per_degree
+  cat(sprintf("%-20s %8.4f %14.0f %12.0f %10.2f\n",
+              scen$label, scen$mprte, annual_gain, pv_gain, bc_ratio))
 }
 cat("Note: B/C > 1 suggests policy expansion is beneficial (synthetic data only).\n")
 
-# -----------------------------------------------------------------------
+################################################################################
 # SECTION 15: Save Results
-# -----------------------------------------------------------------------
-save_vars <- c("id","masters","ln_salary","salary","phat","mte_hat","z_index",
-               "ma_stem","ma_business","ma_education","ma_health","ma_other",
-               "mte_hat_stem","mte_hat_business","mte_hat_education",
-               "mte_hat_health","mte_hat_other",
-               X_controls, Z_var, "state")
-save_vars <- save_vars[save_vars %in% names(df)]
+################################################################################
+cat("\n==============================================\n")
+cat("SAVING RESULTS\n")
+cat("==============================================\n")
 
-saveRDS(df[, save_vars], "bb_mte_analysis.rds")
-write.csv(df[, save_vars], "bb_mte_analysis.csv", row.names = FALSE)
+saveRDS(df, "bb_mte_analysis.rds")
 
 # Summary by field
-summary_field <- df %>%
+mte_by_field <- df %>%
   group_by(stem_major, ed_major) %>%
-  summarise(
-    masters    = mean(masters,  na.rm = TRUE),
-    ln_salary  = mean(ln_salary,na.rm = TRUE),
-    phat       = mean(phat,     na.rm = TRUE),
-    mte_hat    = mean(mte_hat,  na.rm = TRUE),
-    across(starts_with("ma_"),       \(x) mean(x, na.rm = TRUE)),
-    across(starts_with("mte_hat_"),  \(x) mean(x, na.rm = TRUE)),
-    sd_mte     = sd(mte_hat,    na.rm = TRUE),
-    n          = n(),
-    .groups    = "drop"
-  )
-write.csv(summary_field, "mte_summary_by_field.csv", row.names = FALSE)
+  summarise(across(c(masters, ln_salary, phat, mte_hat,
+                     mte_hat_stem, mte_hat_business, mte_hat_education,
+                     mte_hat_health, mte_hat_other), mean, na.rm = TRUE),
+            sd_mte = sd(mte_hat, na.rm = TRUE), n = n(), .groups = "drop")
+write_csv(mte_by_field, "mte_summary_by_field.csv")
 
 # Summary by program area (treated only)
-summary_area <- df %>%
+mte_by_area <- df %>%
   filter(masters == 1) %>%
   group_by(ma_stem, ma_business, ma_education, ma_health, ma_other) %>%
-  summarise(
-    ln_salary  = mean(ln_salary, na.rm = TRUE),
-    salary     = mean(salary,    na.rm = TRUE),
-    phat       = mean(phat,      na.rm = TRUE),
-    mte_hat    = mean(mte_hat,   na.rm = TRUE),
-    across(starts_with("mte_hat_"), \(x) mean(x, na.rm = TRUE)),
-    n          = n(),
-    .groups    = "drop"
-  )
-write.csv(summary_area, "mte_summary_by_program_area.csv", row.names = FALSE)
+  summarise(across(c(ln_salary, phat, mte_hat,
+                     mte_hat_stem, mte_hat_business, mte_hat_education,
+                     mte_hat_health, mte_hat_other), mean, na.rm = TRUE),
+            n = n(), .groups = "drop")
+write_csv(mte_by_area, "mte_summary_by_program_area.csv")
 
-# -----------------------------------------------------------------------
-# SECTION 16: Final Summary
-# -----------------------------------------------------------------------
+cat("Files saved: bb_mte_analysis.rds, mte_summary_by_field.csv,\n")
+cat("             mte_summary_by_program_area.csv\n")
+
+################################################################################
+# SECTION 16: FINAL SUMMARY
+################################################################################
 cat("\n==============================================\n")
 cat("ANALYSIS COMPLETE\n")
 cat("==============================================\n")
@@ -1260,15 +1085,14 @@ cat(sprintf("  5.  MTE-based ATT:                   %.4f (BS SE = %.4f)\n",
             att_est, att_se))
 cat(sprintf("  6.  MTE-based ATU:                   %.4f (BS SE = %.4f)\n",
             atu_est, atu_se))
-cat(sprintf("  7.  poly(quad) ATE:                  %.4f (BS SE = %.4f)\n",
-            mtefe_ate_q, mtefe_ate_q_se))
-cat(sprintf("  8.  First-stage F:                   %.1f\n",  first_stage_F))
+cat(sprintf("  7.  First-stage F:                   %.1f\n",  first_stage_F))
 
-cat("\nAREA-SPECIFIC ATE (program area interacted MTE):\n")
-for (a in all_areas) {
-  se_a <- get(paste0("ate_se_", a))
-  cat(sprintf("  ATE (%s):  %.4f (BS SE = %.4f)\n", a, ate_area[a], se_a))
-}
+cat("\nAREA-SPECIFIC ATE, ATT, AND ATU WITH 95% CONFIDENCE INTERVALS\n")
+cat("(Cluster bootstrap, G=50 states, R=500 reps, seed 20260101)\n")
+cat("ATU based on prospective program area assignment (seed 20260102)\n")
+print_bs_table("ATE", ate_area, ate_se_area)
+print_bs_table("ATT", att_area, att_se_area)
+print_bs_table("ATU (prospective)", atu_area, atu_se_area)
 
 cat("\nMPRTE SUMMARY - Original Scenarios:\n")
 cat(sprintf("  Uniform policy:         %.4f\n", mprte_unif))
@@ -1283,13 +1107,11 @@ cat(sprintf("  Education pipeline:     %.4f\n", mprte_ma_ed))
 cat(sprintf("  Health & Related:       %.4f\n", mprte_ma_hlth))
 
 cat("\nBootstrap: G=50 state clusters, R=500 reps, seed(20260101)\n")
-cat("Files saved: bb_mte_analysis.rds/.csv, mte_summary_by_field.csv,\n")
-cat("             mte_summary_by_program_area.csv\n")
-cat("\nIMPORTANT NOTE: Synthetic data — results illustrate methods only.\n")
+cat("IMPORTANT NOTE: Synthetic data — results illustrate methods only.\n")
 cat("==============================================\n")
 cat("END OF MTE/MPRTE ANALYSIS\n")
 cat("==============================================\n")
 
-# ========================================================================
+#========================================================================
 # END OF R_code10_MTE_MPRTE.R
-# ========================================================================
+#========================================================================

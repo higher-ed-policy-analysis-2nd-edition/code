@@ -528,16 +528,103 @@ qui sum mte_hat if masters == 0
 local atu_pooled_untreated = r(mean)
 di _n "  ATU (pooled): " %6.4f `atu_pooled_untreated'
 
+********************************************************************************
+* SECTION 6b-ATU: PROSPECTIVE PROGRAM AREA ASSIGNMENT FOR UNTREATED
+*
+* ATU_a = E[MTE_a(phat) | masters==0, prospective_area==a]
+*
+* Because ma_* = 0 for all untreated observations by construction,
+* area-specific ATU requires assigning untreated individuals to the
+* graduate program area they would most likely have entered, given their
+* undergraduate major field and the same transition probabilities used
+* for the treated group in Section 1b.
+*
+* This is a counterfactual assignment — not an observed classification.
+* Prose must note that ATU_a estimates the return for untreated students
+* who, had they completed a master's degree, would most likely have
+* entered program area a given their undergraduate background.
+*
+* Transition probabilities (mirroring Section 1b):
+*   STEM:      stem_major,    p <= 0.55
+*   Business:  bus_major,     p <= 0.65 (conditional on not STEM)
+*   Education: ed_major,      p <= 0.70 (conditional on not STEM/Bus)
+*   Health:    socsci_major   p <= 0.40 OR stem_major p in (0.55, 0.75]
+*   Other:     residual
+*
+* Seed 20260102 (distinct from treated seed 20251130) ensures
+* reproducibility without cross-contaminating the treated assignment.
+********************************************************************************
+
+di _n "=============================================="
+di "SECTION 6b-ATU: PROSPECTIVE PROGRAM AREA (UNTREATED)"
+di "=============================================="
+
+* Generate prospective indicators (untreated only; treated keep ma_* = 0)
+gen ma_stem_pro      = 0
+gen ma_business_pro  = 0
+gen ma_education_pro = 0
+gen ma_health_pro    = 0
+gen ma_other_pro     = 0
+
+label var ma_stem_pro      "Prospective STEM master's (untreated)"
+label var ma_business_pro  "Prospective Business master's (untreated)"
+label var ma_education_pro "Prospective Education master's (untreated)"
+label var ma_health_pro    "Prospective Health master's (untreated)"
+label var ma_other_pro     "Prospective Other master's (untreated)"
+
+set seed 20260102
+gen _rma_u = runiform() if masters == 0
+replace _rma_u = . if masters == 1
+
+replace ma_stem_pro      = 1 if masters==0 & stem_major==1   & _rma_u <= 0.55
+replace ma_business_pro  = 1 if masters==0 & bus_major==1    & _rma_u <= 0.65 ///
+                                           & ma_stem_pro==0
+replace ma_education_pro = 1 if masters==0 & ed_major==1     & _rma_u <= 0.70 ///
+                                           & ma_stem_pro==0 & ma_business_pro==0
+replace ma_health_pro    = 1 if masters==0 & socsci_major==1 & _rma_u <= 0.40 ///
+                                           & ma_stem_pro==0 & ma_business_pro==0 ///
+                                           & ma_education_pro==0
+replace ma_health_pro    = 1 if masters==0 & stem_major==1   & _rma_u >  0.55 ///
+                                           & _rma_u <= 0.75  & ma_stem_pro==0
+replace ma_other_pro     = 1 if masters==0 & ma_stem_pro==0 & ma_business_pro==0 ///
+                                           & ma_education_pro==0 & ma_health_pro==0
+drop _rma_u
+
+* Verification
+qui count if masters == 0
+local n_untreated = r(N)
+di "Total untreated: " `n_untreated'
+foreach a in stem business education health other {
+    qui count if masters==0 & ma_`a'_pro == 1
+    di "  ma_`a'_pro: " r(N) "  (" %5.1f r(N)/`n_untreated'*100 "%)"
+}
+
+* Check mutual exclusivity
+gen _pro_check = ma_stem_pro + ma_business_pro + ma_education_pro ///
+               + ma_health_pro + ma_other_pro if masters == 0
+qui count if masters==0 & _pro_check != 1
+if r(N) > 0 di "WARNING: " r(N) " untreated obs with != 1 prospective area flag"
+else         di "CHECK PASSED: all untreated obs have exactly 1 prospective area"
+drop _pro_check
+
+* Area-specific ATU point estimates
+di _n "--- Area-Specific ATU (prospective assignment) ---"
+foreach a in stem business education health other {
+    qui sum mte_hat_`a' if masters==0 & ma_`a'_pro==1
+    local atu_`a' = r(mean)
+    di "  ATU (`a'): " %6.4f `atu_`a''
+}
+
 di _n "=============================================="
 di "AREA-SPECIFIC TREATMENT PARAMETER SUMMARY"
 di "=============================================="
-di "Area          ATE        ATT"
-di "--------------------------------------------"
-di "  Other     " %7.4f `ate_other'     "    " %7.4f `att_other'
-di "  STEM      " %7.4f `ate_stem'      "    " %7.4f `att_stem'
-di "  Business  " %7.4f `ate_business'  "    " %7.4f `att_business'
-di "  Education " %7.4f `ate_education' "    " %7.4f `att_education'
-di "  Health    " %7.4f `ate_health'    "    " %7.4f `att_health'
+di "Area          ATE        ATT        ATU (prospective)"
+di "----------------------------------------------------"
+di "  Other     " %7.4f `ate_other'     "    " %7.4f `att_other'     "    " %7.4f `atu_other'
+di "  STEM      " %7.4f `ate_stem'      "    " %7.4f `att_stem'      "    " %7.4f `atu_stem'
+di "  Business  " %7.4f `ate_business'  "    " %7.4f `att_business'  "    " %7.4f `atu_business'
+di "  Education " %7.4f `ate_education' "    " %7.4f `att_education' "    " %7.4f `atu_education'
+di "  Health    " %7.4f `ate_health'    "    " %7.4f `att_health'    "    " %7.4f `atu_health'
 
 ********************************************************************************
 * SECTION 6c: BOOTSTRAP INFRASTRUCTURE
@@ -569,11 +656,11 @@ tempfile bsf
 
 postfile `bsh'                ///
     b_ate b_att b_atu          ///
-    b_ate_stem    b_att_stem   ///
-    b_ate_bus     b_att_bus    ///
-    b_ate_ed      b_att_ed     ///
-    b_ate_hlth    b_att_hlth   ///
-    b_ate_oth     b_att_oth    ///
+    b_ate_stem    b_att_stem   b_atu_stem  ///
+    b_ate_bus     b_att_bus    b_atu_bus   ///
+    b_ate_ed      b_att_ed     b_atu_ed    ///
+    b_ate_hlth    b_att_hlth   b_atu_hlth  ///
+    b_ate_oth     b_att_oth    b_atu_oth   ///
     using `bsf', replace
 
 set seed 20260101
@@ -656,6 +743,8 @@ forvalues b = 1/`R' {
         quietly gen _ms = `C0' + `C1'*_pb + `C2'*_pb2 + `C3'*_pb3
         quietly sum _ms if ma_stem == 1
         local b_att_stem_r = r(mean)
+        quietly sum _ms if masters==0 & ma_stem_pro==1
+        local b_atu_stem_r = r(mean)
         drop _ms
 
         * Business
@@ -671,6 +760,8 @@ forvalues b = 1/`R' {
         quietly gen _ms = `C0' + `C1'*_pb + `C2'*_pb2 + `C3'*_pb3
         quietly sum _ms if ma_business == 1
         local b_att_bus_r = r(mean)
+        quietly sum _ms if masters==0 & ma_business_pro==1
+        local b_atu_bus_r = r(mean)
         drop _ms
 
         * Education
@@ -686,6 +777,8 @@ forvalues b = 1/`R' {
         quietly gen _ms = `C0' + `C1'*_pb + `C2'*_pb2 + `C3'*_pb3
         quietly sum _ms if ma_education == 1
         local b_att_ed_r = r(mean)
+        quietly sum _ms if masters==0 & ma_education_pro==1
+        local b_atu_ed_r = r(mean)
         drop _ms
 
         * Health
@@ -701,6 +794,8 @@ forvalues b = 1/`R' {
         quietly gen _ms = `C0' + `C1'*_pb + `C2'*_pb2 + `C3'*_pb3
         quietly sum _ms if ma_health == 1
         local b_att_hlth_r = r(mean)
+        quietly sum _ms if masters==0 & ma_health_pro==1
+        local b_atu_hlth_r = r(mean)
         drop _ms
 
         * Other (base)
@@ -708,15 +803,17 @@ forvalues b = 1/`R' {
         quietly gen _mb = `BB0' + `BB1'*_pb + `BB2'*_pb2 + `BB3'*_pb3
         quietly sum _mb if ma_other == 1
         local b_att_oth_r = r(mean)
+        quietly sum _mb if masters==0 & ma_other_pro==1
+        local b_atu_oth_r = r(mean)
         drop _mb
 
         post `bsh' ///
-            (`b_ate_r')      (`b_att_r')      (`b_atu_r')     ///
-            (`b_ate_stem_r')  (`b_att_stem_r') ///
-            (`b_ate_bus_r')   (`b_att_bus_r')  ///
-            (`b_ate_ed_r')    (`b_att_ed_r')   ///
-            (`b_ate_hlth_r')  (`b_att_hlth_r') ///
-            (`b_ate_oth_r')   (`b_att_oth_r')
+            (`b_ate_r')      (`b_att_r')      (`b_atu_r')      ///
+            (`b_ate_stem_r')  (`b_att_stem_r') (`b_atu_stem_r') ///
+            (`b_ate_bus_r')   (`b_att_bus_r')  (`b_atu_bus_r')  ///
+            (`b_ate_ed_r')    (`b_att_ed_r')   (`b_atu_ed_r')   ///
+            (`b_ate_hlth_r')  (`b_att_hlth_r') (`b_atu_hlth_r') ///
+            (`b_ate_oth_r')   (`b_att_oth_r')  (`b_atu_oth_r')
 
         local n_ok = `n_ok' + 1
     }
@@ -744,22 +841,32 @@ preserve
     local ate_se_stem = r(sd)
     quietly sum b_att_stem
     local att_se_stem = r(sd)
+    quietly sum b_atu_stem
+    local atu_se_stem = r(sd)
     quietly sum b_ate_bus
     local ate_se_business = r(sd)
     quietly sum b_att_bus
     local att_se_business = r(sd)
+    quietly sum b_atu_bus
+    local atu_se_business = r(sd)
     quietly sum b_ate_ed
     local ate_se_education = r(sd)
     quietly sum b_att_ed
     local att_se_education = r(sd)
+    quietly sum b_atu_ed
+    local atu_se_education = r(sd)
     quietly sum b_ate_hlth
     local ate_se_health = r(sd)
     quietly sum b_att_hlth
     local att_se_health = r(sd)
+    quietly sum b_atu_hlth
+    local atu_se_health = r(sd)
     quietly sum b_ate_oth
     local ate_se_other = r(sd)
     quietly sum b_att_oth
     local att_se_other = r(sd)
+    quietly sum b_atu_oth
+    local atu_se_other = r(sd)
 restore
 
 * -----------------------------------------------------------------------
@@ -823,11 +930,27 @@ foreach a in other stem business education health {
 }
 
 di _n "--- Bootstrap SEs: Area-Specific ATT ---"
-di "Area          Point Est   BS SE"
-di "-----------------------------------"
+di "Area          Point Est   BS SE    95% CI                  Sig"
+di "---------------------------------------------------------------"
 foreach a in other stem business education health {
-    di "  `a'   " %7.4f `att_`a'' "    " %6.4f `att_se_`a''
+    local lo_att = `att_`a'' - 1.96 * `att_se_`a''
+    local hi_att = `att_`a'' + 1.96 * `att_se_`a''
+    local sig_att = cond(`lo_att' > 0, "***", cond(`hi_att' < 0, "***", "   "))
+    di "  `a'" _col(14) %7.4f `att_`a'' "    " %6.4f `att_se_`a'' "   [" %7.4f `lo_att' ", " %7.4f `hi_att' "]   `sig_att'"
 }
+di "  *** = 95% CI excludes zero (p < 0.05, two-tailed)"
+
+di _n "--- Bootstrap SEs: Area-Specific ATU (prospective assignment) ---"
+di "Area          Point Est   BS SE    95% CI                  Sig"
+di "---------------------------------------------------------------"
+foreach a in other stem business education health {
+    local lo_atu = `atu_`a'' - 1.96 * `atu_se_`a''
+    local hi_atu = `atu_`a'' + 1.96 * `atu_se_`a''
+    local sig_atu = cond(`lo_atu' > 0, "***", cond(`hi_atu' < 0, "***", "   "))
+    di "  `a'" _col(14) %7.4f `atu_`a'' "    " %6.4f `atu_se_`a'' "   [" %7.4f `lo_atu' ", " %7.4f `hi_atu' "]   `sig_atu'"
+}
+di "  *** = 95% CI excludes zero (p < 0.05, two-tailed)"
+di "  Note: ATU based on prospective program area assignment (seed 20260102)."
 
 ********************************************************************************
 * SECTION 7: Results Comparison
@@ -1147,14 +1270,36 @@ di "MPRTE (low-income)                " %6.4f `mprte_lowinc'
 di "MPRTE (STEM ug -> any grad)       " %6.4f `mprte_stem'
 di "MPRTE (Ed ug -> any grad)         " %6.4f `mprte_ed'
 
-di _n "AREA-SPECIFIC PARAMETERS:"
-di "Area          ATE (BS SE)         ATT (BS SE)"
-di "----------------------------------------------------"
-di "  Other     " %6.4f `ate_other'     " (" %6.4f `ate_se_other'     ")    " %6.4f `att_other'     " (" %6.4f `att_se_other'     ")"
-di "  STEM      " %6.4f `ate_stem'      " (" %6.4f `ate_se_stem'      ")    " %6.4f `att_stem'      " (" %6.4f `att_se_stem'      ")"
-di "  Business  " %6.4f `ate_business'  " (" %6.4f `ate_se_business'  ")    " %6.4f `att_business'  " (" %6.4f `att_se_business'  ")"
-di "  Education " %6.4f `ate_education' " (" %6.4f `ate_se_education' ")    " %6.4f `att_education' " (" %6.4f `att_se_education' ")"
-di "  Health    " %6.4f `ate_health'    " (" %6.4f `ate_se_health'    ")    " %6.4f `att_health'    " (" %6.4f `att_se_health'    ")"
+di _n "AREA-SPECIFIC PARAMETERS WITH 95% CONFIDENCE INTERVALS:"
+di "(Cluster bootstrap, G=50 states, R=500 reps)"
+di "ATE estimates:"
+di "Area          Estimate   (BS SE)    95% CI                  Sig"
+di "------------------------------------------------------------------"
+foreach a in other stem business education health {
+    local lo_ate = `ate_`a'' - 1.96 * `ate_se_`a''
+    local hi_ate = `ate_`a'' + 1.96 * `ate_se_`a''
+    local sig_ate = cond(`lo_ate' > 0, "***", cond(`hi_ate' < 0, "***", "   "))
+    di "  `a'" _col(14) %6.4f `ate_`a'' "   (" %6.4f `ate_se_`a'' ")   [" %7.4f `lo_ate' ", " %7.4f `hi_ate' "]   `sig_ate'"
+}
+di _n "ATT estimates:"
+di "Area          Estimate   (BS SE)    95% CI                  Sig"
+di "------------------------------------------------------------------"
+foreach a in other stem business education health {
+    local lo_att = `att_`a'' - 1.96 * `att_se_`a''
+    local hi_att = `att_`a'' + 1.96 * `att_se_`a''
+    local sig_att = cond(`lo_att' > 0, "***", cond(`hi_att' < 0, "***", "   "))
+    di "  `a'" _col(14) %6.4f `att_`a'' "   (" %6.4f `att_se_`a'' ")   [" %7.4f `lo_att' ", " %7.4f `hi_att' "]   `sig_att'"
+}
+di _n "ATU estimates (prospective program area assignment):"
+di "Area          Estimate   (BS SE)    95% CI                  Sig"
+di "------------------------------------------------------------------"
+foreach a in other stem business education health {
+    local lo_atu = `atu_`a'' - 1.96 * `atu_se_`a''
+    local hi_atu = `atu_`a'' + 1.96 * `atu_se_`a''
+    local sig_atu = cond(`lo_atu' > 0, "***", cond(`hi_atu' < 0, "***", "   "))
+    di "  `a'" _col(14) %6.4f `atu_`a'' "   (" %6.4f `atu_se_`a'' ")   [" %7.4f `lo_atu' ", " %7.4f `hi_atu' "]   `sig_atu'"
+}
+di "  *** = 95% CI excludes zero (p < 0.05, two-tailed)"
 
 di _n "MPRTE BY GRADUATE PIPELINE (Scenarios 5-8):"
 di "  STEM grad pipeline:         " %6.4f `mprte_ma_stem'
@@ -1320,12 +1465,39 @@ di "  6.  MTE-based ATU:                   " %6.4f `atu_est'       " (BS SE = " 
 di "  7.  mtefe ATE (quad):                " %6.4f `mtefe_ate_q' "  (BS SE = " %6.4f `mtefe_ate_q_se' ")"
 di "  8.  First-stage F:                   " %6.1f `first_stage_F'
 
-di _n "AREA-SPECIFIC ATE (program area interacted MTE):"
-di "  ATE (other):     " %6.4f `ate_other'     " (BS SE = " %6.4f `ate_se_other'     ")"
-di "  ATE (stem):      " %6.4f `ate_stem'      " (BS SE = " %6.4f `ate_se_stem'      ")"
-di "  ATE (business):  " %6.4f `ate_business'  " (BS SE = " %6.4f `ate_se_business'  ")"
-di "  ATE (education): " %6.4f `ate_education' " (BS SE = " %6.4f `ate_se_education' ")"
-di "  ATE (health):    " %6.4f `ate_health'    " (BS SE = " %6.4f `ate_se_health'    ")"
+di _n "AREA-SPECIFIC ATE, ATT, AND ATU WITH 95% CONFIDENCE INTERVALS"
+di "(Cluster bootstrap, G=50 states, R=500 reps, seed 20260101)"
+di "ATU based on prospective program area assignment (seed 20260102)"
+di "=================================================================="
+di "ATE estimates:"
+di "Area          Estimate   (BS SE)    95% CI                  Sig"
+di "------------------------------------------------------------------"
+foreach a in other stem business education health {
+    local lo_ate = `ate_`a'' - 1.96 * `ate_se_`a''
+    local hi_ate = `ate_`a'' + 1.96 * `ate_se_`a''
+    local sig_ate = cond(`lo_ate' > 0, "***", cond(`hi_ate' < 0, "***", "   "))
+    di "  `a'" _col(14) %6.4f `ate_`a'' "   (" %6.4f `ate_se_`a'' ")   [" %7.4f `lo_ate' ", " %7.4f `hi_ate' "]   `sig_ate'"
+}
+di _n "ATT estimates:"
+di "Area          Estimate   (BS SE)    95% CI                  Sig"
+di "------------------------------------------------------------------"
+foreach a in other stem business education health {
+    local lo_att = `att_`a'' - 1.96 * `att_se_`a''
+    local hi_att = `att_`a'' + 1.96 * `att_se_`a''
+    local sig_att = cond(`lo_att' > 0, "***", cond(`hi_att' < 0, "***", "   "))
+    di "  `a'" _col(14) %6.4f `att_`a'' "   (" %6.4f `att_se_`a'' ")   [" %7.4f `lo_att' ", " %7.4f `hi_att' "]   `sig_att'"
+}
+di _n "ATU estimates (prospective program area assignment):"
+di "Area          Estimate   (BS SE)    95% CI                  Sig"
+di "------------------------------------------------------------------"
+foreach a in other stem business education health {
+    local lo_atu = `atu_`a'' - 1.96 * `atu_se_`a''
+    local hi_atu = `atu_`a'' + 1.96 * `atu_se_`a''
+    local sig_atu = cond(`lo_atu' > 0, "***", cond(`hi_atu' < 0, "***", "   "))
+    di "  `a'" _col(14) %6.4f `atu_`a'' "   (" %6.4f `atu_se_`a'' ")   [" %7.4f `lo_atu' ", " %7.4f `hi_atu' "]   `sig_atu'"
+}
+di "  *** = 95% CI excludes zero (p < 0.05, two-tailed)"
+di "  Note: Business ATE CI is wide — interpret point estimate with caution."
 
 di _n "MPRTE SUMMARY - Original Scenarios:"
 di "  Uniform policy:         " %6.4f `mprte_unif'
