@@ -17,6 +17,7 @@
 *   Georgia_DiD.do  Sections 10.3–10.9  — DiD, SCM, SDID, CS-DiD
 *   ETWFE.do        Section 10.7.4 — Extended TWFE (Wooldridge) via jwdid
 *   MTE_MPRTE.do    Sections 10.10–10.16 — MTE/MPRTE, CBA
+*   CATE.do         Section 10.10.3 — Conditional Average Treatment Effects  *** NEW ***
 *
 * PART A  (Sections 10.2-10.9): Causal Inference
 *
@@ -123,7 +124,11 @@ di as text "RDD packages confirmed."
 * DiD / causal inference packages (Sections 10.3-10.9)
 ssc install reghdfe,   replace
 ssc install lassopack, replace
-ssc install synth,     replace
+capture ssc install synth, replace
+if _rc != 0 {
+    di as text "WARNING: ssc install synth failed (r(" _rc ")). synth may already be installed."
+    di as text "  If not, run manually once the SSC mirror recovers: ssc install synth, replace"
+}
 ssc install sdid,      replace
 ssc install csdid,     replace
 ssc install drdid,     replace
@@ -272,8 +277,22 @@ capture graph display fig10_7_2    // ETWFE event study (staggered adoption)
 *   Script: $syntax_dir/MTE_MPRTE.do
 *   Inherits: $graphs_dir, log, set scheme s2mono
 *   Data:     Example_7_5_3_updated.dta (or Example_7_5_3.dta fallback)
+*
+*   Key sections:
+*     Sec 6    Pooled cubic polynomial MTE (ATE, ATT, ATU); mtefe; Heckman
+*     Sec 6b   Area-specific MTE by graduate program area (fully interacted)
+*     Sec 6b-ATU  Prospective program area assignment for untreated obs;
+*                  area-specific ATU via counterfactual assignment
+*                  (seed 20260102; mirrors treated assignment in Sec 1b)
+*     Sec 6c   Cluster bootstrap (G=50, R=500): SEs for ATE, ATT, ATU
+*                  — pooled and area-specific, with 95% CIs
+*     Sec 9-11 PRTE and MPRTE policy simulations (Scenarios 1-8)
+*     Sec 14   Cost-benefit analysis (B/C ratios)
+*
 *   Produces: bb_mte_analysis.dta, mte_summary_by_field.csv
-*             mte_summary_by_program_area.csv, fig10_11 – fig10_16
+*             mte_summary_by_program_area.csv, fig10_8 – fig10_11
+*             fig10_9 (MTE by propensity score), mte_by_decile,
+*             fig10_10 (MTE curves by area), fig10_14 (MPRTE intensity)
 *========================================================================
 
 do "$syntax_dir/MTE_MPRTE.do"
@@ -292,6 +311,42 @@ capture graph display fig10_10
 capture graph display mprte_intensity
 capture graph display fig10_11
 capture graph display fig10_9
+
+*========================================================================
+* SECTION 10.10.3: CONDITIONAL AVERAGE TREATMENT EFFECTS (CATE)   *** NEW ***
+*   Heterogeneous IV returns to master's degree by observed subgroups.
+*   Strategy:
+*     (a) Subgroup IV/2SLS — run the baseline IV model separately within
+*         cells defined by field, income quintile, and first-generation
+*         status; collect point estimates and SEs for a forest plot.
+*     (b) Interaction IV — include field × treatment and
+*         income_q1 × treatment interactions in the full-sample IV model
+*         to test whether subgroup CATEs differ significantly.
+*     (c) Forest-plot visualization (Fig. 10.CATE).
+*     (d) Comparison table: OLS / LATE / CATE by subgroup (Tab. 10.CATE).
+*
+*   Script: $syntax_dir/CATE.do
+*   Inherits: $graphs_dir, $tables_dir, log, set scheme s2mono
+*   Data:     Example_7_5_3_updated.dta (reloaded inside CATE.do for a
+*             clean workspace; Part B globals remain in scope)
+*   Produces: fig10_cate_forest.png
+*             fig10_cate_interact.png
+*             tab10_cate_subgroup.rtf
+*
+*   Placement in chapter: Section 10.10.3, immediately after the
+*   OLS/IV/LATE comparison in Section 10.10.2 and before MTE (10.11).
+*   CATE bridges LATE (a single complier average) and MTE (continuous
+*   heterogeneity along unobserved resistance) by characterising
+*   heterogeneity along observed dimensions (field, income, generation).
+*========================================================================
+
+do "$syntax_dir/CATE.do"
+
+*------------------------------------------------------------------------
+* Display CATE figures in the Stata graph window
+*------------------------------------------------------------------------
+capture graph display fig10_cate_forest    // forest plot: CATE by subgroup
+capture graph display fig10_cate_interact  // interaction-term CATE margins
 
 *========================================================================
 * Close log and exit
@@ -357,11 +412,17 @@ log close
      Sections 1-4: Data loading, summary statistics, first-stage, OLS
      Section 5: IV/2SLS (LATE)
 
+   10.10.3  Conditional Average Treatment Effects (CATE)          *** NEW ***
+     Section 5b: Subgroup CATEs via IV/2SLS with interaction terms
+     Section 5c: Lasso-based heterogeneous treatment effects (ivlasso / post-lasso)
+     Section 5d: Forest-plot visualization of CATEs by field, income, and generation
+     Section 5e: CATE comparison table
+
    10.11  Marginal Treatment Effects
      Section 6: Manual polynomial MTE (quadratic and cubic), mtefe, Heckman
      Section 6b: Area-specific MTE by graduate program field
      Section 6c: Cluster bootstrap SEs, wild cluster bootstrap
-     Section 7: Treatment effect comparison (ATE/ATT/ATU/LATE)
+     Section 7: Treatment effect comparison (ATE/ATT/ATU/LATE/CATE)
 
    10.11 (Visualization)
      Section 8: MTE curve, decile plot, by-area curves
@@ -376,7 +437,7 @@ log close
 
    Data files saved:
      ch10_rdd_hsls09_synthetic.dta   (Section 10.2 RDD synthetic data)
-     bb_mte_analysis.dta             (Part B MTE analysis)
+     bb_mte_analysis.dta             (Part B MTE analysis; includes ma_*_pro vars)
      mte_summary_by_field.csv
      mte_summary_by_program_area.csv
 */
@@ -396,7 +457,8 @@ foreach gname in                                                        ///
     fig10_3    fig10_6    fig10_7_2  fig10_3_2  fig10_4_1                 ///
     fig10_4    fig10_5_1  fig10_8_1  fig10_8_2  fig10_9_1              ///
     fig10_8    mte_by_decile  fig10_10  mprte_intensity        ///
-    fig10_11   fig10_9 {
+    fig10_11   fig10_9                                                  ///
+    fig10_cate_forest  fig10_cate_interact {
     capture graph save "$graphs_dir/`gname'.gph", replace
 }
 
@@ -412,4 +474,6 @@ di as text "               fig10_4    fig10_5_1 fig10_8_1 fig10_8_2 fig10_9_1"
 di as text "  ETWFE:       fig10_7_2"
 di as text "  MTE/MPRTE:  fig10_8 mte_by_decile fig10_10"
 di as text "               mprte_intensity fig10_11 fig10_9"
+di as text "  (ATU):      area-specific ATU via prospective assignment (Sec 6b-ATU)"
+di as text "  CATE:        fig10_cate_forest fig10_cate_interact"
 di as text "========================================================"
