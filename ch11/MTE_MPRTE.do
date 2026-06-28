@@ -1,15 +1,15 @@
 *========================================================================
-* Chapter 10 – Sections 10.10–10.16: Marginal Treatment Effects
+* Chapter 11 – Sections 11.1–11.3: Marginal Treatment Effects
 *             Returns to Master's Degree Completion
 * Higher Education Policy Analysis Using Quantitative Techniques
 * (2nd Edition)
-* Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch10
+* Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch11
 * Author: Marvin A. Titus
 * Date: May 2026
 * NOTE: Code development was assisted by Claude (Anthropic). The author
 * provided specifications and reviewed, tested, and validated all code.
 *========================================================================
-* Called by: Stata_code10.do  (inherits $graphs_dir, log, set scheme)
+* Called by: Stata_code11.do  (inherits $graphs_dir, log, set scheme)
 * Standalone: can also be run directly; uses fallback paths if needed.
 *
 * Data: synthetic B&B panel
@@ -18,41 +18,41 @@
 *
 * Required packages: mtefe, moremata, fwildclusterboot
 *
-* Sections:
-*   1     Load dataset (Example_7_5_3_updated.dta / Example_7_5_3.dta)
-*   1b    Verify / generate master's program area indicators (ma_*)
-*   2     Summary statistics
-*   3     First stage and instrument relevance
-*   4     Naive OLS estimation
-*   5     IV/2SLS estimation (LATE)
-*   6     MTE estimation — pooled polynomial (quadratic and cubic)
-*   6b    MTE by graduate program area (fully interacted)
-*   6c    Bootstrap infrastructure (cluster bootstrap + wild cluster)
-*   7     Results comparison (ATE / ATT / ATU / LATE)
-*   8     MTE visualization
-*   9     Basic policy simulation (PRTE)
-*   10    MPRTE — Scenarios 1–4 (original)
-*   10b   MPRTE by graduate program area — Scenarios 5–8
-*   11    MPRTE by policy intensity
-*   12    Comparing treatment effect parameters
-*   13    MPRTE visualization
-*   14    Policy cost-benefit analysis
-*   15    Save results
-*   16    Final summary
+* Sections (Chapter 11 numbering):
+*   1     Load dataset (Example_7_5_3_updated.dta / Example_7_5_3.dta)        [11.1]
+*   1b    Verify / generate master's program area indicators (ma_*)          [11.1]
+*   2     Summary statistics                                                  [11.1]
+*   3     First stage and instrument relevance                                [11.1]
+*   4     Naive OLS estimation                                                [11.1]
+*   5     IV/2SLS estimation (LATE)                                          [11.1]
+*   6     MTE estimation — pooled polynomial (quadratic and cubic)           [11.2]
+*   6b    MTE by graduate program area (fully interacted)                    [11.2]
+*   6c    Bootstrap infrastructure (cluster bootstrap + wild cluster)        [11.2]
+*   7     Results comparison (ATE / ATT / ATU / LATE)                        [11.2]
+*   8     MTE visualization                                                   [11.2.3]
+*   9     Basic policy simulation (PRTE)                                      [11.3]
+*   10    MPRTE — Scenarios 1–4 (original)                                    [11.3]
+*   10b   MPRTE by graduate program area — Scenarios 5–8                      [11.3]
+*   11    MPRTE by policy intensity                                           [11.3]
+*   12    Comparing treatment effect parameters                               [11.3]
+*   13    MPRTE visualization                                                 [11.3]
+*   14    Policy cost-benefit analysis                                        [11.3]
+*   15    Save results                                                        [11.4]
+*   16    Final summary                                                       [11.4]
 *========================================================================
 
 *------------------------------------------------------------------------
-* Fallback paths when running standalone (not called from Stata_code10.do)
+* Fallback paths when running standalone (not called from Stata_code11.do)
 *------------------------------------------------------------------------
 capture confirm global graphs_dir
 if _rc != 0 {
     if c(username) == "marvi" {
         global graphs_dir ///
-            "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output/graphs"
+            "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output/graphs"
         capture mkdir ///
-            "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output"
+            "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output"
         capture mkdir ///
-            "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output/graphs"
+            "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output/graphs"
     }
     else {
         global graphs_dir "Output/graphs"
@@ -61,6 +61,30 @@ if _rc != 0 {
     }
     di as text "MTE_MPRTE.do (standalone): graphs_dir set to $graphs_dir"
 }
+
+*------------------------------------------------------------------------
+* Dedicated log for this sub-script
+* Opens its own log file, separate from Stata_code11.do's master log,
+* so that Sections 11.1-11.3 output can be reviewed independently.
+* Fallback $logdir is defined here if not already set by the caller.
+*------------------------------------------------------------------------
+capture confirm global logdir
+if _rc != 0 {
+    if c(username) == "marvi" {
+        global logdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output/logs"
+        capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output/logs"
+    }
+    else {
+        global logdir "Output/logs"
+        capture mkdir "Output/logs"
+    }
+}
+
+capture log close mte_mprte
+log using "$logdir/MTE_MPRTE_output.log", name(mte_mprte) replace text
+
+di as text "MTE_MPRTE.do log opened: " c(current_date) " " c(current_time)
+di as text "Log file: $logdir/MTE_MPRTE_output.log"
 
 set scheme s2mono    // Springer B&W print (harmless if already set)
 
@@ -667,8 +691,19 @@ set seed 20260101
 local R    = 500
 local n_ok = 0
 
+* -----------------------------------------------------------------------
+* NOTE — RUNTIME: This loop is the slowest part of the chapter's code.
+* It re-estimates the full polynomial-control-function MTE model once per
+* replication (R=500), each preceded by a preserve/resample/restore cycle.
+* Expect roughly 2 minutes on a typical machine; this single section
+* accounts for most of MTE_MPRTE.do's total run time. No action needed —
+* just be patient and let it finish.
+* -----------------------------------------------------------------------
+
 di _n "Running manual cluster bootstrap (G=50, R=`R' reps)..."
 di "Each dot = 10 reps completed"
+di "NOTE: this step is the slowest part of the script — expect roughly" ///
+   " 1-2 minutes to complete."
 
 forvalues b = 1/`R' {
 
@@ -1008,9 +1043,9 @@ preserve
            subtitle("Master's Degree Effect on Log Salary") ///
            note("Declining MTE indicates positive selection on gains") ///
            yline(0, lpattern(dash) lcolor(gs8)) ///
-           name(fig10_8, replace)
-    graph save "$graphs_dir/fig10_8.gph", replace
-    graph export "$graphs_dir/fig10_8_mte_curve_Stata.png", replace width(1200)
+           name(fig11_3, replace)
+    graph save "$graphs_dir/fig11_3.gph", replace
+    graph export "$graphs_dir/fig11_3_mte_curve_Stata.png", replace width(1200)
 restore
 
 capture drop p_decile
@@ -1027,21 +1062,46 @@ preserve
            title("Estimated MTE by Propensity Score Decile") ///
            subtitle("Evidence of Treatment Effect Heterogeneity") ///
            yline(0, lpattern(dash) lcolor(gs8)) ///
-           name(mte_by_decile, replace)
-    graph save "$graphs_dir/mte_by_decile.gph", replace
-    graph export "$graphs_dir/fig10_12_mte_by_decile_Stata.png", replace width(1200)
+           name(fig11_7, replace)
+    graph save "$graphs_dir/fig11_7.gph", replace
+    graph export "$graphs_dir/fig11_7_mte_by_decile_Stata.png", replace width(1200)
 restore
 
 * MTE curves by program area
+* FIX: restrict each area-specific curve to that area's empirical
+* propensity-score support (treated obs, ma_a==1). The cubic control-
+* function polynomial is only identified where data exist; extrapolating
+* it across the full [0,1] range previously caused curves for small-N
+* areas (e.g., Business, N=179 treated) to diverge sharply near the
+* boundary. Computed here, before preserve, while ma_*/phat are in scope.
+foreach a in stem business education health {
+    qui sum phat if masters==1 & ma_`a' == 1
+    local lo_`a' = r(min)
+    local hi_`a' = r(max)
+}
+qui sum phat if masters==1 & ma_other == 1
+local lo_other = r(min)
+local hi_other = r(max)
+
+di _n "Empirical phat support by area (treated obs):"
+foreach a in stem business education health other {
+    di "  `a': [" %5.3f `lo_`a'' ", " %5.3f `hi_`a'' "]"
+}
+
 preserve
     clear
     set obs 100
     gen u = _n/100
     gen mte_other    = `B0'            + `B1'           *u + `B2'           *u^2 + `B3'           *u^3
+    replace mte_other    = . if u < `lo_other'    | u > `hi_other'
     gen mte_stem     = `c0_stem'       + `c1_stem'      *u + `c2_stem'      *u^2 + `c3_stem'      *u^3
+    replace mte_stem     = . if u < `lo_stem'     | u > `hi_stem'
     gen mte_business = `c0_business'   + `c1_business'  *u + `c2_business'  *u^2 + `c3_business'  *u^3
+    replace mte_business = . if u < `lo_business' | u > `hi_business'
     gen mte_educ     = `c0_education'  + `c1_education' *u + `c2_education' *u^2 + `c3_education' *u^3
+    replace mte_educ     = . if u < `lo_education' | u > `hi_education'
     gen mte_health   = `c0_health'     + `c1_health'    *u + `c2_health'    *u^2 + `c3_health'    *u^3
+    replace mte_health   = . if u < `lo_health'   | u > `hi_health'
 
     twoway (line mte_health   u, lcolor(gs0) lwidth(medthick) lpattern(solid))     ///
            (line mte_stem     u, lcolor(gs0) lwidth(medthick) lpattern(dash))       ///
@@ -1053,12 +1113,13 @@ preserve
         title("MTE Curves by Graduate Program Area") ///
         subtitle("Field-specific returns to master's degree") ///
         yline(0, lpattern(shortdash) lcolor(gs10)) ///
+        note("Curves restricted to each area's empirical propensity-score support (treated obs).") ///
         legend(order(1 "Health & Related" 2 "STEM" 3 "Business" ///
                      4 "Education" 5 "Other (base)") ///
                cols(3) size(small)) ///
-        name(fig10_10, replace)
-    graph save "$graphs_dir/fig10_10.gph", replace
-    graph export "$graphs_dir/fig10_10_mte_byarea_curve_Stata.png", replace width(1200)
+        name(fig11_5, replace)
+    graph save "$graphs_dir/fig11_5.gph", replace
+    graph export "$graphs_dir/fig11_5_mte_byarea_curve_Stata.png", replace width(1200)
 restore
 
 ********************************************************************************
@@ -1245,9 +1306,9 @@ preserve
         title("MPRTE by Policy Intensity") ///
         subtitle("Marginal returns to GA funding expansion") ///
         yline(0, lpattern(dash) lcolor(gs8)) ///
-        name(mprte_intensity, replace)
-    graph save "$graphs_dir/mprte_by_intensity.gph", replace
-    graph export "$graphs_dir/fig10_14_mprte_by_intensity_Stata.png", replace width(1200)
+        name(fig11_8, replace)
+    graph save "$graphs_dir/fig11_8.gph", replace
+    graph export "$graphs_dir/fig11_8_mprte_by_intensity_Stata.png", replace width(1200)
 restore
 
 ********************************************************************************
@@ -1335,10 +1396,10 @@ twoway (rarea zero_line mte u if region_lo == 1, fcolor(gs5)  lwidth(none)) ///
     title("MTE Curve with Policy-Relevant Regions") ///
     legend(order(3 "Estimated MTE" 1 "Low-income margin" ///
                  2 "Uniform policy margin") cols(2) size(small)) ///
-    name(fig10_11, replace)
+    name(fig11_6, replace)
 
-graph save   "$graphs_dir/fig10_11.gph", replace
-graph export "$graphs_dir/fig10_11_mte_policy_regions_Stata.png", replace width(1200)
+graph save   "$graphs_dir/fig11_6.gph", replace
+graph export "$graphs_dir/fig11_6_mte_policy_regions_Stata.png", replace width(1200)
 
 qui use `mte_mem', clear
 
@@ -1356,9 +1417,9 @@ preserve
         xtitle("Propensity Score") ///
         title("MTE by Propensity Score") ///
         legend(order(2 "Mean MTE" 1 "Obs. count")) ///
-        name(fig10_9, replace)
-    graph save "$graphs_dir/fig10_9.gph", replace
-    graph export "$graphs_dir/fig10_9_mte_by_propensity_Stata.png", replace width(1200)
+        name(fig11_4, replace)
+    graph save "$graphs_dir/fig11_4.gph", replace
+    graph export "$graphs_dir/fig11_4_mte_by_propensity_Stata.png", replace width(1200)
 restore
 
 ********************************************************************************
@@ -1520,13 +1581,19 @@ di "=============================================="
 di "END OF MTE/MPRTE ANALYSIS"
 di "=============================================="
 
-capture graph display fig10_8
-capture graph display mte_by_decile
-capture graph display fig10_10
-capture graph display mprte_intensity
-capture graph display fig10_11
-capture graph display fig10_9
+capture graph display fig11_3
+capture graph display fig11_4
+capture graph display fig11_5
+capture graph display fig11_6
+capture graph display fig11_7
+capture graph display fig11_8
 
+*------------------------------------------------------------------------
+* Close this sub-script's dedicated log
+* (Stata_code11.do's own master log, if any, remains open.)
+*------------------------------------------------------------------------
+di as text _n "MTE_MPRTE.do log closed: " c(current_date) " " c(current_time)
+capture log close mte_mprte
 
 *========================================================================
 * END OF MTE_MPRTE.do

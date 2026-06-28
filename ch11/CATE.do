@@ -1,6 +1,6 @@
 *========================================================================
-* CATE.do  —  Section 10.10.3: Conditional Average Treatment Effects
-* Sub-script called by Stata_code10.do
+* CATE.do  —  Section 11.1.3: Conditional Average Treatment Effects
+* Sub-script called by Stata_code11.do
 * Higher Education Policy Analysis Using Quantitative Techniques (2nd ed.)
 * Author: Marvin A. Titus
 * Date: June 2026
@@ -13,7 +13,7 @@
 * Estimate Conditional Average Treatment Effects (CATEs) for the return
 * to master's degree completion using the same instrument (state-funded
 * graduate assistantship funding, ga_funding_adj) and data as
-* Sections 10.10–10.11.
+* Sections 11.1–11.1.2.
 *
 * A CATE conditions on observed covariates X:
 *
@@ -41,11 +41,11 @@
 *
 * OUTPUTS
 * -------
-*   fig10_cate_forest.png   — forest plot of CATE by subgroup
-*   fig10_cate_interact.png — interaction IV coefficient plot
-*   tab10_cate_subgroup.rtf — comparison table (OLS / LATE / CATE)
+*   fig11_7_cate_forest.png   — forest plot of CATE by subgroup
+*   fig11_8_cate_interact.png — interaction IV coefficient plot
+*   tab11_2_cate_subgroup.rtf — comparison table (OLS / LATE / CATE)
 *
-* INHERITS (from Stata_code10.do)
+* INHERITS (from Stata_code11.do)
 *   $graphs_dir, $tables_dir, log, set scheme s2mono
 *
 * DATA
@@ -53,7 +53,7 @@
 *========================================================================
 
 di _n as text "=========================================================="
-di      as text " Section 10.10.3: Conditional Average Treatment Effects"
+di      as text " Section 11.1.3: Conditional Average Treatment Effects"
 di      as text "=========================================================="
 
 *------------------------------------------------------------------------
@@ -80,17 +80,17 @@ global Z "ga_funding_adj"
 
 *------------------------------------------------------------------------
 * Output directory fallback
-* When run standalone (not via Stata_code10.do), $graphs_dir and
+* When run standalone (not via Stata_code11.do), $graphs_dir and
 * $tables_dir may be undefined. Define them here if missing, using the
-* same logic as Stata_code10.do (personal paths for marvi, relative
+* same logic as Stata_code11.do (personal paths for marvi, relative
 * paths otherwise).
 *------------------------------------------------------------------------
 
 if "$graphs_dir" == "" {
     if c(username) == "marvi" {
-        global graphs_dir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output/graphs"
-        global tables_dir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output/tables"
-        capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output"
+        global graphs_dir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output/graphs"
+        global tables_dir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output/tables"
+        capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output"
         capture mkdir "$graphs_dir"
         capture mkdir "$tables_dir"
     }
@@ -106,6 +106,32 @@ if "$graphs_dir" == "" {
     di as text "  tables: $tables_dir"
 }
 
+*------------------------------------------------------------------------
+* Dedicated log for this sub-script
+* Opens its own log file, separate from Stata_code11.do's master log
+* and from MTE_MPRTE.do's log, so that Section 11.1.3 (CATE) output can
+* be reviewed independently. Fallback $logdir is defined here if not
+* already set by the caller.
+*------------------------------------------------------------------------
+capture confirm global logdir
+if _rc != 0 {
+    if c(username) == "marvi" {
+        global logdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output/logs"
+        capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output/logs"
+    }
+    else {
+        global logdir "Output/logs"
+        capture mkdir "Output/logs"
+    }
+}
+
+capture log close cate
+
+log using "$logdir/CATE_output.log", name(cate) replace text
+
+di as text "CATE.do log opened: " c(current_date) " " c(current_time)
+di as text "Log file: $logdir/CATE_output.log"
+
 * Low-income subgroup: parent_income_q == 1 (lowest income quintile)
 * This is the same policy-scenario margin used in the MPRTE analysis.
 
@@ -115,10 +141,10 @@ if "$graphs_dir" == "" {
 * For each subgroup, estimate:
 *   ln_salary = b0 + b1*masters + controls + e
 * where masters is instrumented by ga_funding_adj.
-* Syntax mirrors Section 10.10.2: ivregress 2sls ln_salary $X (masters = $Z)
+* Syntax mirrors Section 11.1.2: ivregress 2sls ln_salary $X (masters = $Z)
 *
 * Subgroups:
-*   1. Full sample      (LATE benchmark from Section 10.10.2)
+*   1. Full sample      (LATE benchmark from Section 11.1.2)
 *   2. STEM majors
 *   3. Non-STEM majors
 *   4. Business majors
@@ -230,9 +256,12 @@ di   as text "  Low-income increment: " %6.4f _b[D_x_lowinc]
 di   as text "  First-gen increment:  " %6.4f _b[D_x_firstgen]
 
 * Joint Wald test: are the interaction coefficients jointly zero?
+* Note: test after ivregress reports a chi-squared statistic, not an
+* F-statistic (no F-test degrees of freedom are stored after IV/GMM
+* estimation), so r(chi2)/r(df)/r(p) are used here rather than r(F).
 test D_x_stem_major D_x_lowinc D_x_firstgen
 di _n as text "Joint Wald test (all interactions = 0): " ///
-        "F(" r(df) "," r(df_r) ") = " %6.3f r(F) ///
+        "chi2(" r(df) ") = " %6.3f r(chi2) ///
         "  p = " %6.4f r(p)
 
 * Implied CATEs for the four STEM × income cells
@@ -252,7 +281,7 @@ di   as text "  STEM, Low-income:        " %6.4f `cate_stem_lowinc'
 *========================================================================
 
 *------------------------------------------------------------------------
-* Fig 10.CATE(a): Forest plot of subgroup CATEs from Strategy (a)
+* Fig 11.7: Forest plot of subgroup CATEs from Strategy (a)
 *------------------------------------------------------------------------
 
 di _n as text "--- Producing CATE forest plot ---"
@@ -304,17 +333,18 @@ preserve
              "Full-sample LATE (black) shown as benchmark."         ///
              "Estimates based on synthetic data (illustrative).")   ///
         legend(off) scheme(s2mono)                                  ///
-        name(fig10_cate_forest, replace)
+        name(fig11_7, replace)
 
-    graph export "$graphs_dir/fig10_cate_forest.png",              ///
+    graph save "$graphs_dir/fig11_7.gph", replace
+    graph export "$graphs_dir/fig11_7_cate_forest.png",              ///
         replace width(1400)
 
 restore
 
-di as text "  fig10_cate_forest exported."
+di as text "  fig11_7_cate_forest exported."
 
 *------------------------------------------------------------------------
-* Fig 10.CATE(b): Interaction IV — STEM × income 2×2 coefficient plot
+* Fig 11.8: Interaction IV — STEM × income 2×2 coefficient plot
 *------------------------------------------------------------------------
 
 di _n as text "--- Producing CATE interaction coefficient plot ---"
@@ -376,14 +406,15 @@ preserve
              "Estimates based on synthetic data (illustrative).")       ///
         legend(order(2 "Non-STEM" 3 "STEM") rows(1))                    ///
         scheme(s2mono)                                                  ///
-        name(fig10_cate_interact, replace)
+        name(fig11_8, replace)
 
-    graph export "$graphs_dir/fig10_cate_interact.png",                ///
+    graph save "$graphs_dir/fig11_8.gph", replace
+    graph export "$graphs_dir/fig11_8_cate_interact.png",                ///
         replace width(1400)
 
 restore
 
-di as text "  fig10_cate_interact exported."
+di as text "  fig11_8_cate_interact exported."
 
 *========================================================================
 * COMPARISON TABLE: OLS / LATE / Subgroup CATEs
@@ -391,11 +422,11 @@ di as text "  fig10_cate_interact exported."
 
 di _n as text "--- Producing CATE comparison table ---"
 
-* OLS benchmark (mirrors Section 10.10.2)
+* OLS benchmark (mirrors Section 11.1.2)
 quietly reg ln_salary masters $X_controls, robust
 estimates store cate_ols
 
-* Full-sample LATE (mirrors Section 10.10.2)
+* Full-sample LATE (mirrors Section 11.1.2)
 quietly ivregress 2sls ln_salary $X_controls ///
     (masters = ga_funding_adj), vce(robust)
 estimates store cate_late
@@ -419,7 +450,7 @@ quietly ivregress 2sls ln_salary $X_controls ///
 estimates store cate_lowinc
 
 estout cate_ols cate_late cate_stem cate_firstgen cate_lowinc           ///
-    using "$tables_dir/tab10_cate_subgroup.rtf",                        ///
+    using "$tables_dir/tab11_2_cate_subgroup.rtf",                        ///
     replace style(fixed)                                                ///
     keep(masters)                                                       ///
     cells(b(star fmt(4)) se(par fmt(4)))                                ///
@@ -427,14 +458,14 @@ estout cate_ols cate_late cate_stem cate_firstgen cate_lowinc           ///
     stats(N r2, labels("N" "R-squared") fmt(0 3))                       ///
     mlabels("OLS" "IV/LATE" "CATE: STEM" "CATE: First-gen"             ///
             "CATE: Low-income")                                         ///
-    title("Table 10.CATE. OLS, LATE, and Conditional Average Treatment Effects") ///
+    title("Table 11.2. OLS, LATE, and Conditional Average Treatment Effects") ///
     note("Outcome: log annual salary."                                  ///
          "Instrument: state-funded GA amount (ga_funding_adj)."         ///
          "Robust SEs in parentheses."                                   ///
          "CATE columns restrict the sample to the indicated subgroup."  ///
          "Estimates based on synthetic data (illustrative only).")
 
-di as text "  tab10_cate_subgroup.rtf exported."
+di as text "  tab11_2_cate_subgroup.rtf exported."
 
 *========================================================================
 * Clean up temporary interaction variables
@@ -448,16 +479,23 @@ capture drop lowinc
 * Display figures
 *========================================================================
 
-capture graph display fig10_cate_forest
-capture graph display fig10_cate_interact
+capture graph display fig11_7
+capture graph display fig11_8
 
 di _n as text "=========================================================="
-di      as text " Section 10.10.3 (CATE.do) complete."
+di      as text " Section 11.1.3 (CATE.do) complete."
 di      as text " Outputs:"
-di      as text "   $graphs_dir/fig10_cate_forest.png"
-di      as text "   $graphs_dir/fig10_cate_interact.png"
-di      as text "   $tables_dir/tab10_cate_subgroup.rtf"
+di      as text "   $graphs_dir/fig11_7_cate_forest.png"
+di      as text "   $graphs_dir/fig11_8_cate_interact.png"
+di      as text "   $tables_dir/tab11_2_cate_subgroup.rtf"
 di      as text "=========================================================="
+
+*------------------------------------------------------------------------
+* Close this sub-script's dedicated log
+* (Stata_code11.do's own master log, if any, remains open.)
+*------------------------------------------------------------------------
+di as text _n "CATE.do log closed: " c(current_date) " " c(current_time)
+capture log close cate
 
 *========================================================================
 * END OF CATE.do
