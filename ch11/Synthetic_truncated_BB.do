@@ -11,7 +11,7 @@
 *
 * Author: Marvin A. Titus
 * Date: November 2025 (revised March 2026)
-* Purpose: Generate synthetic dataset for textbook Chapters 7 and 10
+* Purpose: Generate synthetic dataset for textbook Chapters 7 and 11
 *
 * REVISION NOTES (March 2026):
 * ----------------------------
@@ -35,7 +35,7 @@
 * 1. ACCESS RESTRICTIONS: B&B restricted-use data requires NCES license
 * 2. PEDAGOGICAL TRANSPARENCY: Known true parameters allow validation
 * 3. REPRODUCIBILITY: Readers can generate identical datasets
-* 4. CONTINUITY: Same dataset used in Chapter 10 for MTE analysis
+* 4. CONTINUITY: Same dataset used in Chapters 7 and 11
 *
 * NOTE ON AI-ASSISTED CODE DEVELOPMENT:
 * -------------------------------------
