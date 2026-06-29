@@ -134,7 +134,7 @@ if (!file.exists("Example_7_5_3_updated.dta")) {
   cat("Attempting to download Example_7_5_3_updated.dta from GitHub...\n")
   ok <- tryCatch({
     download.file(
-      "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch10/Example_7_5_3_updated.dta",
+      "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch11/Example_7_5_3_updated.dta",
       "Example_7_5_3_updated.dta", mode = "wb", quiet = TRUE
     )
     TRUE
@@ -149,10 +149,10 @@ if (file.exists("Example_7_5_3_updated.dta")) {
 
 if (is.null(df)) {
   cat("Note: Example_7_5_3_updated.dta not found.\n")
-  cat("Attempting to download Example_7_5_3.dta from GitHub (ch7 repository)...\n")
+  cat("Attempting to download Example_7_5_3.dta from GitHub (ch11 repository)...\n")
   ok <- tryCatch({
     download.file(
-      "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch7/Example_7_5_3.dta",
+      "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch11/Example_7_5_3.dta",
       "Example_7_5_3.dta", mode = "wb", quiet = TRUE
     )
     TRUE
@@ -161,7 +161,7 @@ if (is.null(df)) {
     stop(paste0(
       "ERROR: Download of Example_7_5_3.dta failed.\n",
       "Please download the file manually from:\n",
-      "https://github.com/higher-ed-policy-analysis-2nd-edition/data/blob/main/ch7/Example_7_5_3.dta\n",
+      "https://github.com/higher-ed-policy-analysis-2nd-edition/data/blob/main/ch11/Example_7_5_3.dta\n",
       "and place it in the working directory before running Part B."
     ))
   }

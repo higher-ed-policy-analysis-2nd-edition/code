@@ -103,7 +103,7 @@ capture confirm file "Example_7_5_3_updated.dta"
 if _rc != 0 {
     di as text "Attempting to download Example_7_5_3_updated.dta from GitHub..."
     capture copy ///
-        "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch10/Example_7_5_3_updated.dta" ///
+        "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch11/Example_7_5_3_updated.dta" ///
         "Example_7_5_3_updated.dta", replace
     if _rc != 0 di as text "Download failed — will try local file or base version."
 }
@@ -111,14 +111,14 @@ if _rc != 0 {
 capture use "Example_7_5_3_updated.dta", clear
 if _rc != 0 {
     di as text "Note: Example_7_5_3_updated.dta not found."
-    di as text "Attempting to download Example_7_5_3.dta from GitHub (ch7 repository)..."
+    di as text "Attempting to download Example_7_5_3.dta from GitHub (ch11 repository)..."
     capture copy ///
-        "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch7/Example_7_5_3.dta" ///
+        "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch11/Example_7_5_3.dta" ///
         "Example_7_5_3.dta", replace
     if _rc != 0 {
         di as error "ERROR: Download of Example_7_5_3.dta failed."
         di as error "Please download the file manually from:"
-        di as error "https://github.com/higher-ed-policy-analysis-2nd-edition/data/blob/main/ch7/Example_7_5_3.dta"
+        di as error "https://github.com/higher-ed-policy-analysis-2nd-edition/data/blob/main/ch11/Example_7_5_3.dta"
         di as error "and place it in the working directory before running Part B."
         exit 601
     }

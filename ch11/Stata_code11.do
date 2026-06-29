@@ -25,7 +25,8 @@
 *   Section 11.1.3: Conditional Average Treatment Effects  →  CATE.do
 *     Heterogeneous IV returns to master's degree by observed subgroups
 *     (field, income quintile, first-generation status).
-*     Data: Example_7_5_3_updated.dta (reloaded for a clean workspace)
+*     Data: Example_7_5_3_updated.dta (CATE.do now runs first, so this
+*     is the script's first data load for the chapter run)
 *
 *   Section 11.2: Marginal Treatment Effects (MTE)  →  MTE_MPRTE.do
 *     Pooled and area-specific MTE via polynomial control function;

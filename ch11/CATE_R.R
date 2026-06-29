@@ -13,7 +13,7 @@
 # Estimate Conditional Average Treatment Effects (CATEs) for the return
 # to master's degree completion using the same instrument (state-funded
 # graduate assistantship funding, ga_funding_adj) and data as
-# Sections 11.1-11.1.2.
+# Section 11.1.
 #
 # A CATE conditions on observed covariates X:
 #
@@ -49,7 +49,9 @@
 #   graphs_dir, tables_dir, log connection, theme_springer()
 #
 # DATA
-#   Example_7_5_3_updated.dta  (reloaded here for a clean workspace)
+#   Example_7_5_3_updated.dta  (CATE_R.R runs first, so this is the
+#   script's first data load; falls back to Example_7_5_3.dta if the
+#   updated file is unavailable)
 #=========================================================================
 
 cat("\n==========================================================\n")
@@ -72,10 +74,9 @@ suppressMessages({
 })
 
 #-------------------------------------------------------------------------
-# 0. Reload the Part B dataset for a clean workspace
-#    (MTE_MPRTE.R may have left objects from a reshaped or resampled
-#    data frame in the R session; reloading here mirrors Stata's
-#    "use ..., clear" behavior for a fresh start.)
+# 0. Load the Part B dataset
+#    (CATE_R.R runs first in R_code11.R, so this is the script's first
+#    data load for the chapter run.)
 #-------------------------------------------------------------------------
 
 df <- NULL
