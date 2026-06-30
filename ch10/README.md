@@ -1,179 +1,81 @@
-# Chapter 10 — Causal Inference and Marginal Treatment Effects
+# Chapter 10 — Regression Discontinuity, Difference-in-Differences, and Related Quasi-Experimental Methods
 
-**Higher Education Policy Analysis Using Quantitative Techniques, 2nd Edition**
-Marvin A. Titus | Springer
+This folder holds the Stata and R code for Chapter 10 of *Higher Education Policy Analysis Using Quantitative Techniques* (2nd Edition, Springer). The chapter covers the core quasi-experimental toolkit: regression discontinuity design (RDD), difference-in-differences (DiD) and its extensions (LASSO-DiD, SCM, SDID, CS-DiD), and the Wooldridge Extended TWFE estimator (ETWFE).
 
-**Repository:** https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch10
+> **Note:** Instrumental variables, conditional average treatment effects (CATE), marginal treatment effects (MTE/MPRTE), and policy cost-benefit analysis are covered in Chapter 11. See the `ch11` folder and `Stata_code11.do` / `R_code11.R`.
 
----
+## Empirical Settings
 
-## Overview
+The chapter uses two distinct empirical applications, each in a separate sub-script:
 
-This folder contains the complete replication code for Chapter 10, which covers three methodological areas across two parts:
+**Merit-based scholarship (Section 10.2).** A synthetic, HSLS:09-calibrated dataset (N = 4,000) is generated in-script using a GPA cutoff at 3.25. This is the running example for sharp and fuzzy RDD, bandwidth and polynomial sensitivity analysis, and validity checks. No external data file is required; the script saves the generated dataset as `ch10_rdd_hsls09_synthetic.rds` / `.csv` at runtime.
 
-- **Part A (Sections 10.2–10.9):** Quasi-experimental causal inference. Section 10.2 introduces regression discontinuity design (RDD) using a synthetic, HSLS:09-calibrated merit-scholarship dataset. Sections 10.3–10.9 apply difference-in-differences family methods to Georgia's higher education consolidation policy, using a SHEEO state-level finance panel, and Section 10.7.4 adds the Wooldridge Extended TWFE estimator.
-- **Part B (Sections 10.10–10.16):** Marginal treatment effects (MTE) and policy-relevant treatment effects (MPRTE) applied to returns to master's degree completion, using a synthetic B&B-mirroring individual-level dataset.
+**Georgia higher education consolidation (Sections 10.3–10.9).** A SHEEO state-level finance panel (16 SREB states, FY 2001–2021) and a 48-state staggered adoption panel are downloaded from the book's data repository at startup. These support the DiD family of methods and the ETWFE extension.
 
-All results are based on synthetic data and are intended to illustrate methods only.
+## File Structure
 
----
-
-## Files
-
-Both the Stata and R implementations are modular: a master script sets paths, installs/loads packages, and calls the section scripts in order.
+### Stata Scripts
 
 | File | Description |
-|------|-------------|
-| `Stata_code10.do` | Stata master script; sets paths, installs packages, and runs the section do-files in order (tested in Stata 19.5) |
-| `RDD.do` | Stata — Section 10.2, regression discontinuity design |
-| `Georgia_DiD.do` | Stata — Sections 10.3–10.9, difference-in-differences family |
-| `ETWFE.do` | Stata — Section 10.7.4, Extended TWFE |
-| `MTE_MPRTE.do` | Stata — Sections 10.10–10.16, marginal treatment effects |
-| `CATE.do` | Stata — conditional average treatment effects (subgroup IV and interacted IV); standalone script for the CATE application in Section 10.9 |
-| `Synthetic_truncated_BB.do` | Stata — generates the truncated synthetic B&B dataset used in Part B |
-| `R_code10.R` | R master script; sets shared paths and logging, loads all packages once, defines `theme_springer()`, and sources the section scripts in order (tested in R 4.4.x) |
-| `R_code10_RDD.R` | R — Section 10.2, regression discontinuity design |
-| `R_code10_Georgia_DiD.R` | R — Sections 10.3–10.9, difference-in-differences family |
-| `R_code10_ETWFE.R` | R — Section 10.7.4, Extended TWFE |
-| `R_code10_MTE_MPRTE.R` | R — Sections 10.10–10.16, marginal treatment effects |
-| `R_code10_CATE.R` | R — conditional average treatment effects (subgroup IV and interacted IV) |
+|---|---|
+| `Stata_code10.do` | Master driver. Sets output paths and log, installs packages, then calls `RDD.do`, `Georgia_DiD.do`, and `ETWFE.do` in sequence. |
+| `RDD.do` | Section 10.2. Sharp and fuzzy RDD applied to the merit scholarship cutoff (GPA = 3.25). Generates and saves the synthetic HSLS:09 dataset. |
+| `Georgia_DiD.do` | Sections 10.3–10.9. TWFE DiD, LASSO-residualized DiD, synthetic control (SCM), synthetic DiD (SDID), Callaway–Sant'Anna CS-DiD (single cohort and staggered), permutation inference, and leave-one-out sensitivity. |
+| `ETWFE.do` | Section 10.7.4. Wooldridge Extended TWFE via `jwdid`, applied to the three-state staggered adoption design with never-treated controls. Unconditional and covariate-adjusted specifications. |
 
-Each R section script can also be sourced independently after the master script has been run once to establish the shared environment (paths, packages, plotting theme).
+### R Translations
 
----
+| File | Stata Counterpart | Description |
+|---|---|---|
+| `R_code10.R` | `Stata_code10.do` | Master R script. Sets shared paths and logging, defines `theme_springer()`, and sources the section scripts in order. |
+| `R_code10_RDD.R` | `RDD.do` | Section 10.2 RDD workflow in R. |
+| `R_code10_Georgia_DiD.R` | `Georgia_DiD.do` | Sections 10.3–10.9 DiD family workflow in R. |
+| `R_code10_ETWFE.R` | `ETWFE.do` | Section 10.7.4 Extended TWFE via the `etwfe` package and `marginaleffects::emfx()` aggregations. |
+
+Each R section script can also be sourced independently after `R_code10.R` has been run once to establish the shared environment (paths, packages, plotting theme).
 
 ## Data
 
-Both implementations download their data automatically from the book's GitHub data repository at startup. No manual download is required. The R script reads CSV by default and falls back to `.dta` via `haven::read_dta()` when only the Stata file is available.
+Datasets are in the [data repository](https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch10). Both implementations download data automatically at startup; no manual download is required. R reads CSV by default and falls back to `.dta` via `haven::read_dta()` when only the Stata file is available.
 
-| Dataset | Used in | Description |
-|---------|---------|-------------|
-| `Example_10_3_1.csv` | Part A (10.3–10.9) | SHEEO state-level finance panel, 16 SREB states, FY 2001–2021 |
-| `Example_10_7_3.csv` | Part A (10.7) | Multi-state staggered adoption panel (48 states); falls back to a synthetic staggered panel if unavailable |
-| `Example_7_5_3_updated.csv` / `.dta` | Part B | Synthetic B&B panel with pre-generated `ma_*` program-area fields |
-| `Example_7_5_3.csv` / `.dta` | Part B (fallback) | Base synthetic B&B panel; `ma_*` variables generated at runtime |
+| File | Used in | Description |
+|---|---|---|
+| `Example_10_3_1.csv` | Sections 10.3–10.9 | SHEEO state-level finance panel, 16 SREB states, FY 2001–2021 |
+| `Example_10_7_3.csv` | Section 10.7 | Multi-state staggered adoption panel (48 states); falls back to a synthetic staggered panel if unavailable |
 
-Section 10.2 (RDD) does not download a file: it generates a synthetic HSLS:09-calibrated dataset in-script (N = 4,000; merit cutoff at HS GPA = 3.25) and saves it as `ch10_rdd_hsls09_synthetic.rds` / `.csv`.
+The Section 10.2 RDD analysis generates its own synthetic dataset in-script and does not require an external data file.
 
----
+## Running the Code
+
+**Stata** (requires version 19; tested in Stata 19.5):
+```stata
+do Stata_code10.do
+```
+This calls `RDD.do`, then `Georgia_DiD.do`, then `ETWFE.do`.
+
+**R** (requires R 4.4.x or later):
+```r
+source("R_code10.R")
+```
+This sources `R_code10_RDD.R`, `R_code10_Georgia_DiD.R`, and `R_code10_ETWFE.R` in order. The `etwfe` package requires `fixest >= 0.13.2`; if an older version is installed, update it in a fresh R session before running.
+
+> **Note:** Output paths switch automatically based on the OS username (`if c(username) == "marvi"` in Stata). All other users receive the default relative-path output (`Output/graphs/`, `Output/tables/`, `Output/logs/`), which is created automatically at runtime.
 
 ## Methods Covered
 
-### Part A — Causal Inference
-
-| Section | Method | Stata command(s) | R package / function |
-|---------|--------|-----------------|----------------------|
-| 10.2 | Sharp & fuzzy regression discontinuity | `rdrobust`, `rddensity`, `ivregress 2sls` | `rdrobust`, `rddensity`, `AER::ivreg` |
-| 10.3 | Two-Way Fixed Effects DiD | `xtreg`, `reghdfe` | `fixest::feols` |
-| 10.4 | LASSO-residualized DiD (double selection) | `lasso2`/`rlasso`, `reghdfe` | `hdm::rlasso`, `fixest` |
-| 10.5 | Synthetic Control Method (SCM) | `synth` | `Synth::synth`, `dataprep` |
-| 10.6 | Synthetic DiD (SDID) | `sdid` | `sdid::sdid` |
-| 10.7 | Callaway–Sant'Anna CS-DiD (single + staggered) | `csdid`, `estat` | `did::att_gt`, `aggte` |
-| 10.7.4 | Extended TWFE (Wooldridge) | `jwdid` | `etwfe::etwfe`, `marginaleffects::emfx` |
-| 10.8 | Permutation inference, leave-one-out | `permute` | base R |
-
-### Part B — Marginal Treatment Effects
-
-| Section | Method | Stata command(s) | R package / function |
-|---------|--------|-----------------|----------------------|
-| 10.10 | Probit first stage, propensity score | `probit`, `predict` | `glm` (binomial probit) |
-| 10.11 | MTE polynomial estimation (quadratic, cubic) | `reg` with interactions | `lm` |
-| 10.11 | MTE by graduate program area | `reg` with field interactions | `lm` |
-| 10.12 | Cluster bootstrap SEs | manual `forvalues` loop | base R loop over state clusters |
-| 10.13 | Heckman selection model | `heckman` (two-step + ML) | `sampleSelection::heckit` |
-| 10.14 | PRTE / MPRTE (Scenarios 1–8) | manual local macros | base R helper function |
-| 10.15 | MTE visualization | `twoway`, `rarea` | `ggplot2` (`geom_ribbon`, etc.) |
-| 10.16 | Cost-benefit analysis | Stata matrix ops | base R |
-
-**Implementation notes.** The R `etwfe`/`marginaleffects` pair replicates Stata's `jwdid` plus its `estat` aggregations (simple, group, calendar, event). The MTE cluster bootstrap is implemented as an explicit base-R loop over state clusters (no separate package). Stata's `mtefe` has no direct R equivalent, so its ATE/ATT/ATU/LATE output is reproduced with the manual polynomial MTE estimator and labelled accordingly. Conditional average treatment effects (CATE) are implemented via subgroup IV and interacted IV in `R_code10_CATE.R`; the `cate` package is not used as it does not support IV/endogeneity settings.
-
----
+- **Sharp and fuzzy regression discontinuity (RDD):** local linear estimation via `rdrobust`, bandwidth and polynomial sensitivity, density continuity test (`rddensity`), placebo cutoffs, donut RD, and augmented subgroup checks
+- **Two-Way Fixed Effects DiD (TWFE):** baseline DiD with unit and time fixed effects; parallel trends assessment and robustness checks
+- **LASSO-residualized DiD:** double-selection LASSO via `lassopack`/`rlasso` to residualize both outcome and treatment indicator before DiD estimation
+- **Synthetic Control Method (SCM):** Georgia vs. synthetic Georgia using donor-pool weighting (`synth`)
+- **Synthetic DiD (SDID):** `sdid` (Stata) / `synthdid` and `augsynth` (R)
+- **Callaway–Sant'Anna CS-DiD:** doubly-robust ATT(g,t) for a single treated cohort and for staggered adoption across three treatment cohorts (`csdid`/`did`)
+- **Extended TWFE (Wooldridge):** heterogeneity-robust ATT(g,t) via `jwdid` (Stata) and `etwfe`/`marginaleffects` (R); unconditional and covariate-adjusted specifications, never-treated controls
+- **Permutation inference and leave-one-out sensitivity:** non-parametric tests of the DiD estimate's robustness to the choice of control units
 
 ## Output
 
-Both implementations write figures to `Output/graphs/`, tables to `Output/tables/`, and a log file to `Output/logs/`. These directories are created automatically at runtime. In R, each figure is both written to disk and printed to the active graphics device.
+Running the scripts produces the figures and tables referenced in Chapter 10 — RDD plots, parallel trends and event-study figures, SCM and SDID trend comparisons, CS-DiD aggregations, the ETWFE event-study panel, permutation distributions, and the cross-estimator comparison — rendered in Stata's `s2mono` scheme and R's `theme_springer()` for Springer monochrome print compatibility. Tables are written as `.rtf` (Stata) and `.csv` (R) to `Output/tables/`.
 
-### Figures
+## Related Chapters
 
-Figure numbering follows the chapter text. Internal code names that differ from the published figure numbers (e.g. several diagnostic sub-figures) are listed by their on-disk filenames below.
-
-| Chapter figure | Filename stem (Stata / R) | Content |
-|----------------|---------------------------|---------|
-| Fig 10.1 | `fig10_1_rdd_plot_credits` | Sharp RDD: scholarship effect on Year-1 credits |
-| Fig 10.2 | `fig10_2_fuzzy_late_credits` | Fuzzy RDD LATE for Year-1 credits |
-| Fig 10.3 | `fig10_3_parallel_trends` | Parallel trends: Georgia vs. SREB control states |
-| Fig 10.4 | `fig10_4_scm_trends` | SCM: Georgia vs. synthetic Georgia |
-| Fig 10.5 | `fig10_5_1_scm_gap` | SCM gap plot (Georgia − synthetic) |
-| Fig 10.6 | `fig10_6_event_study` | Event study: Georgia consolidation |
-| Fig 10.7 | `fig10_7_staggered_es` | CS-DiD staggered adoption event study |
-| Fig 10.8 | `fig10_8_mte_curve` | Pooled MTE curve |
-| Fig 10.9 | `fig10_9_mte_by_propensity` | MTE by propensity score |
-| Fig 10.10 | `fig10_10_mte_byarea_curve` | MTE curves by graduate program area |
-| Fig 10.11 | `fig10_11_mte_policy_regions` | MTE curve with policy-relevant regions |
-
-Additional diagnostic figures are produced alongside the numbered chapter figures, including: RDD density-continuity test (`fig10_2_1`), RDD binned scatterplots (`fig10_2_2_rdd_binscatter_*`), RDD bandwidth sensitivity (`fig10_2_3`), RDD persistence/CGPA/first-stage plots (`fig10_2_4`, `fig10_2_6`, `fig10_2_7`, `fig10_2_8`); DiD robustness (`fig10_3_2`), LASSO comparison (`fig10_4_1`), CS-DiD single-cohort event study (`fig10_7_2`), permutation distribution (`fig10_8_1`), leave-one-out sensitivity (`fig10_8_2`), estimator comparison (`fig10_9_1`); and MTE by decile (`fig10_12`) and MPRTE by policy intensity (`fig10_14`).
-
-Stata files carry a `_Stata.png` suffix and R files a `_R.png` suffix. All figures are produced in grayscale (`set scheme s2mono` in Stata; `theme_springer()` in R) for compatibility with Springer's black-and-white print requirements.
-
-### Saved Datasets
-
-| File | Description |
-|------|-------------|
-| `ch10_rdd_hsls09_synthetic.rds` / `.csv` | Synthetic RDD dataset generated in Section 10.2 |
-| `results.csv` | DiD estimator summary (TWFE, placebo, robustness, LASSO, SCM) |
-| `results_lasso.csv` | TWFE vs. LASSO-residualized DiD comparison |
-| `results_combined.csv` | Combined TWFE / LASSO / SDID / CS-DiD coefficient table |
-| `tab10_7_etwfe.csv` | ETWFE ATT estimates, unconditional vs. covariate-adjusted |
-| `bb_mte_analysis.rds` / `.csv` | Individual-level MTE estimates and program-area flags |
-| `mte_summary_by_field.csv` | Mean MTE by undergraduate field |
-| `mte_summary_by_program_area.csv` | Mean MTE by graduate program area (treated only) |
-
----
-
-## Software Requirements
-
-### Stata
-- Stata 19 or later (tested in Stata 19.5)
-- Required user-written packages: `rdrobust`, `rddensity`, `reghdfe`, `ftools`, `lasso2`, `synth`, `sdid`, `csdid`, `drdid`, `jwdid`, `coefplot`
-- Install with `ssc install <package>` or `net install <package>`
-
-### R
-- R 4.4.x or later
-- The `etwfe` package requires `fixest >= 0.13.2`. If an older `fixest` is already installed, update it in a fresh R session (`install.packages("fixest")`) before running.
-- Required CRAN packages:
-
-```r
-# RDD (Section 10.2)
-rdrobust, rddensity
-
-# DiD / causal inference (Sections 10.3–10.9)
-fixest, did, Synth, sdid, hdm
-
-# Extended TWFE (Section 10.7.4) — needs fixest >= 0.13.2
-etwfe, marginaleffects
-
-# MTE / MPRTE (Part B)
-AER, sampleSelection, sandwich, lmtest, truncnorm
-
-# CATE (R_code10_CATE.R)
-fixest, AER
-
-# Shared
-dplyr, tidyr, ggplot2, haven
-```
-
-The `Synth`, `sdid`, and `hdm` packages are loaded with graceful fallback: if any is unavailable, the corresponding section is skipped (or, for `hdm`, falls back to the full control set) and the script continues.
-
----
-
-## Reproducibility Notes
-
-- Seeds are set at the start of each stochastic block for replicable results: `20260510` (RDD data generation), `20251130` (Part B program-area assignment), `20260101` (MTE cluster bootstrap), and `20260511` (staggered-panel and SDID placebo inference).
-- The `u`-grid for MTE visualization evaluates the MTE polynomial at identical grid points across platforms: `gen u = _n/100` in Stata and `seq(0.01, 1.00, length.out = 100)` in R.
-- Working-directory paths switch automatically based on the OS username. Users other than the author receive the default relative-path output (`Output/graphs/`, `Output/tables/`, `Output/logs/`).
-- Because several financial variables are logged, the R script filters on `is.finite()` (not `complete.cases()`) so that any `log(0) = -Inf` rows are dropped before estimation, keeping the model frame and post-estimation aggregations aligned.
-- All results are based on synthetic data and are intended to illustrate methods only.
-
----
-
-> **NOTE:** Code development was assisted by Claude (Anthropic). The author provided specifications and reviewed, tested, and validated all code.
+This chapter pairs with Chapter 11, which addresses individual-level selection into treatment using the same SHEEO-linked context: where Chapter 10 assigns treatment to institutions or states, Chapter 11 uses IV/2SLS to handle student-level endogenous selection and builds the MTE and MPRTE framework from the resulting LATE estimates. The ETWFE estimator in Section 10.7.4 complements the CS-DiD approach in Section 10.7 and is directly comparable to the Callaway–Sant'Anna staggered ATT(g,t) estimates produced in the same sub-section.
