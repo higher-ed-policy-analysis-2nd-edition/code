@@ -4,7 +4,7 @@ This folder contains the Stata and R code supporting Chapter 11 of *Higher Educa
 
 ## Empirical Setting
 
-The chapter's running example uses a synthetic dataset modeled on the Baccalaureate and Beyond (B&B) longitudinal study, examining the effect of master's degree completion on labor market outcomes. State-level GA (Georgia) higher education funding serves as the instrument for IV identification, motivating the heterogeneity and policy-relevance extensions developed across the CATE and MTE/MPRTE sections.
+The chapter's running example uses a synthetic dataset modeled on the Baccalaureate and Beyond (B&B) longitudinal study, examining the effect of master's degree completion on labor market outcomes. State-level graduate assistant (GA) higher education funding serves as the instrument for IV identification, motivating the heterogeneity and policy-relevance extensions developed across the CATE and MTE/MPRTE sections.
 
 ## File Structure
 
@@ -72,4 +72,4 @@ Running the scripts generates the figures and tables referenced in Chapter 11 (C
 
 ## Related Chapters
 
-This chapter extends the instrumental variables/2SLS approach introduced in Chapter 7, reinterpreting the IV/2SLS estimate as a local average treatment effect (LATE) and building out the MTE/MPRTE and CBA framework around it. It also complements Chapter 10's state- and institution-level causal inference toolkit (DiD, SCM, SDID, CS-DiD, RDD): where Chapter 10 addresses treatment assigned to a small number of state/institutional units, Chapter 11 addresses individual-level selection into treatment.
+This chapter extends the instrumental variables/2SLS approach introduced in Chapter 7, reinterpreting the IV/2SLS estimate as a local average treatment effect (LATE) and building out the MTE/MPRTE and CBA framework around it. It also complements Chapter 10's state- and institution-level causal inference toolkit (DiD, SCM, SDID, CS-DiD, RDD): where Chapter 10 addresses treatment assigned to a small number of states, Chapter 11 addresses individual-level selection into treatment.
