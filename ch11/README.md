@@ -1,10 +1,10 @@
 # Chapter 11 — Instrumental Variables, CATE, MTE/MPRTE, and Policy Cost-Benefit Analysis
 
-This folder contains the Stata and R code supporting Chapter 11 of *Higher Education Policy Analysis Using Quantitative Techniques* (2nd Edition, Springer). The chapter applies instrumental variables (IV) estimation, conditional average treatment effects (CATE), marginal treatment effects (MTE) and marginal policy-relevant treatment effects (MPRTE), and policy cost-benefit analysis (CBA) to a synthetic panel dataset on master's degree completion.
+This folder holds the Stata and R code for Chapter 11 of *Higher Education Policy Analysis Using Quantitative Techniques* (2nd Edition, Springer). The chapter works through instrumental variables (IV) estimation, conditional average treatment effects (CATE), marginal treatment effects (MTE), marginal policy-relevant treatment effects (MPRTE), and policy cost-benefit analysis (CBA), all applied to a synthetic panel dataset on master's degree completion.
 
 ## Empirical Setting
 
-The chapter's running example uses a synthetic dataset modeled on the Baccalaureate and Beyond (B&B) longitudinal study, examining the effect of master's degree completion on labor market outcomes. State-level GA (Georgia) higher education funding serves as the instrument for IV identification, motivating the heterogeneity and policy-relevance extensions developed across the CATE and MTE/MPRTE sections.
+The running example draws on a synthetic dataset built to mirror the Baccalaureate and Beyond (B&B) longitudinal study, with master's degree completion as the treatment and labor market outcomes as the dependent variables. State-level graduate assistantship (GA) funding is the instrument, chosen because it creates exogenous variation in the likelihood of graduate enrollment without directly affecting individual earnings — a feature that motivates the heterogeneity and policy-relevance extensions taken up in the CATE and MTE/MPRTE sections.
 
 ## File Structure
 
@@ -28,17 +28,17 @@ The chapter's running example uses a synthetic dataset modeled on the Baccalaure
 
 ## Data
 
-Datasets for this chapter are available in the [data repository](https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch11). The file referenced by the chapter's current scripts:
+Datasets for this chapter are in the [data repository](https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch11). The file the current scripts actually load:
 
 | File | Used by | Description |
 |---|---|---|
 | `Example_7_5_3.dta` | `CATE.do`/`CATE_R.R`, `MTE_MPRTE.do`/`MTE_MPRTE_R.R`; produced by `Synthetic_truncated_BB.do`/`R_Synthetic_truncated_BB.R` | The dataset actually loaded by every script run today — synthetic B&B-style panel (N = 8,000) on master's degree completion. `ma_*` program-area variables are generated at runtime rather than pre-loaded. |
 
-> **Note:** The scripts are written to try `Example_7_5_3_updated.dta` first (a version with pre-generated `ma_*` variables) and fall back to `Example_7_5_3.dta` only if that file is missing. As of this writing, `Example_7_5_3_updated.dta` is **not present** in `data/ch11`, so the fallback path is the one actually exercised on every run — confirm whether the updated file should be added, or whether the primary/fallback logic should be simplified to reflect `Example_7_5_3.dta` as the sole dataset.
+> **Note:** All four sub-scripts try `Example_7_5_3_updated.dta` first — a version with `ma_*` variables pre-generated — then fall back to `Example_7_5_3.dta` if it isn't found. Since `Example_7_5_3_updated.dta` isn't currently in `data/ch11`, the fallback is what every run actually uses. Consider either adding the updated file or simplifying the loading logic to target `Example_7_5_3.dta` directly.
 
 ## Running the Code
 
-**Prerequisite:** the dataset must already exist in the working directory, or be reachable via the scripts' GitHub raw-URL fallback (see Data, above). As of this writing, the scripts' first download attempt (for `Example_7_5_3_updated.dta`) will fail since that file isn't in the data repository; they then automatically fall back to downloading and using `Example_7_5_3.dta`, which succeeds. To regenerate the dataset from scratch instead, run the standalone generator first:
+**Prerequisite:** `Example_7_5_3.dta` must be in the working directory before running either master script. If it isn't, `MTE_MPRTE.do` and `MTE_MPRTE_R.R` will attempt to download it from the data repository — the first attempt (for the `_updated` version) will fail since that file doesn't exist there yet, but the second attempt pulls `Example_7_5_3.dta` directly and succeeds. `CATE.do` and `CATE_R.R` do not have their own download logic, so they require the file to already be present locally. To build the dataset from scratch, run the standalone generator first:
 ```stata
 do Synthetic_truncated_BB.do
 ```
@@ -55,21 +55,21 @@ source("R_code11.R")
 ```
 This sources `CATE_R.R` followed by `MTE_MPRTE_R.R`. To regenerate the dataset instead, run `R_Synthetic_truncated_BB.R` first.
 
-Required packages typically include those used for IV/heterogeneous treatment effect estimation and the book's shared `theme_springer()` plotting theme (see Chapter 1 setup or the repository root for shared utilities).
+Required packages cover IV and heterogeneous treatment effect estimation; the book's shared `theme_springer()` plotting theme is also needed (see Chapter 1 setup or the repository root for shared utilities).
 
-> **Note:** Scripts use username-conditional path branching (`if c(username) == "marvi"` in Stata) with a GitHub raw-URL fallback for data loading, consistent with the conventions used throughout the 2nd edition codebase.
+> **Note:** Path setup uses username-conditional branching (`if c(username) == "marvi"` in Stata) with a GitHub raw-URL fallback, following the same convention used across the rest of the 2nd edition codebase.
 
 ## Methods Covered
 
-- **Instrumental variables (IV):** identification using GA state funding as an instrument
+- **Instrumental variables (IV):** identification using state-level graduate assistantship (GA) funding as an instrument
 - **Conditional average treatment effects (CATE):** subgroup IV, interaction IV, and heterogeneity visualization
 - **Marginal treatment effects (MTE) and MPRTE:** local instrument variation, policy-relevant treatment parameters
 - **Cost-benefit analysis (CBA):** policy evaluation built on the MTE/MPRTE framework
 
 ## Output
 
-Running the scripts generates the figures and tables referenced in Chapter 11 (CATE plots and MTE/MPRTE curves), using the `s2mono` scheme in Stata for Springer monochrome print compatibility.
+Running the scripts produces the figures and tables referenced in Chapter 11 — CATE plots and MTE/MPRTE curves — rendered in Stata's `s2mono` scheme for Springer monochrome print compatibility.
 
 ## Related Chapters
 
-This chapter extends the instrumental variables/2SLS approach introduced in Chapter 7, reinterpreting the IV/2SLS estimate as a local average treatment effect (LATE) and building out the MTE/MPRTE and CBA framework around it. It also complements Chapter 10's state- and institution-level causal inference toolkit (DiD, SCM, SDID, CS-DiD, RDD): where Chapter 10 addresses treatment assigned to a small number of state/institutional units, Chapter 11 addresses individual-level selection into treatment.
+Chapter 7 introduced the IV/2SLS framework this chapter builds on; here that estimate is recast as a local average treatment effect (LATE), then extended into the MTE/MPRTE and CBA framework. Chapter 10 is the natural companion for state- and institution-level causal inference (DiD, SCM, SDID, CS-DiD, RDD) — the two chapters approach identification from different angles, with Chapter 10 handling treatment assigned across a small number of units and Chapter 11 focusing on individual-level selection.
