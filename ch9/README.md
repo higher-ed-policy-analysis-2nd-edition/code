@@ -1,174 +1,61 @@
-# Chapter 9 — Advanced Statistical Techniques: II
+# Chapter 9 — Heterogeneous Coefficient Regression with Dynamic Common Correlated Effects and Mean Group Estimators
 
-**Book:** Higher Education Policy Analysis Using Quantitative Techniques (2nd Edition)  
-**Author:** Marvin A. Titus  
-**Repository:** https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch9
+This folder holds the Stata and R code for Chapter 9 of *Higher Education Policy Analysis Using Quantitative Techniques* (2nd Edition, Springer). The chapter introduces and demonstrates heterogeneous coefficient regression (HCR) with dynamic common correlated effects (DCCE) and mean group (MG) estimators for macro panel data. The analysis addresses cross-sectional dependence, nonstationarity, and slope heterogeneity in long state-level higher education finance panels.
 
-## Overview
+## Empirical Setting
 
-This directory contains complete, reproducible code for Chapter 9, which demonstrates heterogeneous coefficient regression (HCR) with dynamic common correlated effects (DCCE) and mean group (MG) estimators for macro panel data. Both Stata and R implementations are provided.
+The chapter's running example uses a SHEEO/BEA state-level macro panel covering 48 states across 45 fiscal years (FY 1980–2024). The outcome variable is log state appropriations to higher education (`lny1`); predictors are log net tuition revenue (`lnx1`), log FTE enrollment (`lnx2`), and log state per capita income (`lnx3`). The analysis proceeds through a standard pre-estimation diagnostic sequence — unit root tests, cointegration tests, cross-sectional dependence, and slope homogeneity — before estimating the HCR with DCCE-MG ARDL-ECM model that recovers state-specific short-run dynamics and a common long-run relationship.
 
-## Repository Contents
+## File Structure
 
-- `Stata_code9.do` — Complete Stata do-file (tested in Stata 19.5)
-- `R_code9.R` — Full R translation (tested in R 4.4.x)
-- `README.md` — This file
-
-## Dataset
-
-Both scripts download the dataset automatically at runtime from the companion data repository:
+### Stata Script
 
 | File | Description |
-|------|-------------|
+|---|---|
+| `Stata_code9.do` | Single Stata script. Sets output paths and log, installs packages, runs all diagnostic tests (Sections 9.3.2–9.3.5), and estimates the main HCR with DCCE-MG model and alternatives (Section 9.3.6). |
+
+### R Translation
+
+| File | Stata Counterpart | Description |
+|---|---|---|
+| `R_code9.R` | `Stata_code9.do` | Complete R translation. Reproduces all diagnostics and estimation steps. Most Stata commands in this chapter have no direct CRAN equivalent and are implemented manually; see the note under Running the Code below. |
+
+## Data
+
+The dataset is in the [data repository](https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch9) and is downloaded automatically by both scripts at runtime.
+
+| File | Description |
+|---|---|
 | `Example_9_3_1.dta` | State-level macro panel: log state appropriations (`lny1`), log net tuition revenue (`lnx1`), log FTE enrollment (`lnx2`), log per capita income (`lnx3`); 48 states × 45 fiscal years (FY 1980–2024) |
 
-Data URL: `https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch9/Example_9_3_1.dta`
+## Running the Code
 
-### Key Variables
-
-| Variable | Description |
-|----------|-------------|
-| `lny1` | Log of state appropriations to higher education |
-| `lnx1` | Log of net tuition revenue |
-| `lnx2` | Log of full-time equivalent (FTE) enrollment |
-| `lnx3` | Log of state per capita income |
-| `FY` | Fiscal year (time index) |
-| `state` | State identifier |
-
-## Output Files
-
-### Graph Output Directory
-
-Both scripts save all plots to:
-
-```
-C:\Users\marvi\Dropbox\Book\2nd Edition\Chapter 9\Output\graphs
-```
-
-Plots from each platform carry a `_R` or `_Stata` filename suffix:
-
-| Figure | Description | R filename | Stata filename |
-|--------|-------------|------------|----------------|
-| Fig. 9.1 | Trends in log appropriations by state | `fig9_1_lny1_by_state_R.png` | `fig9_1_lny1_by_state_Stata.png` |
-| Fig. 9.2 | Trends in log per capita income by state | `fig9_2_lnx3_by_state_R.png` | `fig9_2_lnx3_by_state_Stata.png` |
-
-### Log Output Directory
-
-```
-C:\Users\marvi\Dropbox\Book\2nd Edition\Chapter 9\Output\logs\
-```
-
-- Stata: `Chapter9_Stata_output.log`
-- R: `Chapter9_R_output.log`
-
-Other users receive logs at `Output/logs/` relative to their working directory.
-
-## What the Code Does (Section-by-Section)
-
-**Section 9.6.1 — Macroeconomic Panel Data**
-- Describes the SHEEO/BEA macro panel dataset (48 states × 45 fiscal years)
-- Produces Figs. 9.1 and 9.2: state-by-state trends in log appropriations and log per capita income
-
-**Section 9.6.2 — Tests for Nonstationary Data**
-- Panel unit root tests (`xtpurt`) for all four variables in levels, with three test variants:
-  - Herwartz and Siedenburg (2008): `test(hs)`
-  - Demetrescu and Hanck (2012): `test(dh)`
-  - Herwartz, Maxand, and Walle (2019): `test(hmw) trend`
-- Unit root tests on first-differenced variables: `test(all)`
-- Confirms all variables are I(1)
-
-**Section 9.6.3 — Tests for Cointegration**
-- Kao (1999) panel cointegration test, with and without demeaning (`xtcointtest kao`)
-- Pedroni (2000, 2004) panel cointegration test, with and without demeaning (`xtcointtest pedroni`)
-- Westerlund (2005) variance ratio test, with and without demeaning (`xtcointtest westerlund`)
-- Westerlund (2007) ECM-based panel cointegration test (`xtwest`): Gt, Ga, Pt, Pa statistics
-
-**Section 9.6.4 — Tests for Cross-Sectional Independence**
-- Pesaran CD test on all four variables (`xtcdf`)
-
-**Section 9.6.5 — Test of Homogeneous Coefficients**
-- Pesaran-Yamagata / Blomquist-Westerlund slope homogeneity test (`xthst`):
-  - First-differenced specification
-  - Levels specification
-
-**Section 9.6.6 — Results of the HCR with DCCE and MG Estimators**
-- Main DCCE-MG ARDL-ECM model with `cr_lags(3 3 3 3)` and `lr_options(ardl)`
-- Post-estimation weak cross-sectional dependence test (`xtcd2`)
-- Alternative specification with `lr_options(xtpmg)` and cross-sectional exponent estimation
-- Individual-state EC coefficients with `cr_lags(1 3 3 3)` and `showindividual`
-
-## Software Requirements
-
-### Stata
-- Version: Stata 19.0+ (tested in Stata 19.5)
-- Required user-written commands (install via `ssc install` or `net install`):
-  - `xtcdf` — Pesaran CD test (Wursten 2017): `ssc install xtcdf, replace`
-  - `xthst` — slope homogeneity test (Ditzen & Bersvendsen 2020): `ssc install xthst, replace`
-  - `xtdcce2` — DCCE/MG estimator (Ditzen 2018): `net install st0536.pkg, replace`
-  - `xtwest` — Westerlund (2007) ECM cointegration test
-  - `xtpurt` — panel unit root tests (Herwartz-Siedenburg, Demetrescu-Hanck, HMW variants)
-
-### R
-- Version: R 4.0 or later (R 4.4.x recommended)
-- Required packages (installed automatically by the script):
-  - `haven`, `dplyr`, `tidyr` — data import and manipulation
-  - `ggplot2`, `scales` — graphics
-  - `plm` — panel unit root tests, Pesaran CD test
-  - `urca` — unit root tests
-  - `tseries` — Phillips-Ouliaris cointegration test
-  - `lmtest`, `sandwich` — inference and robust standard errors
-
-Install manually if needed:
-```r
-install.packages(c("haven", "dplyr", "tidyr", "ggplot2", "scales",
-                   "plm", "urca", "tseries", "lmtest", "sandwich"))
-```
-
-## Quick Start
-
-### Run with Stata
+**Stata** (requires version 19; tested in Stata 19.5):
 ```stata
 do Stata_code9.do
 ```
-Output paths switch automatically via `c(username)`. For username `"marvi"` the full Dropbox paths are used; all other users get relative `Output/` paths.
 
-### Run with R
+**R** (requires R 4.0 or later; R 4.4.x recommended):
 ```r
 source("R_code9.R")
 ```
-Plots are displayed in the RStudio Plots pane as generated, and saved via a temp-file copy strategy to avoid Dropbox sync-lock conflicts.
 
-## R Implementation Notes
+> **Note:** Output paths switch automatically based on the OS username (`if c(username) == "marvi"` in Stata). All other users receive the default relative-path output (`Output/graphs/`, `Output/tables/`, `Output/logs/`), which is created automatically at runtime.
 
-Most of Chapter 9's Stata commands have no direct CRAN equivalent and are implemented manually in `R_code9.R`:
+> **Note on R implementation:** Most of this chapter's Stata commands have no direct CRAN equivalent and are implemented manually in `R_code9.R`. `xtpurt` (Herwartz-Siedenburg, Demetrescu-Hanck, and HMW variants) is approximated with `plm::purtest(test="ips")`; the Kao and Pedroni cointegration tests are reproduced via Engle-Granger two-step on fixed-effects residuals; the Westerlund (2007) ECM-based test is built from unit-specific ECM regressions; and the DCCE-MG ARDL-ECM model is constructed manually via unit-specific regressions with cross-sectional averages, followed by mean-group averaging. Results are distributional equivalents of the Stata output rather than numerically identical replication.
 
-| Stata command | R approach |
-|---|---|
-| `xtpurt test(hs/dh/hmw)` | `plm::purtest(test="ips")` — Im-Pesaran-Shin (2003); hs/dh/hmw variants have no CRAN equivalent |
-| `xtcointtest kao/pedroni` | Engle-Granger two-step: FE residuals → `plm::purtest()` |
-| `xtcointtest westerlund` | Per-unit `tseries::po.test()` aggregated via Fisher combination |
-| `xtwest` (Westerlund 2007) | Manual unit-specific ECM regressions → Gt/Ga statistics |
-| `xtcdf` | `plm::pcdtest(test="cd")` |
-| `xthst` (Pesaran-Yamagata 2008) | Manual Δ-tilde statistic via unit-specific OLS |
-| `xtdcce2` (DCCE-MG ARDL-ECM) | Manual: cross-sectional averages + unit ECM regressions → MG averaging |
-| `xtcd2` | `plm::pcdtest(test="cd")` on FE model residuals |
+## Methods Covered
 
-## Citation
+- **Panel unit root tests (Section 9.3.2):** Herwartz and Siedenburg (2008), Demetrescu and Hanck (2012), and Herwartz-Maxand-Walle (2019) variants applied to levels and first-differenced variables via `xtpurt`
+- **Panel cointegration tests (Section 9.3.3):** Kao (1999) and Pedroni (2000, 2004) residual-based tests (`xtcointtest`); Westerlund (2005) variance ratio test; Westerlund (2007) ECM-based panel cointegration test (`xtwest`) with Gt, Ga, Pt, and Pa statistics
+- **Cross-sectional dependence test (Section 9.3.4):** Pesaran CD test on all four panel variables (`xtcdf`)
+- **Slope homogeneity test (Section 9.3.5):** Pesaran-Yamagata / Blomquist-Westerlund Δ-tilde statistic (`xthst`) in first-differenced and levels specifications
+- **HCR with DCCE-MG ARDL-ECM (Section 9.3.6):** main model with `cr_lags(3 3 3 3)` and `lr_options(ardl)`; post-estimation weak cross-sectional dependence check (`xtcd2`); alternative `lr_options(xtpmg)` specification with cross-sectional exponent estimation; individual state error-correction coefficients via `showindividual`
 
-If you use these materials in research or teaching, please cite:
+## Output
 
-Titus, M. A. (2026). *Higher Education Policy Analysis Using Quantitative Techniques* (2nd ed.). Springer.
+Running the scripts produces Figs. 9.1 and 9.2 (state-by-state trends in log appropriations and log per capita income) and the estimation output tables for all diagnostic tests and the DCCE-MG model, written to `Output/graphs/` and `Output/logs/` respectively. Stata figures carry a `_Stata.png` suffix and R figures a `_R.png` suffix. All figures are produced in grayscale for Springer monochrome print compatibility.
 
-GitHub repository: https://github.com/higher-ed-policy-analysis-2nd-edition/code
+## Related Chapters
 
-## Author & Contact
-
-Marvin A. Titus, Ph.D.
-
-## License
-
-Code is provided for educational and research purposes. See the repository top-level LICENSE for terms of use.
-
-## Last Updated
-
-March 30, 2026
+This chapter builds directly on Chapter 8, which introduces the ARDL-ECM framework in a single-equation time series and symmetric panel setting. Chapter 9 extends that foundation to the macro panel case, where T is large relative to N, slope heterogeneity across units must be allowed, and cross-sectional dependence invalidates standard panel estimators. Chapter 10 then shifts from long-run equilibrium relationships to causal identification in shorter panels, introducing regression discontinuity and difference-in-differences methods.
