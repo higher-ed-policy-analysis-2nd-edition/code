@@ -22,8 +22,12 @@
 #   R_code10_RDD.R          Section 10.2         -- Sharp/Fuzzy RD, merit scholarship
 #   R_code10_Georgia_DiD.R  Sections 10.3-10.9   -- DiD, SCM, SDID, CS-DiD
 #   R_code10_ETWFE.R        Section 10.7.4       -- Extended TWFE (Wooldridge)
-#   R_code10_MTE_MPRTE.R    Sections 10.10-10.16 -- MTE/MPRTE, CBA
-#   R_code10_CATE.R                 Section 10.10.3      -- Conditional Average Treatment Effects
+#
+# NOTE: The instrumental variables, CATE, and marginal treatment effect
+# (MTE/MPRTE) material previously developed as "Part B" of this chapter
+# now constitutes Chapter 11 and is covered by R_code11.R and its
+# sub-scripts (CATE_R.R, MTE_MPRTE_R.R). This chapter (10.2-10.9) covers
+# only the institutional/state-level quasi-experimental methods below.
 # ============================================================================
 
 # ============================================================================
@@ -127,22 +131,10 @@ if (!requireNamespace("Synth", quietly = TRUE)) {
   )
 }
 
-# -- MTE / Part B -------------------------------------------------------------
-# Stata: mtefe / moremata / fwildclusterboot
-# Note: fwildclusterboot requires R >= 4.4.3; install separately when needed.
-install_if_missing(c(
-  "ivreg",     # ivreg()    -- replaces ivregress 2sls
-  "lmtest",    # coeftest() -- robust SEs
-  "sandwich",  # vcovHC(), vcovCL()
-  "car",       # linearHypothesis() -- replaces test
-  "haven"      # read_dta()
-))
-
 # -- Confirm all key packages loaded ------------------------------------------
 required_pkgs <- c(
   "rdrobust", "rddensity",
   "fixest", "glmnet", "hdm", "did", "etwfe", "staggered", "synthdid",
-  "ivreg", "lmtest", "sandwich", "car",
   "haven", "ggplot2", "flextable", "dplyr"
 )
 pkg_missing <- required_pkgs[
@@ -155,7 +147,7 @@ cat("All required packages confirmed.\n\n")
 # ============================================================================
 # ============================================================================
 #
-#    PART A: CAUSAL INFERENCE  (Sections 10.2 - 10.9)
+#    CAUSAL INFERENCE  (Sections 10.2 - 10.9)
 #
 # ============================================================================
 # ============================================================================
@@ -205,46 +197,6 @@ cat(strrep("=", 70), "\n")
 source(file.path(syntax_dir, "R_code10_ETWFE.R"))
 
 # ============================================================================
-# ============================================================================
-#
-#    PART B: MARGINAL TREATMENT EFFECTS  (Sections 10.10 - 10.16)
-#
-# ============================================================================
-# ============================================================================
-
-# ----------------------------------------------------------------------------
-# SECTIONS 10.10-10.16: MARGINAL TREATMENT EFFECTS
-#   OLS -> IV/2SLS -> MTE/MPRTE -> CBA -- returns to master's degree
-#   Script:   MTE_MPRTE.R
-#   Data:     Example_7_5_3_updated.dta (or Example_7_5_3.dta fallback)
-#   Produces: bb_mte_analysis.rds
-#             mte_summary_by_field.csv, mte_summary_by_program_area.csv
-#             fig10_8.png, fig10_9.png, fig10_10.png, fig10_11.png
-#             mte_by_decile.png, mprte_intensity.png
-# ----------------------------------------------------------------------------
-
-cat(strrep("=", 70), "\n")
-cat(" SECTIONS 10.10-10.16: Marginal Treatment Effects\n")
-cat(strrep("=", 70), "\n")
-
-source(file.path(syntax_dir, "R_code10_MTE_MPRTE.R"))
-
-# ----------------------------------------------------------------------------
-# SECTION 10.10.3: CONDITIONAL AVERAGE TREATMENT EFFECTS
-#   Script:   CATE.R
-#   Data:     Example_7_5_3_updated.dta (reloaded inside CATE.R)
-#   Produces: fig10_cate_forest.png
-#             fig10_cate_interact.png
-#             tab10_cate_subgroup.docx
-# ----------------------------------------------------------------------------
-
-cat(strrep("=", 70), "\n")
-cat(" SECTION 10.10.3: Conditional Average Treatment Effects\n")
-cat(strrep("=", 70), "\n")
-
-source(file.path(syntax_dir, "R_code10_CATE.R"))
-
-# ============================================================================
 # CLOSING SUMMARY
 # Mirrors Stata's final graph-save loop
 # ============================================================================
@@ -256,9 +208,6 @@ cat("  RDD:         fig10_2_1 through fig10_2_9\n")
 cat("  Georgia DiD: fig10_3  fig10_6  fig10_3_2  fig10_4_1\n")
 cat("               fig10_4  fig10_5_1  fig10_8_1  fig10_8_2  fig10_9_1\n")
 cat("  ETWFE:       fig10_7_2\n")
-cat("  MTE/MPRTE:   fig10_8  mte_by_decile  fig10_10\n")
-cat("               mprte_intensity  fig10_11  fig10_9\n")
-cat("  CATE:        fig10_cate_forest  fig10_cate_interact\n")
 cat(strrep("=", 70), "\n")
 cat("Chapter 10 complete:", format(Sys.time()), "\n")
 cat(strrep("=", 70), "\n")
@@ -312,39 +261,7 @@ cat(strrep("=", 70), "\n")
 #  10.8.2   Permutation inference
 #  10.8.3   Leave-one-out sensitivity analysis
 #
-#  10.9   Results Summary: Part A
-#
-#  PART B -- Marginal Treatment Effects
-#
-#  10.10  Instrumental Variables and the LATE
-#    Sections 1-4: Data loading, summary statistics, first-stage, OLS
-#    Section  5:   IV/2SLS (LATE) via ivreg
-#
-#  10.10.3  Conditional Average Treatment Effects (CATE.R)
-#    Section 5b: Subgroup CATEs via IV/2SLS
-#    Section 5c: Interaction IV -- test for differential subgroup effects
-#    Section 5d: Forest-plot visualization
-#    Section 5e: Comparison table (OLS / LATE / CATE by subgroup)
-#
-#  10.11  Marginal Treatment Effects
-#    Section 6:  Manual polynomial MTE (quadratic and cubic)
-#    Section 6b: Area-specific MTE by graduate program field
-#    Section 6c: Cluster bootstrap SEs (fwildclusterboot::boottest)
-#    Section 7:  Treatment effect comparison (ATE/ATT/ATU/LATE/CATE)
-#
-#  10.11 (Visualization)
-#    Section 8: MTE curve, decile plot, by-area curves
-#
-#  10.12  Cost-Benefit Analysis
-#    Sections 9-11:  PRTE and MPRTE policy simulations (Scenarios 1-8)
-#    Sections 12-13: Parameter comparison table, MPRTE visualization
-#    Section  14:    Cost-benefit analysis (B/C ratios)
-#
-#  10.13  Summary
-#    Sections 15-16: Save results, final summary
+#  10.9   Results Summary
 #
 #  Data files saved:
 #    ch10_rdd_hsls09_synthetic.rds
-#    bb_mte_analysis.rds
-#    mte_summary_by_field.csv
-#    mte_summary_by_program_area.csv

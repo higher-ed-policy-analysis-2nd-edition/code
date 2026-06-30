@@ -1,10 +1,7 @@
 *========================================================================
 * ETWFE.do
-* Section 10.7.4: Staggered Adoption Robustness — Two Estimator Families
-*   10.7.4.1  Extended Two-Way Fixed Effects (ETWFE) via jwdid
-*             (Rios-Avila, Nagengast & Yotov; estimator: Wooldridge 2021, 2023)
-*   10.7.4.2  Rolling Difference-in-Differences via lwdid
-*             (Lee & Wooldridge 2026a, 2026b; command: Lee & Wooldridge)
+* Section 10.7.4: Extended Two-Way Fixed Effects (ETWFE) via jwdid
+*   (Rios-Avila, Nagengast & Yotov; estimator: Wooldridge 2021, 2023)
 * Higher Education Policy Analysis Using Quantitative Techniques
 * (2nd Edition)
 * Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch10
@@ -19,21 +16,10 @@
 * those settings. Loads its own dataset (Example_10_7_3.csv).
 *
 * PURPOSE
-*   Demonstrate TWO estimators for the same three-state staggered adoption
-*   design (48-state panel, FY 2001-2024), both estimated on the identical
-*   panel, cohort variable, outcome, and never-treated comparison group --
-*   so that any difference in results reflects the estimator, not the data.
-*
-*   10.7.4.1 (jwdid/ETWFE): fits a single FE regression saturated with
-*     cohort x time interactions, recovering heterogeneity-robust ATT(g,t)
-*     that align with the Callaway-Sant'Anna (2021) doubly-robust estimates
-*     from Section 10.7.
-*
-*   10.7.4.2 (lwdid): residualizes each unit's outcome against its own
-*     pre-treatment mean (rolling=demean) or linear trend (rolling=detrend),
-*     then estimates ATT(g,t) via cross-sectional regressions in each
-*     post-treatment period. The detrend variant speaks directly to the
-*     pre-trend drift documented in the Section 10.7.1 event study.
+*   Estimate ETWFE for the three-state staggered adoption design
+*   (48-state panel, FY 2001-2024), recovering heterogeneity-robust
+*   ATT(g,t) that align with the Callaway-Sant'Anna (2021) doubly-robust
+*   estimates from Section 10.7.
 *
 *   Treated states (gyear = treatment cohort):
 *     Georgia      (FIPS 13)  -> 2013
@@ -56,13 +42,6 @@
 *         so covariates enter as additive Mundlak-style corrections rather
 *         than fully interacting; the model is identified and SEs estimable.
 *   A bare (no-covariate) specification is run first as a design check.
-*
-* SPECIFICATION NOTE (10.7.4.2 / lwdid)
-*   lwdid's small-N exact-inference mode (the "small" option) does not
-*   currently support covariates under staggered adoption, so no covariate-
-*   adjusted lwdid analog to the jwdid 4b specification is run. Both lwdid
-*   specifications below (demean, detrend) are unconditional, matching the
-*   jwdid 4a specification as the fair comparison point.
 *========================================================================
 
 *------------------------------------------------------------------------
@@ -83,26 +62,6 @@ if "$tables_dir" == "" {
 capture which jwdid
 if _rc {
     di as error "jwdid not found. Run:  ssc install jwdid, replace"
-    exit 198
-}
-
-* Confirm lwdid is available AND current (used in Section 10.7.4.2 below).
-* NOTE: "capture which lwdid" only confirms SOME version is installed, not
-* the current one. An outdated cached copy can lack options (e.g. title())
-* added in later releases and will fail with "option X not allowed" even
-* though X is documented. Force a fresh install to avoid this.
-capture which lwdid
-if _rc {
-    di as text "lwdid not found. Installing..."
-    ssc install lwdid, replace
-}
-else {
-    di as text "lwdid found; reinstalling to ensure current version (>= 2.4)..."
-    ssc install lwdid, replace
-}
-capture which lwdid
-if _rc {
-    di as error "lwdid install failed. Run manually:  ssc install lwdid, replace"
     exit 198
 }
 
@@ -268,10 +227,10 @@ preserve
         subtitle("Covariate-adjusted, never-treated controls")            ///
         ytitle("ATT on log operations")                                   ///
         xtitle("Years relative to treatment")                             ///
-        legend(off) name(fig10_6, replace) scheme(s2mono)
+        legend(off) name(fig10_7_3, replace) scheme(s2mono)
 
-    capture graph export "$graphs_dir/fig10_6.png", replace width(2000)
-    capture graph save   "$graphs_dir/fig10_6.gph", replace
+    capture graph export "$graphs_dir/fig10_7_3.png", replace width(2000)
+    capture graph save   "$graphs_dir/fig10_7_3.gph", replace
 restore
 
 *========================================================================
@@ -310,7 +269,7 @@ if !_rc {
 }
 
 di as text _n "ETWFE / jwdid section complete."
-di as text "Figure: $graphs_dir/fig10_6.(png|gph)"
+di as text "Figure: $graphs_dir/fig10_7_3.(png|gph)"
 di as text "Table:  $tables_dir/tab10_7_etwfe.rtf"
 
 *========================================================================
@@ -330,201 +289,5 @@ di as text "Table:  $tables_dir/tab10_7_etwfe.rtf"
 *   Note this as a practical caution on ETWFE in small-T, few-cohort panels.
 *========================================================================
 
-*========================================================================
-* SECTION 10.7.4.2 — ROLLING DIFFERENCE-IN-DIFFERENCES (lwdid)
-*   We next estimate the same design using lwdid, a different
-*   transformation-based estimator. Unlike jwdid's saturated regression
-*   on cohort-by-period indicators, lwdid residualizes each unit's outcome
-*   against its own pre-treatment path (mean or trend) and then estimates
-*   ATT(g,t) via cross-sectional regressions in each post-treatment period.
-*   We use the SAME panel, cohort variable, outcome, and never-treated
-*   comparison-group choice as the jwdid specification above (10.7.4.1),
-*   so any difference in results reflects the estimator, not the data.
-*========================================================================
-
-*========================================================================
-* 7a. lwdid — UNCONDITIONAL, ROLLING(DEMEAN)
-*   Residualizes each unit's outcome against the average of ALL its
-*   pre-treatment periods ("lags-only" reference point), in contrast to
-*   csdid's single-pre-period anchor. method(ra) = regression adjustment,
-*   the large-N unconditional analog to jwdid's 4a specification.
-*   NOTE 1: lwdid's graph option sets ytitle("WATT(r)") and
-*   xtitle("Time to Treatment (r)") internally and does not expose them
-*   as separate top-level options; gopts() is reserved for subtitle/name
-*   only to avoid an "option repeated" error from Stata's twoway.
-*   NOTE 2 (lwdid v2.4 bug): the TOP-LEVEL "lwdid" dispatcher program's
-*   syntax line omits TITLE(string), even though the lwdid_large
-*   subroutine it calls accepts and uses it. Because Stata validates
-*   options against the dispatcher's syntax line BEFORE the subroutine
-*   ever runs, passing title() fails with "option title() not allowed"
-*   regardless of version/cache state. There is no scriptable way to
-*   retitle a twoway graph after the fact (Stata graphs are immutable
-*   once drawn), so we omit title() and accept lwdid's own internal
-*   default, built from method()/rolling(): "lwdid: ra (demean)".
-*========================================================================
-di as text _n "=== lwdid (rolling=demean, method=ra, never-treated controls) ==="
-lwdid lngenop, ivar(fips) tvar(fy) gvar(gyear) ///
-    rolling(demean) method(ra) never attgt graph ///
-    scheme(s2mono) save("$tables_dir/lwdid_demean_watt.dta") ///
-    gopts(subtitle("Unconditional, never-treated controls") name(fig10_12, replace))
-
-capture graph export "$graphs_dir/fig10_12.png", replace width(2000)
-capture graph save   "$graphs_dir/fig10_12.gph", replace
-
-*------------------------------------------------------------------------
-* Store demean aggregates for the side-by-side table (Section 7c).
-* NOTE: lwdid_large (unlike the small-N paths) does NOT post e(att)/
-* e(se_att) -- the large-N path ends without an ereturn. The overall
-* post-treatment effect is the "Post_avg" row of the saved WATT(r) table,
-* so we reload save() output and pull it from there instead.
-*------------------------------------------------------------------------
-preserve
-    use "$tables_dir/lwdid_demean_watt.dta", clear
-    qui su watt if effect == "Post_avg", meanonly
-    scalar l_demean_b  = r(mean)
-    qui su se if effect == "Post_avg", meanonly
-    scalar l_demean_se = r(mean)
-restore
-
-*========================================================================
-* 7b. lwdid — UNCONDITIONAL, ROLLING(DETREND)
-*   Removes each unit's pre-treatment LINEAR TREND (not just its mean)
-*   before estimation. This speaks directly to the pre-trend drift
-*   documented in the Section 10.7.1 event study and in the significant
-*   pre-treatment leads noted under jwdid 4a above: if that drift is
-*   driving the unconditional ATT, detrending should move the estimate
-*   toward the null, the same direction as jwdid's covariate adjustment.
-*   NOTE (lwdid v2.4 bug): see the note under 7a above -- title() is
-*   omitted here for the same reason (rejected by the dispatcher's
-*   syntax line before lwdid_large ever sees it), and there is no
-*   scriptable way to retitle a twoway graph after the fact. We accept
-*   lwdid's own internal default title: "lwdid: ra (detrend)".
-*========================================================================
-di as text _n "=== lwdid (rolling=detrend, method=ra, never-treated controls) ==="
-lwdid lngenop, ivar(fips) tvar(fy) gvar(gyear) ///
-    rolling(detrend) method(ra) never attgt graph ///
-    scheme(s2mono) save("$tables_dir/lwdid_detrend_watt.dta") ///
-    gopts(subtitle("Unconditional, never-treated controls") name(fig10_13, replace))
-
-capture graph export "$graphs_dir/fig10_13.png", replace width(2000)
-capture graph save   "$graphs_dir/fig10_13.gph", replace
-
-*------------------------------------------------------------------------
-* Store detrend aggregates for the side-by-side table (Section 7c).
-* Same caveat as the demean block above: pull "Post_avg" from save().
-*------------------------------------------------------------------------
-preserve
-    use "$tables_dir/lwdid_detrend_watt.dta", clear
-    qui su watt if effect == "Post_avg", meanonly
-    scalar l_detrend_b  = r(mean)
-    qui su se if effect == "Post_avg", meanonly
-    scalar l_detrend_se = r(mean)
-restore
-
-* NOTE: lwdid's small-N exact-inference mode ("small") does not currently
-* support covariates under staggered adoption, so a covariate-adjusted
-* lwdid analog to jwdid's 4b specification is not run here.
-
-*========================================================================
-* 7c. COMPARISON TABLE: jwdid (4a) vs lwdid (demean, detrend)
-*   Springer-formatted table contrasting the unconditional jwdid overall
-*   ATT against the two unconditional lwdid specifications. All three
-*   rows share the same panel, cohort variable, outcome, and never-
-*   treated comparison group; only the estimator differs.
-*------------------------------------------------------------------------
-matrix T2 = J(3, 2, .)
-matrix T2[1,1] = a_simple_b
-matrix T2[1,2] = a_simple_se
-matrix T2[2,1] = l_demean_b
-matrix T2[2,2] = l_demean_se
-matrix T2[3,1] = l_detrend_b
-matrix T2[3,2] = l_detrend_se
-matrix rownames T2 = jwdid_4a_nocov lwdid_demean lwdid_detrend
-matrix colnames T2 = ATT SE
-
-di _n as text "{hline 72}"
-di as text "Overall ATT, staggered consolidation: jwdid vs lwdid (unconditional)"
-di as text "{hline 72}"
-matlist T2, format(%9.4f)
-
-capture which esttab
-if !_rc {
-    capture esttab matrix(T2, fmt(%9.4f)) using "$tables_dir/tab10_7_lwdid.rtf", ///
-        replace title("Overall ATT: jwdid (unconditional) vs lwdid (demean, detrend)") ///
-        addnotes("Never-treated controls throughout; lwdid uses method(ra)." ///
-                 "Same panel, cohort variable, and outcome as jwdid 4a above.")
-}
-
-di as text _n "lwdid section complete."
-di as text "Figures: $graphs_dir/fig10_12.(png|gph), $graphs_dir/fig10_13.(png|gph)"
-di as text "Table:   $tables_dir/tab10_7_lwdid.rtf"
-
-*========================================================================
-* INTERPRETATION (for chapter prose) — Section 10.7.4.2 (lwdid)
-*------------------------------------------------------------------------
-* RESULTS:
-*   jwdid 4a (unconditional ETWFE):    Overall ATT =  0.0510 (SE .0160, p=.001)
-*   jwdid 4b (covariate-adjusted):     Overall ATT = -0.0016 (SE .0124, p=.897)
-*   lwdid demean (unconditional):      Overall ATT = -0.0624 (SE .0228, p=.006)
-*   lwdid detrend (unconditional):     Overall ATT =  0.1161 (SE .0271, p<.001)
-*
-* - The two unconditional, never-treated-controls specifications -- jwdid 4a
-*   and lwdid(demean) -- should be the closest comparison in this table, since
-*   neither uses covariates. They do NOT agree, not even on sign (+0.051 vs.
-*   -0.062). Because both share the identical panel, cohort variable, outcome,
-*   and comparison group, this disagreement is attributable to the estimator's
-*   mechanics (saturated cohort x period regression vs. residualizing against
-*   each unit's own pre-treatment mean), not to the data or sample.
-*
-* - lwdid(detrend) does NOT move toward jwdid 4b's near-zero estimate the way
-*   we hypothesized going in. Instead it produces the LARGEST and most
-*   precisely estimated effect in the table (0.116, p<.001) -- the opposite
-*   of "detrending corroborates the covariate-adjustment null via a different
-*   mechanism." Both adjustments (Mundlak-style covariates in 4b; unit-
-*   specific linear detrending in lwdid) move the estimate, but in opposite
-*   directions, which is itself the finding: they are NOT correcting for the
-*   same source of pre-trend bias.
-*
-* - Cohort-level detail (post-period ATT(g,t) cells; see attgt output) shows
-*   WHY: Georgia (g=2013) and Pennsylvania (g=2022) account for nearly all of
-*   the movement across specifications.
-*     - Georgia is positive everywhere but the SIZE varies enormously: 0.114
-*       (jwdid 4a) vs. a post-period range of -0.058 (2013) rising to +0.150
-*       (2023) under demean, vs. a climbing 0.014 (2013, n.s.) -> 0.337 (2023,
-*       p<.001) under detrend. The detrend run's drift -- not significant in
-*       the first post-treatment year but growing steadily significant
-*       thereafter -- suggests Georgia had a declining pre-treatment linear
-*       trajectory that demeaning alone does not fully net out, and that
-*       removing it mechanically widens the post-treatment gap over time.
-*     - Pennsylvania flips sign across specifications: negative in jwdid 4a
-*       (-0.074) and jwdid 4b (-0.070, n.s.), negative under lwdid demean
-*       (-0.23 to -0.27), but POSITIVE and significant under lwdid detrend
-*       (0.08 to 0.14). This is the single largest point of disagreement
-*       among all cohort-by-estimator combinations.
-*     - Wisconsin (g=2018) is the only cohort that is consistently near null
-*       under THREE of the four specifications (jwdid 4a: -0.004; jwdid 4b:
-*       0.001; lwdid detrend: -0.04 to +0.04, none significant) but is sharply
-*       NEGATIVE under lwdid demean (-0.13 to -0.25, all significant). Even
-*       the "stable" cohort is not actually stable across every estimator.
-*
-* - The lwdid Pre_avg row provides an additional diagnostic neither jwdid
-*   specification offers directly: under demean, Pre_avg = 0.0087 (p<.001) --
-*   small but statistically distinguishable from zero, indicating some
-*   residual pre-trend survives demeaning. Under detrend, Pre_avg = -0.0027
-*   (p=.007) -- also significant, and of the OPPOSITE sign. Neither
-*   transformation fully eliminates a detectable pre-trend; they simply trade
-*   one small, signed residual for another, and the post-period estimate
-*   appears sensitive to which residual remains.
-*
-* - TAKEAWAY FOR THE CHAPTER: this is not a robustness check that confirms
-*   the Section 10.7 consolidation result. It is evidence that the staggered-
-*   adoption ATT for this three-state design is highly sensitive to how the
-*   pre-treatment counterfactual is constructed -- more sensitive than the
-*   TWFE-vs-LASSO-DiD contrast already documented in Sections 10.3-10.4.
-*   Readers should treat the overall ATT from ANY single staggered-adoption
-*   estimator in this design with caution, and the chapter should present
-*   jwdid and lwdid side by side as competing answers, not as one estimator
-*   validating another.
-*========================================================================
 * END OF ETWFE.do
 *========================================================================

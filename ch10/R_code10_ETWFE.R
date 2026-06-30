@@ -41,43 +41,12 @@
 #   etwfe    — Wooldridge ETWFE estimator (mirrors Stata jwdid)
 #   marginaleffects — emfx() aggregations (simple / group / event)
 #   fixest   — underlying FE engine
-#   sandwich — vcovHC() robust SEs (Section 10.7.4.2 only)
+#   sandwich — vcovHC() robust SEs
 #   dplyr, ggplot2 — wrangling and plots
 #
 # Install once:
 #   install.packages(c("etwfe", "marginaleffects", "fixest", "sandwich",
 #                      "dplyr", "ggplot2"))
-#
-# TRANSLATION NOTE -- Section 10.7.4.2 (lwdid -> hand-built R)
-#   No R package implements Lee & Wooldridge's lwdid (Stata- and Python-only
-#   as of this writing). Section 10.7.4.2 below hand-builds the SPECIFIC
-#   large-N algorithm that ETWFE.do actually invokes: rolling(demean) and
-#   rolling(detrend), method(ra), never-treated controls, no covariates.
-#   This is a direct re-implementation of the relevant branches of
-#   lwdid.ado (Lee & Wooldridge, v2.4), not a general-purpose port of the
-#   full command.
-#
-#   THIS SCRIPT IS WRITTEN FOR READERS WORKING ENTIRELY IN R, WITHOUT
-#   ACCESS TO STATA. The Stata numbers quoted in the interpretation block
-#   below are provided as a published cross-check on the point estimates,
-#   not as a target the R output is expected to reproduce exactly --
-#   readers running only this script can treat the R output below as the
-#   primary, self-contained result.
-#
-#   Point estimates (the weighted average of ATT(g,t) cells) match the
-#   Stata reference values closely, confirmed at the 4th decimal place,
-#   because the underlying point-estimation algorithm is replicated
-#   directly from the .ado source. Standard errors, however, do NOT
-#   converge to the Stata values, even at reps = 999: this script uses a
-#   full nonparametric cluster bootstrap (resampling states with
-#   replacement and rerunning the entire estimation pipeline each time),
-#   while the .ado uses a lower-variance wild bootstrap on analytic
-#   influence functions. These are two different, both valid, inference
-#   procedures, and the resulting SEs differ by construction -- roughly
-#   3-4x wider here -- not due to insufficient bootstrap replications.
-#   Raising reps further will not close this gap. Readers using this
-#   script's SEs and p-values should treat them as the script's own
-#   (more conservative) inference, not as an approximation of Stata's.
 
 # ========================================================================
 
@@ -110,8 +79,8 @@ suppressPackageStartupMessages({
   library(marginaleffects)
   library(dplyr)
   library(ggplot2)
-  library(sandwich)         # vcovHC() -- robust SEs for the hand-built
-                             # lwdid cell regressions in Section 10.7.4.2
+  library(sandwich)         # vcovHC() -- robust SEs
+                             
 })
 
 # -----------------------------------------------------------------------
@@ -349,7 +318,7 @@ b_group_b   <- agg_4b_group$estimate
 b_group_se  <- agg_4b_group$std.error
 
 # ========================================================================
-# 6. EVENT-STUDY PLOT (fig10_6)
+# 6. EVENT-STUDY PLOT (fig10_7)
 #   Built on the Model 4b (covariate-adjusted) event-study aggregation.
 #   Reference period (event time = -1) is the row where estimate = 0 or
 #   std.error = NA; all remaining rows are shifted accordingly.
@@ -393,10 +362,10 @@ p_es <- ggplot(es_df, aes(x = event, y = b)) +
   ) +
   theme_springer()
 
-ggsave(file.path(graphs_dir, "fig10_6_R.png"),
+ggsave(file.path(graphs_dir, "fig10_7_R.png"),
        p_es, width = 7, height = 5, dpi = 200)
 print(p_es)   # render to the RStudio Plots pane (ggsave only writes to disk)
-cat(sprintf("\nfig10_6_R.png exported to %s\n", graphs_dir))
+cat(sprintf("\nfig10_7_R.png exported to %s\n", graphs_dir))
 
 # ========================================================================
 # 6b. COMPARISON TABLE: ETWFE WITHOUT vs WITH COVARIATES
@@ -456,7 +425,7 @@ write.csv(tab_df, file.path(tables_dir, "tab10_7_etwfe.csv"),
 cat(sprintf("\ntab10_7_etwfe.csv exported to %s\n", tables_dir))
 
 cat("\nETWFE / etwfe section complete.\n")
-cat(sprintf("Figure: %s/fig10_6_R.png\n", graphs_dir))
+cat(sprintf("Figure: %s/fig10_7_R.png\n", graphs_dir))
 cat(sprintf("Table:  %s/tab10_7_etwfe.csv\n", tables_dir))
 
 # ========================================================================
@@ -501,370 +470,7 @@ cat(sprintf("Table:  %s/tab10_7_etwfe.csv\n", tables_dir))
 #   -- and note that the R package's only covariate mode inherits this
 #   same caution, even in the "adjusted" specification meant to avoid it.
 # ========================================================================
-# ============================================================================
-# SECTION 10.7.4.2 -- ROLLING DIFFERENCE-IN-DIFFERENCES (hand-built lwdid)
-#   We next estimate the same design using a hand-built R implementation of
-#   the Lee & Wooldridge rolling-DiD estimator, a different transformation-
-#   based estimator. Unlike ETWFE's saturated regression on cohort-by-period
-#   indicators, this approach residualizes each unit's outcome against its
-#   own pre-treatment path (mean or trend) and then estimates ATT(g,t) via
-#   cross-sectional regressions in each post-treatment period.
-#   We use the SAME panel, cohort variable, outcome, and never-treated
-#   comparison-group choice as the ETWFE specification above (10.7.4.1), so
-#   any difference in results reflects the estimator, not the data.
-#
-#   See the TRANSLATION NOTE at the top of this file: this is a faithful
-#   re-implementation of the SPECIFIC branches of lwdid.ado (v2.4) that
-#   ETWFE.do actually invokes -- large-N mode, method(ra), never-treated
-#   controls, no covariates -- not a general-purpose port of lwdid.
-# ============================================================================
 
-# ----------------------------------------------------------------------------
-# 7.0 Helper: residualize one cohort's outcome under demean or detrend
-#     Mirrors lwdid_large's Stage 1 (the cumulative-sum construction in
-#     Stata is algebraically equivalent to the direct per-unit calculation
-#     below). The anchor period(s) are forced to exactly zero, matching the
-#     .ado's own anchoring step, so WATT(-1) reads as a structural zero --
-#     consistent with the omitted reference period in the ETWFE event study.
-# ----------------------------------------------------------------------------
-residualize_cohort <- function(data, g, rolling = c("demean", "detrend")) {
-  rolling <- match.arg(rolling)
-  out <- data
-  out$.yresid <- NA_real_
-
-  ids <- unique(out$fips)
-  for (id in ids) {
-    pre_idx <- which(out$fips == id & out$fy < g)
-    if (length(pre_idx) == 0) next
-    all_idx <- which(out$fips == id)
-
-    if (rolling == "demean") {
-      fitted_val <- mean(out$lngenop[pre_idx], na.rm = TRUE)
-      out$.yresid[all_idx] <- out$lngenop[all_idx] - fitted_val
-    } else {
-      if (length(pre_idx) < 2) next
-      fit <- lm(lngenop ~ fy, data = out[pre_idx, ])
-      pred_all <- predict(fit, newdata = out[all_idx, ])
-      out$.yresid[all_idx] <- out$lngenop[all_idx] - pred_all
-    }
-  }
-
-  if (rolling == "demean") {
-    out$.yresid[(out$fy - g) == -1] <- 0
-  } else {
-    out$.yresid[(out$fy - g) %in% c(-2, -1)] <- 0
-  }
-
-  out$.yresid
-}
-
-# ----------------------------------------------------------------------------
-# 7.1 Helper: cell-level ATT(g,t), never-treated controls, method = "ra"
-#     Mirrors lwdid_large's Stage 2 for method(ra), no covariates:
-#       control group  = never-treated (gyear==0) + cohort g itself
-#       regression     = yresid ~ dvar_g  on obs in calendar year t & control
-#       SE             = heteroskedasticity-robust (HC1), matching Stata's
-#                        regress ..., vce(robust)
-# ----------------------------------------------------------------------------
-att_gt_cell <- function(data, g, t, yresid_col) {
-  cell <- data[data$fy == t & (data$gyear == 0 | data$gyear == g), ]
-  cell$dvar_g <- as.integer(cell$gyear == g)
-
-  if (sum(cell$dvar_g == 1) == 0 || sum(cell$dvar_g == 0) == 0) {
-    return(data.frame(cohort = g, time = t, ryear = t - g,
-                       att = NA_real_, se = NA_real_, Ngt = 0))
-  }
-
-  fit <- lm(cell[[yresid_col]] ~ dvar_g, data = cell)
-  vc  <- vcovHC(fit, type = "HC1")
-  b   <- unname(coef(fit)["dvar_g"])
-  se  <- sqrt(vc["dvar_g", "dvar_g"])
-  Ngt <- sum(cell$dvar_g == 1)
-
-  data.frame(cohort = g, time = t, ryear = t - g, att = b, se = se, Ngt = Ngt)
-}
-
-# ----------------------------------------------------------------------------
-# 7.2 Helper: run the full lwdid large-N replication for one rolling() choice
-#     Returns a list: attgt (cell table), watt (WATT(r) + Pre_avg/Post_avg)
-# ----------------------------------------------------------------------------
-run_lwdid_large <- function(data, rolling = c("demean", "detrend"),
-                             reps = 999, seed = 20260621) {
-  rolling <- match.arg(rolling)
-  cohorts <- sort(unique(data$gyear[data$gyear > 0]))
-  tmin <- min(data$fy); tmax <- max(data$fy)
-
-  # --- Stage 1: residualize per cohort ---
-  yresid_cols <- character(0)
-  for (g in cohorts) {
-    colname <- paste0("yresid_", g)
-    data[[colname]] <- residualize_cohort(data, g, rolling)
-    yresid_cols <- c(yresid_cols, colname)
-  }
-
-  # --- Stage 2: cell-level ATT(g,t) for every (g,t) ---
-  cell_list <- list()
-  for (g in cohorts) {
-    colname <- paste0("yresid_", g)
-    for (t in tmin:tmax) {
-      cell_list[[length(cell_list) + 1]] <-
-        att_gt_cell(data, g, t, colname)
-    }
-  }
-  attgt <- bind_rows(cell_list)
-  attgt <- attgt[!is.na(attgt$att), ]
-
-  # --- Stage 3: WATT(r) aggregation, weighted by Ngt within each ryear ---
-  watt_r <- attgt %>%
-    group_by(ryear) %>%
-    summarise(
-      watt    = sum(att * Ngt) / sum(Ngt),
-      N_cells = n(),
-      N_units = sum(Ngt),
-      .groups = "drop"
-    ) %>%
-    arrange(ryear)
-
-  if (rolling == "demean") {
-    watt_r$watt[watt_r$ryear == -1] <- 0
-  } else {
-    watt_r$watt[watt_r$ryear %in% c(-2, -1)] <- 0
-  }
-
-  # --- Pre_avg / Post_avg: weighted average of ATT(g,t) cells ---
-  pre_cut <- if (rolling == "demean") -1 else -2
-  avg_tbl <- attgt %>%
-    mutate(avg_type = case_when(
-      ryear <  pre_cut ~ "Pre_avg",
-      ryear >= 0       ~ "Post_avg",
-      TRUE             ~ NA_character_
-    )) %>%
-    filter(!is.na(avg_type)) %>%
-    group_by(avg_type) %>%
-    summarise(watt = sum(att * Ngt) / sum(Ngt), .groups = "drop")
-
-  # --- Cluster bootstrap (clusters = state/fips) for inference ---
-  #     Standard cluster-bootstrap analog to the .ado's wild bootstrap on
-  #     per-state analytic influence functions: resample STATES with
-  #     replacement and re-run Stages 1-3 each time.
-  set.seed(seed)
-  states   <- unique(data$fips)
-  n_states <- length(states)
-
-  boot_watt <- matrix(NA_real_, nrow = reps, ncol = nrow(watt_r))
-  boot_avg  <- matrix(NA_real_, nrow = reps, ncol = nrow(avg_tbl))
-
-  for (b in seq_len(reps)) {
-    samp_states <- sample(states, n_states, replace = TRUE)
-    boot_data <- bind_rows(lapply(seq_along(samp_states), function(k) {
-      sub <- data[data$fips == samp_states[k], ]
-      sub$fips <- 100000 + k   # relabel so resampled duplicates of the same
-      sub                       # state are distinct panel units in the draw
-    }))
-
-    cell_list_b <- list()
-    for (g in cohorts) {
-      colname <- paste0("yresid_", g)
-      boot_data[[colname]] <- residualize_cohort(boot_data, g, rolling)
-      for (t in tmin:tmax) {
-        cell_list_b[[length(cell_list_b) + 1]] <-
-          att_gt_cell(boot_data, g, t, colname)
-      }
-    }
-    attgt_b <- bind_rows(cell_list_b)
-    attgt_b <- attgt_b[!is.na(attgt_b$att), ]
-
-    watt_b <- attgt_b %>%
-      group_by(ryear) %>%
-      summarise(watt = sum(att * Ngt) / sum(Ngt), .groups = "drop")
-    boot_watt[b, ] <- left_join(watt_r["ryear"], watt_b, by = "ryear")$watt
-
-    avg_b <- attgt_b %>%
-      mutate(avg_type = case_when(
-        ryear <  pre_cut ~ "Pre_avg",
-        ryear >= 0       ~ "Post_avg",
-        TRUE             ~ NA_character_
-      )) %>%
-      filter(!is.na(avg_type)) %>%
-      group_by(avg_type) %>%
-      summarise(watt = sum(att * Ngt) / sum(Ngt), .groups = "drop")
-    boot_avg[b, ] <- left_join(avg_tbl["avg_type"], avg_b, by = "avg_type")$watt
-  }
-
-  watt_r$se <- apply(boot_watt, 2, sd, na.rm = TRUE)
-  avg_tbl$se <- apply(boot_avg, 2, sd, na.rm = TRUE)
-
-  if (rolling == "demean") {
-    watt_r$se[watt_r$ryear == -1] <- 0
-  } else {
-    watt_r$se[watt_r$ryear %in% c(-2, -1)] <- 0
-  }
-
-  watt_r$t_stat   <- watt_r$watt / watt_r$se
-  watt_r$p_value  <- 2 * pnorm(-abs(watt_r$t_stat))
-  avg_tbl$t_stat  <- avg_tbl$watt / avg_tbl$se
-  avg_tbl$p_value <- 2 * pnorm(-abs(avg_tbl$t_stat))
-
-  list(attgt = attgt, watt = watt_r, avg = avg_tbl)
-}
-
-# ----------------------------------------------------------------------------
-# 7a. lwdid (hand-built) -- UNCONDITIONAL, ROLLING(DEMEAN)
-#     Residualizes each unit's outcome against the average of ALL its
-#     pre-treatment periods ("lags-only" reference point). Reps set to 999
-#     to match the .ado's default; reduce for faster iterative testing.
-# ----------------------------------------------------------------------------
-cat("\n=== lwdid-style (rolling=demean, method=ra, never-treated controls) ===\n")
-cat("NOTE: reps = 999 -- this may take several minutes to run.\n")
-
-res_demean <- run_lwdid_large(df_model, rolling = "demean", reps = 999)
-# NOTE: reps = 999 gives this script's own publication-quality standard
-# errors (stable bootstrap SE for THIS cluster-bootstrap procedure -- see
-# the TRANSLATION NOTE at the top of the file for why these SEs are wider
-# than, and will not converge to, the Stata .ado's analytic-influence-
-# function wild-bootstrap SEs). This is SLOW -- each of the 999 bootstrap
-# replications reruns Stage 1 (per-unit lm() fits) and Stage 2 (a separate
-# cell regression for every cohort x year combination) from scratch. This
-# call can take several minutes depending on your machine. If you need a
-# fast sanity check on the point estimate only, temporarily lower reps
-# (e.g. to 100) and raise it back to 999 for the SEs you'll report.
-
-cat("\nGroup-time ATT(g,t) estimates (post-period only):\n")
-print(res_demean$attgt %>% filter(ryear >= 0) %>% arrange(cohort, time))
-
-cat("\nAggregated WATT(r) estimates:\n")
-print(res_demean$watt)
-cat("\nPre_avg / Post_avg:\n")
-print(res_demean$avg)
-
-l_demean_b  <- res_demean$avg$watt[res_demean$avg$avg_type == "Post_avg"]
-l_demean_se <- res_demean$avg$se[res_demean$avg$avg_type == "Post_avg"]
-
-fig10_12 <- ggplot(res_demean$watt, aes(x = ryear, y = watt)) +
-  geom_hline(yintercept = 0, colour = "grey70") +
-  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey70") +
-  geom_errorbar(aes(ymin = watt - 1.96 * se, ymax = watt + 1.96 * se),
-                width = 0, colour = "grey50") +
-  geom_point(size = 2) +
-  labs(
-    title    = "lwdid (hand-built): ra (demean)",
-    subtitle = "Unconditional, never-treated controls",
-    x        = "Time to Treatment (r)",
-    y        = "WATT(r)"
-  ) +
-  theme_springer()
-
-print(fig10_12)
-ggsave(file.path(graphs_dir, "fig10_12_R.png"), fig10_12,
-       width = 7, height = 4.5, dpi = 300)
-
-# ----------------------------------------------------------------------------
-# 7b. lwdid (hand-built) -- UNCONDITIONAL, ROLLING(DETREND)
-#     Removes each unit's pre-treatment LINEAR TREND (not just its mean)
-#     before estimation, speaking directly to pre-trend drift documented in
-#     the Section 10.7.1 event study.
-# ----------------------------------------------------------------------------
-cat("\n=== lwdid-style (rolling=detrend, method=ra, never-treated controls) ===\n")
-cat("NOTE: reps = 999 -- this may take several minutes to run.\n")
-
-res_detrend <- run_lwdid_large(df_model, rolling = "detrend", reps = 999)
-# NOTE: reps = 999 -- see runtime warning under res_demean above. This
-# call will also take several minutes; running both demean and detrend
-# back to back at reps = 999 means the combined Section 10.7.4.2 block
-# may take a noticeable chunk of time to finish.
-
-cat("\nGroup-time ATT(g,t) estimates (post-period only):\n")
-print(res_detrend$attgt %>% filter(ryear >= 0) %>% arrange(cohort, time))
-
-cat("\nAggregated WATT(r) estimates:\n")
-print(res_detrend$watt)
-cat("\nPre_avg / Post_avg:\n")
-print(res_detrend$avg)
-
-l_detrend_b  <- res_detrend$avg$watt[res_detrend$avg$avg_type == "Post_avg"]
-l_detrend_se <- res_detrend$avg$se[res_detrend$avg$avg_type == "Post_avg"]
-
-fig10_13 <- ggplot(res_detrend$watt, aes(x = ryear, y = watt)) +
-  geom_hline(yintercept = 0, colour = "grey70") +
-  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey70") +
-  geom_errorbar(aes(ymin = watt - 1.96 * se, ymax = watt + 1.96 * se),
-                width = 0, colour = "grey50") +
-  geom_point(size = 2) +
-  labs(
-    title    = "lwdid (hand-built): ra (detrend)",
-    subtitle = "Unconditional, never-treated controls",
-    x        = "Time to Treatment (r)",
-    y        = "WATT(r)"
-  ) +
-  theme_springer()
-
-print(fig10_13)
-ggsave(file.path(graphs_dir, "fig10_13_R.png"), fig10_13,
-       width = 7, height = 4.5, dpi = 300)
-
-# Save the WATT tables to disk (analogous to the .ado's save() option)
-write.csv(res_demean$watt,  file.path(tables_dir, "lwdid_demean_watt.csv"),  row.names = FALSE)
-write.csv(res_detrend$watt, file.path(tables_dir, "lwdid_detrend_watt.csv"), row.names = FALSE)
-
-# ============================================================================
-# 7c. COMPARISON TABLE: ETWFE (4a) vs hand-built lwdid (demean, detrend)
-# ============================================================================
-T2 <- data.frame(
-  spec = c("etwfe_4a_nocov", "lwdid_demean", "lwdid_detrend"),
-  ATT  = c(a_simple_b, l_demean_b, l_detrend_b),
-  SE   = c(a_simple_se, l_demean_se, l_detrend_se)
-)
-
-cat("\n", strrep("-", 72), "\n", sep = "")
-cat("Overall ATT, staggered consolidation: ETWFE vs lwdid (unconditional)\n")
-cat(strrep("-", 72), "\n", sep = "")
-print(T2, digits = 4, row.names = FALSE)
-
-write.csv(T2, file.path(tables_dir, "tab10_7_lwdid.csv"), row.names = FALSE)
-
-cat("\nlwdid section complete.\n")
-cat("Figures:", file.path(graphs_dir, "fig10_12_R.png"), ",",
-    file.path(graphs_dir, "fig10_13_R.png"), "\n")
-cat("Table:  ", file.path(tables_dir, "tab10_7_lwdid.csv"), "\n")
-
-# ============================================================================
-# INTERPRETATION (for chapter prose) -- Section 10.7.4.2 (hand-built lwdid)
-# ----------------------------------------------------------------------------
-# PRIMARY RESULT (this script, reps = 999):
-#   demean:  Overall (Post_avg) ATT = -0.0624 (SE .091, p=.49)
-#   detrend: Overall (Post_avg) ATT =  0.1161 (SE .066, p=.08)
-# This is the self-contained R result. Readers without Stata should treat
-# the numbers in this run as the analysis, not as an approximation of
-# something else.
-#
-# CROSS-CHECK (Stata, ETWFE.do, lwdid v2.4 -- provided for readers who also
-# have access to Stata, not required to interpret the R output above):
-#   demean:  Overall ATT = -0.0624 (SE .0228, p=.008)
-#   detrend: Overall ATT =  0.1161 (SE .0267, p<.001)
-#
-# Point estimates match Stata to four decimal places, confirmed at
-# reps = 999 -- the point-estimation algorithm (Stage 1 residualization +
-# Stage 2 cell regressions + Stage 3 weighting) is replicated directly
-# from the .ado source. Standard errors are wider here by roughly 3-4x and
-# do NOT converge toward the Stata values as reps increases (confirmed:
-# raising reps from 100 to 999 left the SEs essentially unchanged). This
-# reflects a genuine difference in inference procedure -- a full
-# nonparametric cluster bootstrap here vs. a lower-variance wild bootstrap
-# on analytic influence functions in the .ado -- not a precision shortfall
-# that more replications would fix. Significance conclusions can differ
-# as a result: e.g. demean's Pre_avg is significant under both procedures,
-# but Post_avg is significant in Stata (p=.008) and not significant under
-# this script's wider SEs (p=.49). Report this script's own p-values when
-# using R-only output; don't borrow Stata's significance levels.
-#
-# SUBSTANTIVE FINDING (holds under both procedures, since it concerns
-# point estimates, not SEs): the two unconditional specifications -- ETWFE
-# 4a and lwdid demean -- disagree even on sign (+0.051 vs. -0.062), and
-# lwdid detrend moves AWAY from (not toward) ETWFE 4b's near-null estimate.
-# This is evidence that the staggered-adoption ATT for this three-cohort
-# design is highly sensitive to how the pre-treatment counterfactual is
-# constructed, regardless of which language or inference procedure is used.
-# ============================================================================
 # ============================================================================
 # END OF R_code10_ETWFE.R
 # ============================================================================
