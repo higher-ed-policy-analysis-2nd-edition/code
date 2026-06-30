@@ -4,7 +4,7 @@ This folder holds the Stata and R code for Chapter 11 of *Higher Education Polic
 
 ## Empirical Setting
 
-The running example draws on a synthetic dataset built to mirror the Baccalaureate and Beyond (B&B) longitudinal study, with master's degree completion as the treatment and labor market outcomes as the dependent variables. State-level graduate assistantship (GA) funding is the instrument, chosen because it creates exogenous variation in the likelihood of graduate enrollment without directly affecting individual earnings — a feature that motivates the heterogeneity and policy-relevance extensions taken up in the CATE and MTE/MPRTE sections.
+The chapter's running example uses a synthetic dataset modeled on the Baccalaureate and Beyond (B&B) longitudinal study, examining the effect of master's degree completion on labor market outcomes. State-level graduate assistantship (GA) funding serves as the instrument, creating exogenous variation in graduate enrollment likelihood without directly affecting individual earnings and motivating the heterogeneity and policy-relevance extensions developed across the CATE and MTE/MPRTE sections.
 
 ## File Structure
 
@@ -72,4 +72,4 @@ Running the scripts produces the figures and tables referenced in Chapter 11 —
 
 ## Related Chapters
 
-Chapter 7 introduced the IV/2SLS framework this chapter builds on; here that estimate is recast as a local average treatment effect (LATE), then extended into the MTE/MPRTE and CBA framework. Chapter 10 is the natural companion for state- and institution-level causal inference (DiD, SCM, SDID, CS-DiD, RDD) — the two chapters approach identification from different angles, with Chapter 10 handling treatment assigned across a small number of units and Chapter 11 focusing on individual-level selection.
+This chapter extends the instrumental variables/2SLS approach introduced in Chapter 7, reinterpreting the IV/2SLS estimate as a local average treatment effect (LATE) and building out the MTE/MPRTE and CBA framework around it. It also complements Chapter 10's state- and institution-level causal inference toolkit (DiD, SCM, SDID, CS-DiD, RDD): where Chapter 10 addresses treatment assigned to a small number of units, Chapter 11 addresses individual-level selection into treatment.
