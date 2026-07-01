@@ -1,130 +1,67 @@
-```markdown
 # Chapter 6 — Using Descriptive Statistics and Graphs
 
-**Book:** Higher Education Policy Analysis Using Quantitative Techniques (2nd Edition)  
-**Author:** Marvin A. Titus  
-**Repository:** https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch6
+This folder holds the Stata and R code for Chapter 6 of *Higher Education Policy Analysis Using Quantitative Techniques* (2nd Edition, Springer). The chapter introduces descriptive statistics and exploratory data analysis (EDA) for higher education policy research: measures of central tendency and dispersion, frequency distributions and crosstabulations, one- and two-way ANOVA, panel-data description, and exploratory graphics.
 
-## Overview
+## Empirical Setting
 
-This directory contains complete, reproducible code and supporting files for Chapter 6. The chapter demonstrates descriptive statistics, distributional summaries, ANOVA and post-hoc tests, panel-data summaries, and exploratory graphics using datasets provided with the book. Both Stata and R implementations are provided and cross-checked for consistency.
+Unlike later chapters built around a single running example, Chapter 6 works through several previously introduced datasets so that each descriptive technique stays tied to a familiar substantive context. Arithmetic, geometric, and harmonic means are illustrated using the cross-sectional public/private high school graduate data first introduced in Chapter 4; the coefficient of variation is illustrated using a SHEEO state finance panel; frequency distributions, crosstabulations, and ANOVA use the condensed HSLS:09 dataset with an earnings variable introduced in Chapter 5; and panel-data description and exploratory graphics use a 50-state, 27-year (1990–2016) state appropriations and tuition panel.
 
-## Repository Contents
+## File Structure
 
-- `Stata_code6.do` — Complete Stata implementation (tested in Stata 19.5)
-- `R_code6.R` (also provided as `R_code6.txt`) — Full R translation (tested in R >= 4.0)
-- `Comparison of Stata and R Results.txt` — Detailed section-by-section validation of Stata vs R output
-- Example data files are downloaded by the scripts at runtime from the book data repository
+### Stata Script
 
-## Datasets
+| File | Description |
+|---|---|
+| `Stata_Code6.do` | Single Stata script. Sets output paths and log, then runs all analyses in Section 6.2 (central tendency, dispersion, distributions, panel description, ANOVA) and Section 6.3 (exploratory graphics), in order. |
 
-The scripts download the datasets from the book's public data repository when run. Main data used in this chapter:
+### R Translation
 
-- `tabn302_50.xlsx` (reformatted sheet) — Public/private enrollment summary
-- `Example_6_2_2.dta` — SHEEO finance dataset (state-level finance series)
-- `Example_6_2_3.dta` — HSLS:09 condensed dataset (earnings and demographics)
-- `Example_6_3.dta` — State-level panel (1990–2016)
+| File | Stata Counterpart | Description |
+|---|---|---|
+| `R_code6.R` | `Stata_Code6.do` | Complete R translation. Reproduces all descriptive statistics, crosstabulations, ANOVA tests, and graphics using `psych`, `plm`, and `ggplot2` equivalents of the Stata commands. |
 
-Data URL root: `https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch6/`
+## Data
 
-## Software Requirements
+Datasets are in the [data repository](https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch6) and are downloaded automatically by both scripts at runtime.
 
-### Stata
-- Version: Stata 19.0+ (tested in Stata 19.5)
-- The do-file includes instructions for any optional user-written commands used for plotting or specific diagnostics.
+| File | Used in | Description |
+|---|---|---|
+| `tabn302_50.xlsx` (from `/data/ch4`) | Section 6.2.1 | Public/private high school graduates enrolling in postsecondary education, by state and DC, 2012 |
+| `Example_6_2_2.dta` | Section 6.2.2 | SHEEO state finance panel: net tuition revenue and FTE enrollment, 50 states × 9 fiscal years (FY 2010–FY 2018) |
+| `Example_6_2_3.dta` | Sections 6.2.3–6.2.4 | Condensed HSLS:09 dataset with hourly earnings (`EarnHr`), race/ethnicity (`X1RACE`), and sex (`X1SEX`) |
+| `Example_6_3.dta` | Sections 6.2.3, 6.3.1 | State-level panel: state appropriations (`stapr`), net tuition revenue (`netuit`), FTE enrollment (`fte`), regional-compact membership (`region_compact`), undergraduate merit-aid indicator (`ugradmerit`); 50 states × 27 years (1990–2016) |
 
-### R
-- Version: R 4.0 or later (R 4.3.0+ recommended)
-- Required R packages (the R script attempts to install missing packages automatically):
-```r
-c("tidyverse", "haven", "readxl", "psych", "plm",
-  "car", "DescTools", "lmtest", "sandwich", "ggplot2")
-```
-If automatic installation fails, install packages manually:
-```r
-install.packages(c("tidyverse", "haven", "readxl", "psych",
-                   "plm", "car", "DescTools", "lmtest",
-                   "sandwich", "ggplot2"))
-```
+## Running the Code
 
-## Quick Start
-
-### Clone the repository
-```bash
-git clone https://github.com/higher-ed-policy-analysis-2nd-edition/code.git
-cd code/ch6
-```
-
-### Run with Stata
-1. Open `Stata_code6.do`.
-2. (Optional) Set your working directory at the top of the do-file.
-3. Run:
+**Stata** (requires version 19; tested in Stata 19.5):
 ```stata
-do Stata_code6.do
+do Stata_Code6.do
 ```
-The do-file downloads required datasets and runs all analyses and graphs.
+The user-written `aaplot` command (Cox 2015) is required for the annotated scatter plots in Section 6.3.1; install it before running with:
+```stata
+ssc install aaplot, replace
+```
 
-### Run with R
-1. Open `R_code6.R` (or `R_code6.txt`) in R or RStudio.
-2. (Optional) Set `ch6data` at the top of the script if you want to persist downloaded files.
-3. Source or run the script:
+**R** (requires R 4.4.x or later):
 ```r
 source("R_code6.R")
 ```
-The script installs missing packages (if needed), downloads datasets, creates necessary variables (`netuit_fte`, `stapr_fte`, etc.), performs analyses, and displays ggplot2 graphics.
+Required packages (`readxl`, `haven`, `dplyr`, `tidyr`, `psych`, `plm`, `ggplot2`, `scales`, `patchwork`) are installed automatically if missing.
 
-## What the Code Does (High Level)
+> **Note:** Output paths switch automatically based on the OS username (`if c(username) == "marvi"` in Stata). All other users receive the default relative-path output (`Output/graphs/`, `Output/logs/`), which is created automatically at runtime.
 
-- Measures of central tendency (arithmetic, geometric, harmonic)
-- Measures of dispersion (standard deviation, coefficient of variation) by state and year
-- Frequency distributions, two-way tables, and recoding (HSLS:09 race/ethnicity example)
-- ANOVA and post-hoc pairwise comparisons (Bonferroni and Tukey HSD)
-- Panel-data declaration and summary (using `plm` in R; `xtset` in Stata)
-- Exploratory graphics:
-  - Histograms with normal overlays
-  - Boxplots and faceted histograms
-  - Scatter plots with fitted regression lines and optional labels
+## Methods Covered
 
-Section organization in the scripts mirrors Chapter 6 of the textbook (Section 6.2.x, 6.3.x).
+- **Measures of central tendency (Section 6.2.1):** arithmetic, geometric, and harmonic means (`ameans`)
+- **Measures of dispersion (Section 6.2.2):** coefficient of variation, by state and by fiscal year (`tabstat`)
+- **Distributions (Section 6.2.3):** frequency distributions and crosstabulations of a categorical variable, with and without recoding (`prop`, `tab`, `tabulate`); panel-data description (`xtset`, `xtdescribe`, `xttab`, `xttrans`)
+- **Testing differences in means across groups (Section 6.2.4):** one-way and two-way ANOVA, post-hoc pairwise comparisons with Bonferroni correction, and interaction tests (`anova`, `oneway`, `pwmean`, `testparm`)
+- **Exploratory graphics (Section 6.3.1):** histograms with normal-curve overlays, box charts (overall and by category), scatter plots with fitted regression lines and point labels, and annotated regression scatter plots (`aaplot`)
 
-## Cross-Platform Validation
+## Output
 
-A detailed comparison between Stata and R results is provided in `Comparison of Stata and R Results.txt`. Key points:
+Running the scripts produces the full sequence of output referenced in Chapter 6. Figs. 6.1–6.7 are descriptive-statistics tables, frequency distributions, and crosstabulations captured in the log output; Figs. 6.8–6.17 are the histograms, box charts, and scatter plots exported as PNG files to `Output/graphs/`, with Stata figures carrying a `_Stata.png` suffix and R figures a `_R.png` suffix.
 
-- The R translation reproduces Stata estimates and test statistics with high precision.
-- Minor, documented differences may appear in ancillary statistics (e.g., definitions of kurtosis or specific clustered SE implementations) but do not affect substantive conclusions.
+## Related Chapters
 
-## Notes on Implementation Differences
-
-- Kurtosis: Some R functions report regular kurtosis while Stata may report excess kurtosis. This is a formulaic difference; adjust interpretation accordingly.
-- Clustered/robust SEs: Small numeric differences in clustered standard errors across platforms are expected due to different algorithms — coefficients remain the same and conclusions unchanged.
-- Panel-package differences: R's `plm` and Stata's `xt` family sometimes use different default output formats; the scripts document implementation choices and any modifications made for numerical stability.
-
-## Troubleshooting
-
-- Data download failure: Check internet access or manually download datasets from the data repository and place them in your working directory.
-- R package installation failure: Install packages manually and restart your R session.
-- "object not found" errors: Ensure the dataset loaded correctly and that per-FTE variables are created before model estimation (scripts include code to generate these variables).
-- Plots not visible: In RStudio, check the Plots pane or use `ggsave()` in the script to save figures.
-
-## Citation
-
-If you use these materials in research or teaching, please cite:
-
-Titus, M. A. (2025). Higher Education Policy Analysis Using Quantitative Techniques (2nd ed.). Springer.
-
-GitHub repository: https://github.com/higher-ed-policy-analysis-2nd-edition/
-
-## Author & Contact
-
-Marvin A. Titus, Ph.D.  
-Email: marvinatitus@gmail.com
-
-## License
-
-Code is provided for educational and research purposes. See the repository license for terms of use.
-
-## Last Updated
-
-November 16, 2025
-```
+Chapter 6 reuses datasets first introduced in Chapter 4 (cross-sectional enrollment data) and Chapter 5 (the HSLS:09 dataset), extending them with additional descriptive and graphical techniques. The state-level panel used in Sections 6.2.3 and 6.3.1 previews the panel structure used throughout Chapter 7, which builds on these descriptive foundations to introduce pooled OLS, fixed-effects and random-effects regression, and instrumental variables estimation.
