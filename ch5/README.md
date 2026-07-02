@@ -1,209 +1,96 @@
 # Chapter 5 — Getting to Know Thy Data
 
-**Book:** Higher Education Policy Analysis Using Quantitative Techniques (2nd Edition)  
-**Author:** Marvin A. Titus  
-**Repository:** https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch5
+This folder holds the Stata and R code for Chapter 5 of *Higher Education Policy Analysis Using Quantitative Techniques* (2nd Edition, Springer). The chapter covers practical data-preparation and data-discovery skills used throughout the book: inspecting dataset structure and storage types, declaring panel data, exploring missingness patterns, and running formal missing-data diagnostics, including Little's MCAR test and a panel-aware missing-data workflow.
 
-## Overview
+## Empirical Setting
 
-This directory contains complete, reproducible code and supporting files for Chapter 5. The chapter teaches practical data‑preparation and data‑discovery skills used throughout the book: examining dataset structures, declaring panel data, exploring missingness patterns, and performing formal missing‑data diagnostics (including Little's MCAR test and related diagnostics). Both Stata and R implementations are provided and validated for consistency.
+Chapter 5 works through several previously introduced and new datasets rather than a single running example. Storage-type inspection uses the Chapter 4 time-series dataset and a small illustrative panel; panel declaration and preparation use a SHEEO state finance panel; and missingness exploration and diagnostics use a truncated HSLS:09 student extract and an IPEDS institution-level panel. The chapter closes by returning to the SHEEO panel for a fully panel-aware missing-data workflow (detection, mechanism testing, and visualization in one command).
 
-## Repository Contents
+## File Structure
 
-- `Stata_code5.do` — Complete Stata do-file (tested in Stata 19.5)  
-- `R_code5.R` (also provided as `R_code5.txt`) — Full R translation (tested in R >= 4.0)  
-- `Public_use_HSLS_09_truncated.dta` (downloaded by scripts) — truncated HSLS:09 student data used for examples  
-- `Example_5_0.dta`, `Example_5_1.xlsx`, `Example_5_3.dta`, `Example_5_4.dta`, `Example_5_4_1.dta` — data files downloaded by the scripts at runtime  
-- `Comparison of R and Stata Results.txt` — Section-by-section comparison showing R and Stata outputs match for the Chapter 5 analyses
+### Stata Script
 
-## Datasets (downloaded by the scripts)
+| File | Description |
+|---|---|
+| `Stata_code5.do` | Single Stata script. Sets output paths and log, then runs all analyses in Section 5.2 (dataset structure, panel declaration), Section 5.3 (loading HSLS:09), and Section 5.4 (missingness summaries, subgroup patterns, legacy `xtmis`, Little's MCAR test, and the `xtmispanel` detect/test/graph workflow), in order. |
 
-All datasets are stored in the companion data repository and are downloaded automatically by the scripts when run:
+### R Translation
 
-- `Example_4_2_2_TS.dta` — time series example (1960–2016 high‑school-to‑PSE percentage)
-- `Example_5_0.dta` — small panel example (id, year, state, enrollment, state aid)
-- `Example_5_1.xlsx` — SHEEO finance worksheet (reformatted sheet used in the chapter)
-- `Public_use_HSLS_09_truncated.dta` / `Example_5_3.dta` — HSLS:09 student data (truncated for examples)
-- `Example_5_4.dta`, `Example_5_4_1.dta` — IPEDS / institutional panel data used for missingness diagnostics
+| File | Stata Counterpart | Description |
+|---|---|---|
+| `R_code5.R` | `Stata_code5.do` | Complete R translation. Reproduces the structure inspection, panel declaration, and missing-data workflow using `naniar` and `mice` in place of Stata's missing-data commands. Where Stata's `mcartest` has a covariate-dependent (CDM) variant with no direct R equivalent, the script substitutes a logistic-regression fallback (missingness indicator regressed on the covariate, with an LR test) to approximate the same check. |
 
-Data URL root:
-`https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch5/`
+## Data
 
-## Output Files
+Datasets are in the [data repository](https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch5) and are downloaded automatically by both scripts at runtime.
 
-### Graph Output Directory
+| File | Used in | Description |
+|---|---|---|
+| `Example_4_2_2_TS.dta` (from `/data/ch4`) | Section 5.2 | Time series: percentage of U.S. high school graduates enrolling in postsecondary education, 1960–2016 |
+| `Example_5_0.dta` | Section 5.2 | Small panel dataset used to demonstrate storage-type inspection, compression, and `recast` |
+| `Example_5_1.xlsx` | Section 5.2 | Raw SHEEO state finance worksheet; filtered and merged with state identifiers to build the SHEEO panel used again in Section 5.4.2 |
+| `Public_use_HSLS_09_truncated.dta` | Section 5.3 | Truncated public-use HSLS:09 (2017 Student File) extract |
+| `Example_5_3.dta` | Sections 5.3, 5.4.1 | The same eight HSLS:09 variables as a stand-alone file for readers without Stata/MP or Stata/SE |
+| `Example_5_4_1.dta` | Section 5.4 | HSLS:09 extract with NCES missing-value codes already recoded to Stata system missing |
+| `Example_5_4.dta` | Section 5.4 | IPEDS institution-level panel dataset used for the legacy `xtmis` demonstration |
 
-Both scripts save all plots to:
+> **Note:** Section 5.4.2 downloads a second, full-range copy of the SHEEO panel directly from the data repository as `Example5_2.dta` (no underscore before "2"), distinct from the `Example_5_2.dta` name used when the panel is built and saved locally in Section 5.2. Only the no-underscore file is hosted in the data repository; it spans FY 1980–2024 and includes the pre-2001 years in which `Appropriations` is missing, which gives the missing-data demonstration more to work with than the FY 2010–2024 file built locally in Section 5.2.
 
+## Running the Code
+
+**Stata** (requires version 19; tested in Stata 19.5):
+```stata
+do Stata_code5.do
 ```
-C:\Users\marvi\Dropbox\Book\2nd Edition\Chapter 5\Output\graphs
-```
-
-Plots from each platform are distinguished by a filename suffix to prevent overwrites when both scripts are run:
-
-| Figure | R filename (`_R` suffix) | Stata filename (`_Stata` suffix) |
-|--------|--------------------------|----------------------------------|
-| Panel missingness heatmap | `xtmis_heatmap_R.png` | `xtmis_heatmap_Stata.png` |
-| Bar chart: variable-level missingness | `xtmis_barvar_R.png` | `xtmis_barvar_Stata.png` |
-| Bar chart: panel-level missingness | `xtmis_barpanel_R.png` | `xtmis_barpanel_Stata.png` |
-| Bar chart: time-period missingness | `xtmis_bartime_R.png` | `xtmis_bartime_Stata.png` |
-| Combined missingness dashboard | `xtmis_combined_R.png` | `xtmis_combined_Stata.png` |
-| Missingness pattern plot | *(R: not produced)* | `xtmis_pattern_Stata.png` |
-| Timeline plot | *(R: not produced)* | `xtmis_timeline_Stata.png` |
-
-### Log Output Directory
-
-Both scripts write a plain-text log to:
-
-```
-C:\Users\marvi\Dropbox\Book\2nd Edition\Chapter 5\Output\logs\
+Several user-written commands must be installed first:
+```stata
+ssc install statastates, replace
+ssc install mdesc, replace
+net install dm0085_1.pkg, replace      // missings
+ssc install tomata, replace
+ssc install xtmis, replace
+net install st0318.pkg, replace        // mcartest
+ssc install xtmispanel, replace
 ```
 
-- Stata: `Chapter5_Stata_output.log`
-- R: `Chapter5_R_output.log`
-
-## Software Requirements
-
-### Stata
-- Version: Stata 19.0+ (code tested in Stata 19.5)
-- Recommended / optional user-written commands:
-  - `statastates` — convenient for matching state names / IDs (used in the script)
-  - `mdesc`, `misstable` — missing data summaries (usually included in base Stata; `mdesc` may be user-written)
-  - `xtmis`, `tomata` — panel missingness diagnostics (install via `ssc install xtmis, replace` / `ssc install tomata, replace`)
-  - `mcartest` — Little's MCAR test (install if needed; e.g., `cap net install st0318.pkg, replace` as directed in the do-file)
-
-The do-file includes inline comments describing where to install user-written packages if required.
-
-### R
-- Version: R 4.0 or later (R 4.3.0+ recommended)
-- Required R packages (the R script attempts to install missing packages automatically):
-  - tidyverse, haven, readxl, plm, naniar, mice, DescTools, car
-- Optional MCAR packages (fallbacks used in R code if available):
-  - BaylorEdPsych, MissMech
-
-If automatic installation fails, install packages manually. Example:
+**R** (requires R 4.4.x or later):
 ```r
-install.packages(c("tidyverse", "haven", "readxl", "plm", "naniar", "mice", "DescTools", "car"))
+source("R_code5.R")
 ```
+Required packages (`haven`, `readxl`, `dplyr`, `tidyr`, `plm`, `naniar`, `mice`, `ggplot2`, `scales`) are installed automatically if missing; `patchwork`, needed only for the combined missingness dashboard, is checked and installed separately at the point it's first used.
 
-## Quick Start
+> **Note:** Output paths switch automatically based on the OS username (`if c(username) == "marvi"` in Stata). The R script's output paths are hardcoded to the same Dropbox location rather than branching on username — no path configuration is needed, but R users working outside that environment will need to edit `graphs_dir` and `log_path` at the top of the script before running.
 
-### Clone the repository
-```bash
-git clone https://github.com/higher-ed-policy-analysis-2nd-edition/code.git
-cd code/ch5
-```
+## Methods Covered
 
-### Run with Stata
-1. Open `Stata_code5.do`.
-2. (Optional) Edit the working directory path at the top of the do-file (`global ch5data ...`) to a local folder.
-3. If needed, install user-written packages referenced in the do-file:
-   ```stata
-   ssc install statastates, replace
-   ssc install xtmis, replace
-   cap net install st0318.pkg, replace   // if mcartest not available
-   ```
-4. Execute the do-file:
-   ```stata
-   do Stata_code5.do
-   ```
+- **Dataset structure (Section 5.2):** storage-type inspection, compression, and type recasting (`describe`, `compress`, `recast`); panel declaration (`xtset` / `pdata.frame()`)
+- **Missingness summaries (Section 5.4):** variable-level missing-value tabulation and nested pattern detection (`mdesc`, `misstable tree`, `misstable patterns`; `naniar::miss_var_summary()`, `mice::md.pattern()`)
+- **Subgroup missingness (Section 5.4):** missingness patterns by categorical subgroup (`missings`)
+- **Legacy panel missingness (Section 5.4):** missing-observation counts by panel unit (`xtmis`)
+- **Testing for Missing Completely at Random (Section 5.4.1):** Little's (1988) MCAR test, equal- and unequal-variance versions, and a covariate-dependent missingness (CDM) variant (`mcartest`; `naniar::mcar_test()` with a logistic-regression CDM fallback in R)
+- **Panel-specific missing-data diagnostics (Section 5.4.2):** the `xtmispanel` detect/test/graph workflow — missingness by variable, panel unit, and time period; a panel-aware MCAR test with stored results; and a missingness heatmap and combined dashboard
 
-The do-file downloads required datasets from the book's data repository, prepares variables, runs missingness summaries and patterns, and executes Little's MCAR and related diagnostics. All plots are exported to the graphs output directory with `_Stata` suffixes.
+## Output
 
-### Run with R
-1. Open `R_code5.R` (or `R_code5.txt`) in RStudio.
-2. Source or run the script:
-   ```r
-   source("R_code5.R")
-   ```
-The R script installs missing packages (if needed), downloads the datasets, creates necessary variables and ids, computes missingness summaries, displays missingness patterns, and runs Little's MCAR test (via `naniar::mcar_test()` with fallbacks to `BaylorEdPsych`/`MissMech` if available). It also includes a CDM-style logistic fallback (missingness ~ covariates) when formal MCAR functions are not present.
+Running the scripts produces the missingness tables and diagnostic output referenced in Chapter 5, written to the log, and the `xtmispanel` graph suite exported as PNG files. Stata exports all seven graph types (`heatmap`, `barvar`, `barpanel`, `bartime`, `pattern`, `timeline`, `combined`) with a `_Stata.png` suffix; R reproduces the five that have a direct `ggplot2` equivalent (`heatmap`, `barvar`, `barpanel`, `bartime`, `combined`) with an `_R.png` suffix — `pattern` and `timeline` are Stata-only. Logs are written as `Chapter5_Stata_output.log` and `Chapter5_R_output.log`.
 
-All plots are displayed in the RStudio Plots pane as they are generated and saved to the graphs output directory with `_R` suffixes. Output paths are hardcoded — no path configuration is required.
+## Related Chapters
 
-## What the Code Does (High Level)
-
-- Section 5.2 — Inspecting data structures and declaring panels:
-  - Load time series and panel datasets (describe, compress, recast id types)
-  - Read and filter SHEEO Excel file (drop pre-2010 or aggregates such as U.S. and D.C.)
-  - Create state identifiers and declare panels (`xtset` in Stata; `pdata.frame()` in R)
-
-- Section 5.3 — Missingness summaries and patterns:
-  - Variable-level missingness summaries (`mdesc`/`misstable` in Stata; `naniar::miss_var_summary`, `mice::md.pattern` in R)
-  - Nested missing patterns and frequencies (Stata `misstable tree`; R `md.pattern()` and a custom pattern frequency table)
-
-- Section 5.4 — Missing data diagnostics:
-  - Unit-level panel missing summaries (Stata `xtmis`; R can reproduce via grouping/aggregation)
-  - Tests for Missing Completely at Random (Little's MCAR):
-    - Stata: `mcartest` (equal- and unequal-variance versions; CDM conditional test variant)
-    - R: `naniar::mcar_test()` primary, with optional fallbacks to `BaylorEdPsych::LittleMCAR` or `MissMech` functions
-  - When formal MCAR tests are unavailable, the R code runs CDM‑style logistic diagnostics (fit missingness indicators on covariates, report LR tests and a Fisher combination)
-
-## Cross-Platform Validation
-
-A dedicated comparison file (`Comparison of R and Stata Results.txt`) documents that the R translation reproduces Stata outputs for Chapter 5 analyses. Notable matches:
-
-- Dataset loads and shapes:
-  - Example_4_2_2_TS: 56 observations, 2 variables (matched)
-  - Example_5_0: 250 observations, 6 variables (matched)
-  - SHEEO (filtered FY >= 2010, excluding U.S./D.C.): 750 rows (matched)
-  - HSLS truncated and Example_5_3 / Example_5_4_1: 23,503 rows (matched)
-  - Example_5_4 (IPEDS panel): 9,596 rows (matched)
-
-- Missingness summaries:
-  - P1TUITION: 1,407 missing (5.99%)
-  - X1RACE: 1,006 missing (4.28%)
-  - S3CLGPELL: 459 missing (1.95%)
-  - Dominant complete-case pattern (e.g., pattern `00000000` with 20,572 complete cases)
-  - These counts and pattern frequencies match between Stata and R outputs.
-
-- Little's MCAR test:
-  - Stata: Chi-square ≈ 68.1557, df = 2, p < 0.0001 (reject MCAR)
-  - R (`naniar::mcar_test`): statistic ≈ 68.2, df = 2, p ≈ 1.55e-15 (same conclusion)
-  - CDM and unequal-variance variants produce highly significant results in both implementations.
-
-Conclusion: The R translation reproduces Stata results with high precision. Minor differences are confined to formatting and numeric display rounding; substantive conclusions match.
-
-## Troubleshooting & Notes
-
-- Data download errors: Check internet connectivity or download datasets manually from the data repository and place them in your working directory.
-- Stata package installation:
-  - If `mcartest` is not available in your Stata installation, the do-file suggests `cap net install st0318.pkg, replace` or install the relevant user package.
-  - Install `xtmis`, `statastates`, or `tomata` via `ssc install` if missing.
-- R package issues:
-  - If automatic installation fails, install packages manually and restart R.
-  - The R script checks for optional MCAR packages (`BaylorEdPsych`, `MissMech`) — these are not required but provide alternative implementations.
-- Plot saving (R): The R script saves plots via a temp-file copy approach to avoid Dropbox sync-lock conflicts. If a plot is not found in the output directory after running, check the temp path reported in the console for a fallback copy.
-- Differences to expect:
-  - Output formatting differs across platforms (Stata tables vs R tibbles). Numbers match to displayed precision.
-  - Some specialized CDM tests available in Stata may not have direct equivalents in base R packages; the R script provides diagnostic fallbacks (CDM‑style logistic models) to approximate the same checks.
-  - Stata's `xtmis` produces two additional graph types (`pattern`, `timeline`) that are not replicated in the R script; only the five shared graph types have `_R` counterparts.
-
-## Reproducibility & Where to Look in the Code
-
-- `Stata_code5.do` contains inline comments and step-by-step commands for:
-  - Downloading data, recoding special missing values, summarizing missingness, and running Little's MCAR and CDM diagnostics.
-  - Exporting all `xtmis` graphs with `_Stata` filename suffixes via a `foreach` loop.
-- `R_code5.R` mirrors the Stata workflow and includes:
-  - Helpers to recode -9 to NA, downcast numeric types, produce missingness patterns, run `naniar::mcar_test`, and fallback CDM logistic diagnostics.
-  - A `save_fig()` helper that prints each plot to the RStudio Plots pane and saves it to the output directory using a temp-file copy strategy.
+Chapter 5 extends the time-series dataset introduced in Chapter 4 and prepares the SHEEO finance panel and HSLS:09 extract that Chapter 6 draws on for its descriptive-statistics and exploratory-graphics examples. More broadly, the missing-data awareness developed here — knowing what is missing, why, and how it is distributed across panel units and time — underlies the panel-data methods introduced starting in Chapter 7.
 
 ## Citation
 
 If you use these materials in research or teaching, please cite:
 
-Titus, M. A. (2025). Higher Education Policy Analysis Using Quantitative Techniques (2nd ed.). Springer.
+> Titus, M. A. (2025). *Higher Education Policy Analysis Using Quantitative Techniques* (2nd ed.). Springer.
 
-GitHub repository: https://github.com/higher-ed-policy-analysis-2nd-edition/code
+GitHub repository: https://github.com/higher-ed-policy-analysis-2nd-edition/
 
 ## Author & Contact
 
-Marvin A. Titus, Ph.D.  
+**Marvin A. Titus, Ph.D.**
 Email: marvinatitus@gmail.com
 
 ## License
 
-Code is provided for educational and research purposes. See the repository license for terms of use.
-
-## Last Updated
-
-March 29, 2026
+Code is provided for educational and research purposes. Refer to the repository license for terms of use.
