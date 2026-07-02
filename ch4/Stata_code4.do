@@ -1,13 +1,14 @@
-*================================================================
+*========================================================================
 * Chapter 4 - Creating Datasets and Managing Data
 * Complete Stata Code
-* Higher Education Policy Analysis Using Quantitative Techniques (2nd Edition)
-* Source: https://github.com/higher-ed-policy-analysis-2nd-
-* edition/tree/main/code/ch4
+* Higher Education Policy Analysis Using Quantitative Techniques
+* (2nd Edition)
+* Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch4
 * Author: Marvin A. Titus
 * Date: November 16, 2025
-*================================================================
-
+* NOTE: Code development was assisted by Claude (Anthropic). The author
+* provided specifications and reviewed, tested, and validated all code.
+*========================================================================
 * Script tested in Stata 19.5
 * Compatible with Stata version 19 or later
 
@@ -49,10 +50,23 @@ else {
 di "Chapter 4 log opened: " c(current_date) " " c(current_time)
 di "Graphs directory: $graphs_dir"
 
+clear all
+set more off
+version 19
+set scheme s2mono        // Monochrome scheme for Springer B&W print
+set graphics on          // Ensure graph window is active throughout
 
-*===============================================================================
+*========================================================================
+* PACKAGE INSTALLATIONS (run once; comment out thereafter)
+*========================================================================
+ssc install statastates,  replace   // FIPS codes / state abbreviations (4.2.2)
+* ssc install iefieldkit, replace   // Optional: primary data collection (CAPI)
+* Reshape long uses the built-in `sreshape`; if unavailable on your system,
+* run: search sreshape, all  -- then install package dm0090.
+
+*========================================================================
 * Section 4.2.1: Primary Data Entry
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * Simple data entry using input command
@@ -99,9 +113,9 @@ insheet using "Example_1.csv", comma
 * https://github.com/worldbank/iefieldkit
 * https://dimewiki.worldbank.org/wiki/Iefieldkit
 
-*===============================================================================
+*========================================================================
 * Section 4.2.2: Secondary Data - Cross-Sectional Data
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * Importing data from NCES Digest Table 302.50
@@ -123,9 +137,7 @@ browse
 * 🔹 Adding FIPS codes and state abbreviations
 *----------------------------------------------------------------
 
-* Install statastates package (run once)
-ssc install statastates, replace
-
+* statastates installed in the package block above
 * Add FIPS codes and state abbreviations
 statastates, name(State)
 
@@ -171,9 +183,9 @@ save "US high school graduates in 2012 enrolled in PSE, by state.dta", replace
 
 clear all
 
-*===============================================================================
+*========================================================================
 * Section 4.2.2: Secondary Data - Time Series Data
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * Creating time series dataset from NCES Digest Table 302.10
@@ -202,9 +214,9 @@ save "Percent of US high school graduates in PSE, 1960 to 2016.dta", replace
 
 clear all
 
-*===============================================================================
+*========================================================================
 * Section 4.2.2: Secondary Data - Panel Data (Wide Format)
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * Creating panel dataset from NCES Digest Table 304.70
@@ -251,9 +263,9 @@ save "Undergraduate enrollment data - Long.dta", replace
 
 clear all
 
-*===============================================================================
+*========================================================================
 * Section 4.2.2: Creating Additional Panel Variables
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * Creating and reshaping high school graduation dataset
@@ -282,9 +294,9 @@ save "HSGrad - Long.dta", replace
 
 clear all
 
-*===============================================================================
+*========================================================================
 * Section 4.2.2: Joining Panel Datasets
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * 🔹 Joining two panel datasets
@@ -334,9 +346,9 @@ browse
 
 clear all
 
-*===============================================================================
+*========================================================================
 * Additional Data Management and Panel Data Commands
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * Loading and examining the panel dataset
@@ -430,9 +442,9 @@ save "Example_4_2_2_Panel.dta", replace
 
 clear all
 
-*===============================================================================
+*========================================================================
 * Additional Useful Panel Data Examples
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * Working with the time series dataset
@@ -465,9 +477,9 @@ save "Example_4_2_2_TS.dta", replace
 
 clear all
 
-*===============================================================================
+*========================================================================
 * Best Practices Summary
-*===============================================================================
+*========================================================================
 
 /*
 KEY RECOMMENDATIONS FOR DATASET CREATION AND MANAGEMENT:
@@ -528,11 +540,12 @@ KEY RECOMMENDATIONS FOR DATASET CREATION AND MANAGEMENT:
     - Use xtdes to verify the merged panel structure
 */
 
-*===============================================================================
+*========================================================================
 * END OF CHAPTER 4 CODE
-*===============================================================================
+*========================================================================
 
-* Close log
-capture log close
+clear all
+
+log close
 
 exit

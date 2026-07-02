@@ -1,4 +1,4 @@
-# ================================================================
+# ============================================================================
 # Chapter 8 - Advanced Statistical Techniques: I
 # R Translation of Complete Stata Code
 # Higher Education Policy Analysis Using Quantitative Techniques
@@ -6,19 +6,25 @@
 # Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch8
 # Author: Marvin A. Titus
 # Date: March 2026
-# ================================================================
+# NOTE: Code development was assisted by Claude (Anthropic). The author
+#       provided specifications and reviewed, tested, and validated all code.
+# ============================================================================
 
 # Script tested in R 4.4.x
 # Required packages: haven, dplyr, tidyr, lmtest, sandwich, plm,
 #                    urca, forecast, ggplot2, scales
 
-# ----------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Install any missing packages (run once)
-# ----------------------------------------------------------------
-required_pkgs <- c("haven", "dplyr", "tidyr", "lmtest", "sandwich",
-                   "plm", "urca", "forecast", "ggplot2", "scales")
-new_pkgs <- required_pkgs[!required_pkgs %in% installed.packages()[, "Package"]]
-if (length(new_pkgs)) install.packages(new_pkgs)
+# ----------------------------------------------------------------------------
+install_if_missing <- function(pkgs) {
+  to_install <- pkgs[!sapply(pkgs, requireNamespace, quietly = TRUE)]
+  if (length(to_install) > 0)
+    install.packages(to_install, dependencies = TRUE)
+}
+
+install_if_missing(c("haven", "dplyr", "tidyr", "lmtest", "sandwich",
+                      "plm", "urca", "forecast", "ggplot2", "scales"))
 
 suppressPackageStartupMessages({
   library(haven)     # read_dta()               — replaces: use *.dta
@@ -36,12 +42,38 @@ suppressPackageStartupMessages({
   library(scales)    # axis label formatting
 })
 
-# ================================================================
-# WORKING DIRECTORY AND OUTPUT PATHS
-# ================================================================
+# ============================================================================
+# GLOBAL GGPLOT2 THEME
+# Monochrome; approximates Stata s2mono for Springer B&W print.
+# ============================================================================
 
-graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 8/Output/graphs"
-log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 8/Output/logs/Chapter8_R_output.log"
+theme_springer <- function(base_size = 11) {
+  theme_bw(base_size = base_size) %+replace%
+    theme(
+      panel.grid.minor  = element_blank(),
+      plot.title        = element_text(face = "bold", hjust = 0.5, size = base_size),
+      plot.subtitle     = element_text(hjust = 0.5,   size = base_size - 1),
+      plot.caption      = element_text(hjust = 0,     size = base_size - 3),
+      legend.background = element_rect(fill = "white", color = NA),
+      strip.background  = element_rect(fill = "grey90", color = "grey50")
+    )
+}
+theme_set(theme_springer())
+
+# ============================================================================
+# WORKING DIRECTORY AND OUTPUT PATHS
+# Paths switch automatically by username, mirroring the Stata logic.
+# ============================================================================
+
+user <- Sys.info()[["user"]]
+
+if (user == "marvi") {
+  graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 8/Output/graphs"
+  log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 8/Output/logs/Chapter8_R_output.log"
+} else {
+  graphs_dir <- "Output/graphs"
+  log_path   <- "Output/logs/Chapter8_R_output.log"
+}
 dir.create(graphs_dir,        showWarnings = FALSE, recursive = TRUE)
 dir.create(dirname(log_path), showWarnings = FALSE, recursive = TRUE)
 
@@ -50,9 +82,11 @@ sink(log_path, split = TRUE)
 cat("Chapter 8 log opened:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n")
 cat("Graphs directory:    ", graphs_dir, "\n\n")
 
-# ----------------------------------------------------------------
+options(warn = 1)   # print warnings immediately (Stata default)
+
+# ----------------------------------------------------------------------------
 # Helper: safe download
-# ----------------------------------------------------------------
+# ----------------------------------------------------------------------------
 safe_download <- function(url, dest) {
   tryCatch(
     download.file(url, dest, mode = "wb", quiet = TRUE),
@@ -110,13 +144,13 @@ print_reg <- function(model, vcov_mat = NULL, title = NULL) {
   invisible(ct)
 }
 
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 #
 #         SECTION 8.2: TIME SERIES DATA AND AUTOCORRELATION
 #
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 
 cat("\n*================================================================\n")
 cat("* SECTION 8.2: Time Series Data and Autocorrelation\n")
@@ -162,7 +196,7 @@ fig8_1 <- ggplot(df_long_levels,
   labs(title    = "Trends in Enrollment in 2 YR, Tuition at 2 YR, and Unemployment Rates",
        subtitle = "1970 to 2017",
        x = "Year", y = "Logs") +
-  theme_bw() +
+  theme_springer() +
   theme(legend.position = "bottom")
 save_fig(fig8_1, "fig8_1_ts_levels_R.png")
 
@@ -219,7 +253,7 @@ fig8_2 <- ggplot(df_long_diff,
   labs(title    = "First-Differenced Enrollment in 2 YR, Tuition at 2 YR, and Unemployment Rates",
        subtitle = "1971 to 2017",
        x = "Year", y = "Change in Logs") +
-  theme_bw() +
+  theme_springer() +
   theme(legend.position = "bottom")
 save_fig(fig8_2, "fig8_2_ts_firstdiff_R.png")
 
@@ -241,7 +275,7 @@ res_ols <- residuals(ols_diff)
 cat("\n. ac residuals\n")
 fig8_3 <- forecast::ggAcf(res_ols, lag.max = 20) +
   labs(title = "Autocorrelation Function of OLS Residuals") +
-  theme_bw()
+  theme_springer()
 save_fig(fig8_3, "fig8_3_ac_residuals_R.png")
 
 # Partial autocorrelation function — equivalent to: pac residuals, yw
@@ -249,17 +283,17 @@ save_fig(fig8_3, "fig8_3_ac_residuals_R.png")
 cat("\n. pac residuals, yw\n")
 fig8_4 <- forecast::ggPacf(res_ols, lag.max = 20, method = "yw") +
   labs(title = "Partial Autocorrelation Function of OLS Residuals (Yule-Walker)") +
-  theme_bw()
+  theme_springer()
 save_fig(fig8_4, "fig8_4_pac_residuals_R.png")
 
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 #
 #      SECTION 8.3: TESTING FOR AUTOCORRELATIONS
 #      Section 8.3.1: Autocorrelation Tests — Time Series Data
 #
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 
 cat("\n*================================================================\n")
 cat("* SECTION 8.3: Testing for Autocorrelations\n")
@@ -309,13 +343,13 @@ cat(sprintf("       1    |      %7.3f               1              %7.4f\n",
 cat("---------------------------------------------------------------------------\n")
 cat("              H0: no serial correlation\n\n")
 
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 #
 #     SECTION 8.4: TIME SERIES REGRESSION MODELS WITH AR TERMS
 #
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 
 cat("\n*================================================================\n")
 cat("* SECTION 8.4: Time Series Regression Models with AR Terms\n")
@@ -406,9 +440,9 @@ for (nm in names(coef_pw)) {
 }
 cat(sprintf("\n  rho (AR1 coefficient): %.6f\n\n", rho_pw))
 
-# ================================================================
+# ============================================================================
 # Section 8.4.1: Autocorrelation of Residuals from the P-W Regression
-# ================================================================
+# ============================================================================
 
 cat("\n*----------------------------------------------------------------\n")
 cat("* Section 8.4.1: Autocorrelation of the Residuals from the P-W Regression\n")
@@ -423,14 +457,14 @@ res_pw <- na.omit(pw_fit$residuals)
 cat(". ac residuals_PW\n")
 fig8_5 <- forecast::ggAcf(res_pw, lag.max = 20) +
   labs(title = "Autocorrelation Function of Prais-Winsten Residuals") +
-  theme_bw()
+  theme_springer()
 save_fig(fig8_5, "fig8_5_ac_residuals_PW_R.png")
 
 # Partial autocorrelation function — equivalent to: pac residuals_PW, yw
 cat("\n. pac residuals_PW, yw\n")
 fig8_6 <- forecast::ggPacf(res_pw, lag.max = 20, method = "yw") +
   labs(title = "Partial Autocorrelation Function of Prais-Winsten Residuals (Yule-Walker)") +
-  theme_bw()
+  theme_springer()
 save_fig(fig8_6, "fig8_6_pac_residuals_PW_R.png")
 
 # Cumby-Huizinga test on P-W residuals
@@ -487,13 +521,13 @@ cat("\n. actest residuals_armax, lag(4) q0 rob\n")
 cat("  [R equivalent: Ljung-Box Q-test on ARMAX residuals, lag = 4]\n\n")
 print(Box.test(res_armax, lag = 4, type = "Ljung-Box"))
 
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 #
 #     SECTION 8.6: EXAMPLES OF AUTOCORRELATION TESTS — PANEL DATA
 #
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 
 cat("\n*================================================================\n")
 cat("* SECTION 8.6: Examples of Autocorrelation Tests\342\200\224Panel Data\n")
@@ -542,13 +576,13 @@ cat(". xtserial lnnetuit lnstapr lnfte lnpc_income, output\n")
 cat("  [R equivalent: Wooldridge test — plm::pbgtest()]\n\n")
 print(pbgtest(fe_86))
 
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 #
 #       SECTION 8.7: PANEL-DATA REGRESSION MODELS WITH AR TERMS
 #
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 
 cat("\n*================================================================\n")
 cat("* SECTION 8.7: Panel-Data Regression Models with AR Terms\n")
@@ -649,14 +683,14 @@ cat("\n. actest ar_residuals_re, lags(10) q0 robust\n")
 cat("  [R equivalent: Ljung-Box Q-test on RE residuals, lag = 10]\n\n")
 print(Box.test(ar_residuals_re, lag = 10, type = "Ljung-Box"))
 
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 #
 #         SECTION 8.8: CROSS-SECTIONAL DEPENDENCE
 #         Section 8.8.2: Tests to Detect Cross-Sectional Dependence
 #
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 
 cat("\n*================================================================\n")
 cat("* SECTION 8.8: Cross-Sectional Dependence\n")
@@ -783,14 +817,14 @@ print(pcdtest(fe_882, test = "cd"))
 cat(sprintf("  Average pairwise correlation of FE residuals: %.4f\n\n",
             pcdtest(fe_882, test = "rho")$statistic))
 
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 #
 #     SECTION 8.9: PANEL REGRESSION MODELS THAT TAKE
 #                  CROSS-SECTIONAL DEPENDENCY INTO ACCOUNT
 #
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 
 cat("\n*================================================================\n")
 cat("* SECTION 8.9: Panel Regression Models That Take Cross-Sectional\n")
@@ -832,12 +866,12 @@ cat("\n. xtcdf xtscc_residuals_fe2y\n")
 cat("  [R equivalent: Pesaran CD test on year-FE model residuals]\n\n")
 print(pcdtest(fe_882_yr, test = "cd"))
 
-# ================================================================
+# ============================================================================
 # Close log — equivalent to: log close
-# ================================================================
+# ============================================================================
 cat("Chapter 8 R script completed:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n")
 sink()
 
-# ================================================================
+# ============================================================================
 # END OF CHAPTER 8 R CODE
-# ================================================================
+# ============================================================================

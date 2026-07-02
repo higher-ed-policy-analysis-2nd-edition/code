@@ -1,14 +1,14 @@
-*================================================================
+*========================================================================
 * Chapter 8 - Advanced Statistical Techniques: I
 * Complete Stata Code
 * Higher Education Policy Analysis Using Quantitative Techniques
 * (2nd Edition)
-* Source: https://github.com/higher-ed-policy-analysis-2nd-
-* edition/tree/main/code/ch8
+* Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch8
 * Author: Marvin A. Titus
 * Date: November 19, 2025
-*================================================================
-
+* NOTE: Code development was assisted by Claude (Anthropic). The author
+* provided specifications and reviewed, tested, and validated all code.
+*========================================================================
 * Script tested in Stata 19.5
 * Compatible with Stata version 19 or later
 
@@ -49,9 +49,26 @@ else {
 
 di "Chapter 8 log opened: " c(current_date) " " c(current_time)
 di "Graphs directory: $graphs_dir"
-*================================================================
+
+clear all
+set more off
+version 19
+set scheme s2mono        // Monochrome scheme for Springer B&W print
+set graphics on          // Ensure graph window is active throughout
+
+*========================================================================
+* PACKAGE INSTALLATIONS (run once; comment out thereafter)
+*========================================================================
+* actest is optional; uncomment if needed for autocorrelation diagnostics
+* ssc install actest, replace
+ssc install xtcsd, replace   // Pesaran CD test for cross-sectional dependence
+ssc install xtcd,  replace   // Cross-sectional dependence test
+ssc install xtcd2, replace   // Cross-sectional dependence test (alternative)
+ssc install xtcdf, replace   // Cross-sectional dependence F-test
+
+*========================================================================
 * Section 8.2: Time Series Data and Autocorrelation
-*================================================================
+*========================================================================
 
 clear all
 
@@ -107,10 +124,10 @@ graph export "$graphs_dir/fig8_3_ac_residuals_Stata.png", replace width(1200)
 pac residuals, yw
 graph export "$graphs_dir/fig8_4_pac_residuals_Stata.png", replace width(1200)
 
-*================================================================
+*========================================================================
 * Section 8.3: Testing for Autocorrelations
 * Section 8.3.1: Examples of Autocorrelation Tests—Time Series Data
-*================================================================
+*========================================================================
 
 * Durbin-Watson test for autocorrelation
 estat dwatson
@@ -119,15 +136,15 @@ estat dwatson
 quietly: reg D1.lnenpub2yr D1.lntupub2yr D1.lnunemprate, rob
 estat durbinalt, force
 
-*================================================================
+*========================================================================
 * Section 8.4: Time Series Regression Models with AR terms
-*================================================================
+*========================================================================
 * Prais-Winsten regression with AR(1) term
 prais D1.lnenpub2yr D1.lntupub2yr D1.lnunemprate, rob
 
-*================================================================
+*========================================================================
 * Section 8.4.1: Autocorrelation of the Residuals from the P-W Regression
-*================================================================
+*========================================================================
 
 * Generate residuals from Prais-Winsten regression
 predict residuals_PW, resid
@@ -153,9 +170,9 @@ predict residuals_armax, residuals
 * Test residuals for autocorrelation
 actest residuals_armax, lag(4) q0 rob
 
-*================================================================
+*========================================================================
 * Section 8.6: Examples of Autocorrelation Tests—Panel Data
-*================================================================
+*========================================================================
 
 * Download panel dataset using the copy and use commands
 copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch8/Example_8_6.dta" ///
@@ -172,9 +189,9 @@ gen lnpc_income = log(pc_income)
 * Then we invoke the xtserial command with respect to those variables.
 xtserial lnnetuit lnstapr lnfte lnpc_income, output
 
-*================================================================
+*========================================================================
 * Section 8.7: Panel-Data Regression Models with AR Terms
-*================================================================
+*========================================================================
 
 * Panel regression with AR(1) error structure, xtregar command
 xtregar lnnetuit lnstapr lnfte lnpc_income, fe
@@ -197,10 +214,10 @@ predict ar_residuals_re, ue
 * Then we conduct the C-H autocorrelation general test of the residuals.
 actest ar_residuals_re, lags(10) q0 robust
 
-*================================================================
+*========================================================================
 * Section 8.8: Cross-Sectional Dependence
 * Section 8.8.2: Tests to Detect Cross-Sectional Dependence
-*================================================================
+*========================================================================
 /* We change to our working directory and access our dataset from our GitHub
  directory using the copy and use commands. */
 copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch8/Example_8_8_2.dta" "Example_8_8_2.dta", replace
@@ -222,10 +239,7 @@ gen lnfte = log(totfteiarep)
 gen lnftfac = log(ftfac)
 gen lnptfac = log(ptfac)
 
-/*If not already done so, we install the Stata user-written routine, xtcsd
- (De Hoyos and Sarafidis 2006) */
-ssc install xtcsd, replace
- 
+* xtcsd (De Hoyos and Sarafidis 2006) installed in the package block above
 * Breusch-Pagan LM test for cross-sectional dependence
 
 /* Next, we "quietly" run our fixed-effects regression model using the within 
@@ -237,8 +251,7 @@ xtcsd, pesaran
 xtcsd, friedman // This takes a while. 
 xtcsd, frees    // This also takes a while. 
 
-* If needed, we download the most recent version of xtcd (Eberhardt 2011). 
-ssc install xtcd, replace
+* xtcd (Eberhardt 2011) installed in the package block above
 
 * Then we run the test on variables of interest from the same panel dataset.
 xtcd lneg lntuition lnftfac lnptfac // This may take few seconds.
@@ -254,8 +267,7 @@ xtcd ue_residuals_re
    have what is called a "weak" correlation (Pesaran 2015). Written by Pesaran,
    the Stata routine xtcd2 allows us to test for weak cross-sectional dependence.
 */
-* install xtcd2 if needed. 
-ssc install xtcd2, replace
+* xtcd2 installed in the package block above
 
 * quietly run fixed-effect, then xtcd2 
 qui: xtreg lneg lnstatea lntuition lnfte lnftfac lnptfac, fe
@@ -267,7 +279,7 @@ xtcd2
    a test on several variables as well as the residuals from a regression model.
    As customary, we first install the most recent version of Wursten-written 
    Stata routine. */
-ssc install xtcdf, replace
+* xtcdf installed in the package block above
 
 * Then we "quietly" run our fixed-effect regression model and generate the residuals.
 qui xtreg lneg lnstatea lntuition lnfte lnftfac lnptfac, fe
@@ -277,10 +289,10 @@ predict ue_residuals_fe, ue
    from the fixed-effects regression. */
 xtcdf lneg lnstatea lntuition lnfte lnftfac lnptfac ue_residuals_fe
 
-*================================================================
+*========================================================================
 * Section 8.9: Panel Regression Models That Take Cross-Sectional
 *              Dependency into Account
-*================================================================
+*========================================================================
 /* * Download panel dataset using the copy and use commands */
 copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch8/Example_8_8_2.dta" "Example_8_8_2.dta", replace
 
@@ -308,14 +320,13 @@ qui xtscc lneg lnstatea lntuition lnfte lnftfac lnptfac i.endyear, fe lag(2)
 predict xtscc_residuals_fe2y, resid
 xtcdf xtscc_residuals_fe2y
 
+*========================================================================
+* END OF CHAPTER 8 CODE
+*========================================================================
+
 clear all
 
-* Close log
-capture log close
+log close
 
 exit
-
-*================================================================
-* END OF CHAPTER 8 CODE
-*================================================================
 

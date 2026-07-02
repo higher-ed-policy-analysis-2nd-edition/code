@@ -1,23 +1,21 @@
-*================================================================
+*========================================================================
 * Chapter 7 - Introduction to Intermediate Statistical Techniques
 * Complete Stata Code
-* Higher Education Policy Analysis Using Quantitative Techniques 
+* Higher Education Policy Analysis Using Quantitative Techniques
 * (2nd Edition)
-*================================================================
 * Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch7
-* README.md - Detailed instructions and documentation
+* Author: Marvin A. Titus
+* Date: December 2025
+* NOTE: Code development was assisted by Claude (Anthropic). The author
+* provided specifications and reviewed, tested, and validated all code.
+*========================================================================
+* Script tested in Stata 19.5
+* Compatible with Stata version 19 or later
 *
-* Important Note: Before running any code, you must:
+* See README.md in this folder for detailed instructions. Before running:
 *   1. Download data files from the data repository
 *   2. Save them to your local working directory
 *   3. Change all file paths in the code to match your directory structure
-*
-* Author: Marvin A. Titus
-* Date: December 2025
-*================================================================
-
-* Script tested in Stata 19.5
-* Compatible with Stata version 15 or later
 
 *========================================================================
 * IMPORTANT: Set working directory (customize this for your system)
@@ -57,13 +55,17 @@ else {
 di "Chapter 7 log opened: " c(current_date) " " c(current_time)
 di "Graphs directory: $graphs_dir"
 
-*========================================================================
-* REQUIRED USER-WRITTEN PACKAGE
-*========================================================================
+clear all
+set more off
+version 19
+set scheme s2mono        // Monochrome scheme for Springer B&W print
+set graphics on          // Ensure graph window is active throughout
 
-/* The rhausman command is needed for Section 7.4.1 (cluster-robust Hausman test)
-   Install once with: ssc install rhausman, replace
-   If already installed, you can skip this step */
+*========================================================================
+* PACKAGE INSTALLATIONS (run once; comment out thereafter)
+*========================================================================
+* rhausman is needed for Section 7.4.1 (cluster-robust Hausman test)
+ssc install rhausman, replace
 
 *========================================================================
 *========================================================================
@@ -649,13 +651,12 @@ di "(Coefficients should be identical)"
 
 drop masters_hat
 
-*================================================================
+*========================================================================
 * END OF CHAPTER 7 CODE
-*================================================================
+*========================================================================
 
 clear all
 
-* Close log
-capture log close
+log close
 
 exit

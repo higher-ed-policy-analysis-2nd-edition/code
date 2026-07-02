@@ -1,23 +1,28 @@
-# ================================================================
+# ============================================================================
 # Chapter 4 - Creating Datasets and Managing Data
 # R Translation of Complete Stata Code
 # Higher Education Policy Analysis Using Quantitative Techniques
 # (2nd Edition)
-# Source: https://github.com/higher-ed-policy-analysis-2nd-
-#         edition/tree/main/code/ch4
+# Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch4
 # Author: Marvin A. Titus
 # Date: November 16, 2025
-# ================================================================
+# NOTE: Code development was assisted by Claude (Anthropic). The author
+#       provided specifications and reviewed, tested, and validated all code.
+# ============================================================================
 
 # Script tested in R 4.4.x
 # Required packages: readxl, writexl, haven, dplyr, tidyr, psych, plm
 
-# ----------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Install any missing packages (run once)
-# ----------------------------------------------------------------
-required_pkgs <- c("readxl", "writexl", "haven", "dplyr", "tidyr", "psych", "plm")
-new_pkgs <- required_pkgs[!required_pkgs %in% installed.packages()[, "Package"]]
-if (length(new_pkgs)) install.packages(new_pkgs)
+# ----------------------------------------------------------------------------
+install_if_missing <- function(pkgs) {
+  to_install <- pkgs[!sapply(pkgs, requireNamespace, quietly = TRUE)]
+  if (length(to_install) > 0)
+    install.packages(to_install, dependencies = TRUE)
+}
+
+install_if_missing(c("readxl", "writexl", "haven", "dplyr", "tidyr", "psych", "plm"))
 
 suppressPackageStartupMessages({
   library(readxl)   # read_excel()         — replaces: import excel
@@ -29,10 +34,10 @@ suppressPackageStartupMessages({
   library(plm)      # pdata.frame()        — replaces: xtset / xtdes / xtsum
 })
 
-# ================================================================
+# ============================================================================
 # WORKING DIRECTORY AND OUTPUT PATHS
 # Paths switch automatically by username, mirroring the Stata logic.
-# ================================================================
+# ============================================================================
 
 user <- Sys.info()[["user"]]
 
@@ -48,6 +53,8 @@ if (user == "marvi") {
 # Equivalent to: log using "...", replace text
 sink(log_path, split = TRUE)   # split = TRUE also prints to console
 cat("Chapter 4 log opened:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n\n")
+
+options(warn = 1)   # print warnings immediately (Stata default)
 
 # ----------------------------------------------------------------
 # Helper: safe download
@@ -142,9 +149,9 @@ parse_nces_wide <- function(file, sheet, prefix, filter_state_col = TRUE) {
   df
 }
 
-# ================================================================
+# ============================================================================
 # Section 4.2.1: Primary Data Entry
-# ================================================================
+# ============================================================================
 cat("*===============================================================================\n")
 cat("* Section 4.2.1: Primary Data Entry\n")
 cat("*===============================================================================\n\n")
@@ -188,9 +195,9 @@ cat("\n")
 # https://github.com/worldbank/iefieldkit
 # ----------------------------------------------------------------
 
-# ================================================================
+# ============================================================================
 # Section 4.2.2: Secondary Data — Cross-Sectional Data
-# ================================================================
+# ============================================================================
 cat("*===============================================================================\n")
 cat("* Section 4.2.2: Secondary Data - Cross-Sectional Data\n")
 cat("*===============================================================================\n\n")
@@ -295,9 +302,9 @@ haven::write_dta(df_crosssec,
   "US high school graduates in 2012 enrolled in PSE, by state.dta")
 cat("file saved: US high school graduates in 2012 enrolled in PSE, by state.dta\n\n")
 
-# ================================================================
+# ============================================================================
 # Section 4.2.2: Secondary Data — Time Series Data
-# ================================================================
+# ============================================================================
 cat("*===============================================================================\n")
 cat("* Section 4.2.2: Secondary Data - Time Series Data\n")
 cat("*===============================================================================\n\n")
@@ -330,9 +337,9 @@ haven::write_dta(df_ts,
   "Percent of US high school graduates in PSE, 1960 to 2016.dta")
 cat("file saved: Percent of US high school graduates in PSE, 1960 to 2016.dta\n\n")
 
-# ================================================================
+# ============================================================================
 # Section 4.2.2: Secondary Data — Panel Data (Wide Format)
-# ================================================================
+# ============================================================================
 cat("*===============================================================================\n")
 cat("* Section 4.2.2: Secondary Data - Panel Data (Wide Format)\n")
 cat("*===============================================================================\n\n")
@@ -406,9 +413,9 @@ cat("  N =", nrow(df_long), "observations\n\n")
 haven::write_dta(df_long, "Undergraduate enrollment data - Long.dta")
 cat("file saved: Undergraduate enrollment data - Long.dta\n\n")
 
-# ================================================================
+# ============================================================================
 # Section 4.2.2: Creating Additional Panel Variables
-# ================================================================
+# ============================================================================
 cat("*===============================================================================\n")
 cat("* Section 4.2.2: Creating Additional Panel Variables\n")
 cat("*===============================================================================\n\n")
@@ -468,9 +475,9 @@ pdata.frame(df_hsgrad_long, index = c("id", "year"))
 haven::write_dta(df_hsgrad_long, "HSGrad - Long.dta")
 cat("file saved: HSGrad - Long.dta\n\n")
 
-# ================================================================
+# ============================================================================
 # Section 4.2.2: Joining Panel Datasets
-# ================================================================
+# ============================================================================
 cat("*===============================================================================\n")
 cat("* Section 4.2.2: Joining Panel Datasets\n")
 cat("*===============================================================================\n\n")
@@ -516,9 +523,9 @@ cat("  N =", nrow(df_panel), "observations\n\n")
 haven::write_dta(df_panel, "Example_4_2_2_Panel.dta")
 cat("file saved: Example_4_2_2_Panel.dta\n\n")
 
-# ================================================================
+# ============================================================================
 # Additional Data Management and Panel Data Commands
-# ================================================================
+# ============================================================================
 cat("*===============================================================================\n")
 cat("* Additional Data Management and Panel Data Commands\n")
 cat("*===============================================================================\n\n")
@@ -700,9 +707,9 @@ cat("files saved: Example_4_2_2_Panel.csv, Example_4_2_2_Panel.xlsx\n\n")
 haven::write_dta(df_panel, "Example_4_2_2_Panel.dta")
 cat("file saved: Example_4_2_2_Panel.dta\n\n")
 
-# ================================================================
+# ============================================================================
 # Additional Useful Panel Data Examples
-# ================================================================
+# ============================================================================
 cat("*===============================================================================\n")
 cat("* Additional Useful Panel Data Examples\n")
 cat("*===============================================================================\n\n")
@@ -737,9 +744,9 @@ cat("\n")
 haven::write_dta(df_ts, "Example_4_2_2_TS.dta")
 cat("file saved: Example_4_2_2_TS.dta\n\n")
 
-# ================================================================
+# ============================================================================
 # Best Practices Summary
-# ================================================================
+# ============================================================================
 
 # KEY RECOMMENDATIONS FOR DATASET CREATION AND MANAGEMENT (R):
 #
@@ -783,12 +790,12 @@ cat("file saved: Example_4_2_2_TS.dta\n\n")
 #    - Use dplyr::inner_join(df1, df2, by = c("id","year")) for matched obs
 #    - Equivalent to Stata's joinby with unmatched(none)
 
-# ================================================================
+# ============================================================================
 # Close log — equivalent to: log close
-# ================================================================
+# ============================================================================
 cat("Chapter 4 R script completed:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n")
 sink()
 
-# ================================================================
+# ============================================================================
 # END OF CHAPTER 4 R CODE
-# ================================================================
+# ============================================================================

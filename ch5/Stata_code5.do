@@ -1,13 +1,14 @@
-*================================================================
+*========================================================================
 * Chapter 5 - Getting to Know Thy Data
 * Complete Stata Code
-* Higher Education Policy Analysis Using Quantitative Techniques (2nd Edition)
-* Source: https://github.com/higher-ed-policy-analysis-2nd-
-* edition/tree/main/code/ch5
+* Higher Education Policy Analysis Using Quantitative Techniques
+* (2nd Edition)
+* Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch5
 * Author: Marvin A. Titus
 * Date: November 10, 2025
-*================================================================
-
+* NOTE: Code development was assisted by Claude (Anthropic). The author
+* provided specifications and reviewed, tested, and validated all code.
+*========================================================================
 * Script tested in Stata 19.5
 * Compatible with Stata version 19 or later
 
@@ -49,9 +50,23 @@ else {
 di "Chapter 5 log opened: " c(current_date) " " c(current_time)
 di "Graphs directory: $graphs_dir"
 
-*===============================================================================
+clear all
+set more off
+version 19
+set scheme s2mono        // Monochrome scheme for Springer B&W print
+set graphics on          // Ensure graph window is active throughout
+
+*========================================================================
+* PACKAGE INSTALLATIONS (run once; comment out thereafter)
+*========================================================================
+cap ssc install mdesc,      replace   // Missing-data summary tables
+cap ssc install tomata                // Panel/matrix data utilities
+cap ssc install xtmis                 // Panel missing-data diagnostics
+cap ssc install xtmispanel, replace   // Panel missing-data patterns
+
+*========================================================================
 * Section 5.2: Getting to Know the Structure of Our Datasets
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * Time series dataset: describe and compress
@@ -107,9 +122,9 @@ describe
 
 clear all
 
-*===============================================================================
+*========================================================================
 * Section 5.2 (continued): SHEEO Finance Data Example
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * Download and import SHEEO state higher education finance data
@@ -163,9 +178,9 @@ xtset state_fips FY, yearly
 
 clear all
 
-*===============================================================================
+*========================================================================
 * Section 5.3: Getting to Know Our Data
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * Loading the HSLS:09 public-use student dataset
@@ -213,9 +228,9 @@ mvdecode _all, mv(-9=.)
 * Save recoded file
 * save "Example_5_4.dta", replace
 
-*===============================================================================
+*========================================================================
 * Section 5.4: Missing Data Analysis
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * 🔹 Tabulate missing values with mdesc
@@ -231,9 +246,7 @@ copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/da
 
 use "Example_5_4_1.dta", clear
 
-* Install mdesc from SSC (run once)
-cap ssc install mdesc, replace
-
+* mdesc installed in the package block above
 * Tabulate number, total, and percent missing for each variable
 mdesc
 
@@ -250,9 +263,9 @@ misstable patterns
 * Nested pattern of missing values (frequency counts)
 misstable tree, frequency
 
-*===============================================================================
+*========================================================================
 * Section 5.4 (continued): Missing Data by Categorical Variables
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * 🔹 Examine missing data patterns by subgroup using missings
@@ -270,9 +283,9 @@ bysort X1SESQ5 : missings table
 * Missingness by race-ethnicity
 bysort X1RACE : missings table
 
-*===============================================================================
+*========================================================================
 * Section 5.4 (continued): Panel Missing Analysis with xtmis (Legacy)
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * xtmis: frequency of missing values by panel unit
@@ -290,19 +303,16 @@ copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/da
 
 use "Example_5_4.dta", clear
 
-* Install dependencies (run once)
-cap ssc install tomata
-cap ssc install xtmis
-
+* tomata and xtmis installed in the package block above
 * xtmis requires a string ID variable; create one from the numeric IPEDS code
 tostring unitid, generate(unitid_s)
 
 * Report missing observations for grantlow by institution
 xtmis grantlow, id(unitid_s)
 
-*===============================================================================
+*========================================================================
 * Section 5.4.1: Testing for Missing Completely at Random (MCAR)
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * 🔹 Little's MCAR test using mcartest
@@ -335,9 +345,9 @@ mcartest S3CLGPELL P1TUITION, unequal
 mcartest S3CLGPELL P1TUITION = i.X1RACE if X1RACE != ., ///
          unequal emoutput nolog
 
-*===============================================================================
+*========================================================================
 * Section 5.4.2: Panel-Specific Missing Data Analysis with xtmispanel
-*===============================================================================
+*========================================================================
 
 *----------------------------------------------------------------
 * Setup: load SHEEO panel and install xtmispanel
@@ -360,9 +370,7 @@ use "Example_5_2.dta", clear
 * Declare it a panel dataset.
 xtset state_fips FY, yearly
 
-* Install xtmispanel from SSC (run once)
-cap ssc install xtmispanel, replace
-
+* xtmispanel installed in the package block above
 *----------------------------------------------------------------
 * 🔹 Module 1: Detection — missingness by variable, state, and fiscal year
 *----------------------------------------------------------------
@@ -414,9 +422,9 @@ foreach gname in heatmap barvar barpanel bartime pattern timeline combined {
         name(xtmis_`gname') replace width(1200)
 }
 
-*===============================================================================
+*========================================================================
 * END OF CHAPTER 5 CODE
-*===============================================================================
+*========================================================================
 
 /*
 KEY RECOMMENDATIONS FOR GETTING TO KNOW THY DATA:
@@ -479,7 +487,8 @@ KEY RECOMMENDATIONS FOR GETTING TO KNOW THY DATA:
    - xtmispanel   (Roudane 2026):  ssc install xtmispanel [released March 2026]
 */
 
-* Close log
-capture log close
+clear all
+
+log close
 
 exit

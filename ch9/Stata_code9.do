@@ -1,12 +1,14 @@
-*=======================================================
+*========================================================================
 * Chapter 9 - Advanced Statistical Techniques: II
 * Complete Stata Code
-* Higher Education Policy Analysis Using Quantitative
-* Techniques (2nd Edition)
-* Source: https://github.com/higher-ed-policy-analysis- * 2nd-edition/tree/main/code/ch9
+* Higher Education Policy Analysis Using Quantitative Techniques
+* (2nd Edition)
+* Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch9
 * Author: Marvin A. Titus
 * Date: November 20, 2025
-*=======================================================
+* NOTE: Code development was assisted by Claude (Anthropic). The author
+* provided specifications and reviewed, tested, and validated all code.
+*========================================================================
 * Script tested in Stata 19.5
 * Compatible with Stata version 19 or later
 
@@ -47,10 +49,23 @@ else {
 
 di "Chapter 9 log opened: " c(current_date) " " c(current_time)
 di "Graphs directory: $graphs_dir"
-*=======================================================
+
+clear all
+set more off
+version 19
+set scheme s2mono        // Monochrome scheme for Springer B&W print
+set graphics on          // Ensure graph window is active throughout
+
+*========================================================================
+* PACKAGE INSTALLATIONS (run once; comment out thereafter)
+*========================================================================
+ssc install xtcdf, replace   // Cross-sectional dependence F-test
+ssc install xthst,  replace  // Pesaran-Yamagata homogeneity test
+
+*========================================================================
 * Heterogeneous Coefficient Regression with DCCE and MG
 * Estimators Using Macro Panel Data
-*=======================================================
+*========================================================================
 
 clear all
 
@@ -60,10 +75,10 @@ copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/da
      "Example_9_3_1.dta", replace
 use "Example_9_3_1.dta", clear
 
-*=======================================================
+*========================================================================
 * Section 9.6: Demonstration of HCR with DCCE and MG
 * Estimators
-*=======================================================
+*========================================================================
 
 * Variables in the dataset:
 * lny1 = log of state appropriations to higher education
@@ -77,26 +92,26 @@ lab var lnx1 "Log of Tuition & Fee Revenue"
 lab var lnx2 "Log of FTE Enrollment"
 lab var lnx3 "Log of State Per Capita Income"
 
-*=======================================================
+*========================================================================
 * Section 9.6.1: Macroeconomic Panel Data
 * Create Figure 9.1: Trends in Log of Appropriations by
 * State
-*=======================================================
+*========================================================================
 twoway (line lny1 FY), by(state) ///
    xlabel(1980 (12) 2024,labsize(small)) ///
    ytitle(Log of State Appropriations) ///
    xtitle(Fiscal Year)
 graph export "$graphs_dir/fig9_1_lny1_by_state_Stata.png", replace width(1200)
-*=======================================================
+*========================================================================
 * Create Figure 9.2: Trends in Log of Per Capita Income * by State
-*=======================================================
+*========================================================================
 twoway (line lnx3 FY), by(state) ///
   xlabel(1980 (12) 2024, labsize(small)) ///
   ytitle(Log of Per Capita Income) xtitle(Fiscal Year)
 graph export "$graphs_dir/fig9_2_lnx3_by_state_Stata.png", replace width(1200)
-*=======================================================
+*========================================================================
 * Section 9.6.2: Tests for Nonstationary Data
-*=======================================================
+*========================================================================
 /* Use the Stata routine xtpurt, with test options
  proposed by Herwartz and
    Siedenburg (2008), Demetrescu and Hanck (2012), and
@@ -136,9 +151,9 @@ xtpurt dlnx1, test(all)
 xtpurt dlnx2, test(all)
 xtpurt dlnx3, test(all)
 
-*=======================================================
+*========================================================================
 * Section 9.6.3: Tests for Cointegration
-*=======================================================
+*========================================================================
 
 /* Test for no cointegration with and without demeaning 
    (first subtracting the cross-sectional averages from the series) the data
@@ -161,25 +176,25 @@ xtcointtest westerlund lny1 lnx1 lnx2 lnx3, demean
 */
 xtwest lny1 lnx1 lnx2 lnx3, constant lags(0 3)
 
-*=======================================================
+*========================================================================
 * Section 9.6.4: Tests for Cross-Sectional Independence
-*=======================================================
+*========================================================================
 
 /* Tests using Stata user-written routine xtcdf
    (Wursten 2017) for cross-sectional independence,
    using updated version
 */
-ssc install xtcdf, replace
+* xtcdf installed in the package block above
 xtcdf lny1 lnx1 lnx2 lnx3
 
-*=======================================================
+*========================================================================
 * Section 9.6.5: Test of Homogeneous Coefficients
-*=======================================================
+*========================================================================
 
 /* Test of homogeneous coefficients utilizing the Stata user-written xthst
    (Ditzen and Bersvendsen 2020) routine
 */
-ssc install xthst, replace
+* xthst installed in the package block above
 
 * Test with first-differenced variables
 xthst D1.lny1 D1.L1.lny1 D1.lnx1 D1.lnx2 D1.lnx3, ///
@@ -188,10 +203,10 @@ xthst D1.lny1 D1.L1.lny1 D1.lnx1 D1.lnx2 D1.lnx3, ///
 * Test with levels variables
 xthst lny1 L1.lny1 lnx1 lnx2 lnx3, hac whitening
 
-*=======================================================
+*========================================================================
 * Section 9.6.6: Results of the HCR with DCCE and MG
 * Estimators
-*=======================================================
+*========================================================================
 
 /* HCR with DCCE and MG estimators using the Stata-user written xtdcce2
   (Ditzen 2018b)
@@ -242,14 +257,9 @@ xtdcce2 D1.lny1 L1.D1.lny1 L1.D1.lnx1 L1.D1.lnx2 ///
     
 clear all
 
-* Close log
-capture log close
-
-exit
-
-*=======================================================
+*========================================================================
 * END OF CHAPTER 9 CODE
-*=======================================================
+*========================================================================
 
 /* Notes:
  - The script follows the organization and structure of Chapter 8
@@ -262,3 +272,9 @@ exit
  - DCCE estimator accounts for cross-sectional dependence
  - The showindividual option provides state-specific estimates
 */
+
+clear all
+
+log close
+
+exit

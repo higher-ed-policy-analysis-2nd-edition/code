@@ -1,14 +1,14 @@
-*================================================================
+*========================================================================
 * Chapter 6 - Using Descriptive Statistics and Graphs
 * Complete Stata Code
-* Higher Education Policy Analysis Using Quantitative Techniques 
+* Higher Education Policy Analysis Using Quantitative Techniques
 * (2nd Edition)
-* Source: https://github.com/higher-ed-policy-analysis-2nd-
-* edition/tree/main/code/ch6
+* Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch6
 * Author: Marvin A. Titus
 * Date: November 14, 2025
-*================================================================
-
+* NOTE: Code development was assisted by Claude (Anthropic). The author
+* provided specifications and reviewed, tested, and validated all code.
+*========================================================================
 * Script tested in Stata 19.5
 * Compatible with Stata version 19 or later
 
@@ -49,6 +49,17 @@ else {
 
 di "Chapter 6 log opened: " c(current_date) " " c(current_time)
 di "Graphs directory: $graphs_dir"
+
+clear all
+set more off
+version 19
+set scheme s2mono        // Monochrome scheme for Springer B&W print
+set graphics on          // Ensure graph window is active throughout
+
+*========================================================================
+* PACKAGE INSTALLATIONS (run once; comment out thereafter)
+*========================================================================
+ssc install aaplot, replace   // Alternative average plots (Section 6.x)
 
 *========================================================================
 * Section 6.2.1: Measures of Central Tendency
@@ -245,9 +256,7 @@ twoway scatter stapr_fte netuit_fte, mlabel(state) ///
        || lfit stapr_fte netuit_fte || if year==2016
 graph export "$graphs_dir/fig6_15_scatter_labels_2016_Stata.png", replace width(1200)
 
-* Install user-written aaplot command (run once)
-ssc install aaplot, replace
-
+* aaplot installed in the package block above
 * --- Fig. 6.16: State Appropriations and Net Tuition per FTE Student, FY 1990 ---
 aaplot netuit_fte stapr_fte if year==1990
 graph export "$graphs_dir/fig6_16_aaplot_1990_Stata.png", replace width(1200)
@@ -258,13 +267,12 @@ graph export "$graphs_dir/fig6_17_aaplot_2016_Stata.png", replace width(1200)
 
 di "All graphs saved to: $graphs_dir"
 
+*========================================================================
+* END OF CHAPTER 6 CODE
+*========================================================================
+
 clear all
 
-* Close log
-capture log close
+log close
 
 exit
-
-*================================================================
-* END OF CHAPTER 6 CODE
-*================================================================

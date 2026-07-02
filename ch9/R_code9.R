@@ -1,4 +1,4 @@
-# ================================================================
+# ============================================================================
 # Chapter 9 - Advanced Statistical Techniques: II
 # R Translation of Complete Stata Code
 # Higher Education Policy Analysis Using Quantitative Techniques
@@ -6,19 +6,25 @@
 # Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch9
 # Author: Marvin A. Titus
 # Date: March 2026
-# ================================================================
+# NOTE: Code development was assisted by Claude (Anthropic). The author
+#       provided specifications and reviewed, tested, and validated all code.
+# ============================================================================
 
 # Script tested in R 4.4.x
 # Required packages: haven, dplyr, tidyr, ggplot2, scales,
 #                    plm, urca, tseries, lmtest, sandwich
 
-# ----------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Install any missing packages (run once)
-# ----------------------------------------------------------------
-required_pkgs <- c("haven", "dplyr", "tidyr", "ggplot2", "scales",
-                   "plm", "urca", "tseries", "lmtest", "sandwich")
-new_pkgs <- required_pkgs[!required_pkgs %in% installed.packages()[, "Package"]]
-if (length(new_pkgs)) install.packages(new_pkgs)
+# ----------------------------------------------------------------------------
+install_if_missing <- function(pkgs) {
+  to_install <- pkgs[!sapply(pkgs, requireNamespace, quietly = TRUE)]
+  if (length(to_install) > 0)
+    install.packages(to_install, dependencies = TRUE)
+}
+
+install_if_missing(c("haven", "dplyr", "tidyr", "ggplot2", "scales",
+                      "plm", "urca", "tseries", "lmtest", "sandwich"))
 
 suppressPackageStartupMessages({
   library(haven)     # read_dta()               — replaces: use *.dta
@@ -33,12 +39,38 @@ suppressPackageStartupMessages({
   library(sandwich)  # vcovHC()
 })
 
-# ================================================================
-# WORKING DIRECTORY AND OUTPUT PATHS
-# ================================================================
+# ============================================================================
+# GLOBAL GGPLOT2 THEME
+# Monochrome; approximates Stata s2mono for Springer B&W print.
+# ============================================================================
 
-graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 9/Output/graphs"
-log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 9/Output/logs/Chapter9_R_output.log"
+theme_springer <- function(base_size = 11) {
+  theme_bw(base_size = base_size) %+replace%
+    theme(
+      panel.grid.minor  = element_blank(),
+      plot.title        = element_text(face = "bold", hjust = 0.5, size = base_size),
+      plot.subtitle     = element_text(hjust = 0.5,   size = base_size - 1),
+      plot.caption      = element_text(hjust = 0,     size = base_size - 3),
+      legend.background = element_rect(fill = "white", color = NA),
+      strip.background  = element_rect(fill = "grey90", color = "grey50")
+    )
+}
+theme_set(theme_springer())
+
+# ============================================================================
+# WORKING DIRECTORY AND OUTPUT PATHS
+# Paths switch automatically by username, mirroring the Stata logic.
+# ============================================================================
+
+user <- Sys.info()[["user"]]
+
+if (user == "marvi") {
+  graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 9/Output/graphs"
+  log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 9/Output/logs/Chapter9_R_output.log"
+} else {
+  graphs_dir <- "Output/graphs"
+  log_path   <- "Output/logs/Chapter9_R_output.log"
+}
 dir.create(graphs_dir,        showWarnings = FALSE, recursive = TRUE)
 dir.create(dirname(log_path), showWarnings = FALSE, recursive = TRUE)
 
@@ -47,9 +79,11 @@ sink(log_path, split = TRUE)
 cat("Chapter 9 log opened:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n")
 cat("Graphs directory:    ", graphs_dir, "\n\n")
 
-# ----------------------------------------------------------------
+options(warn = 1)   # print warnings immediately (Stata default)
+
+# ----------------------------------------------------------------------------
 # Helper: safe download
-# ----------------------------------------------------------------
+# ----------------------------------------------------------------------------
 safe_download <- function(url, dest) {
   tryCatch(
     download.file(url, dest, mode = "wb", quiet = TRUE),
@@ -85,13 +119,13 @@ save_fig <- function(plot, filename, width_px = 1200, height_px = 900, dpi = 150
   }
 }
 
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 #
 #   SECTION 9.6: DEMONSTRATION OF HCR WITH DCCE AND MG ESTIMATORS
 #
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 
 cat("\n*=======================================================\n")
 cat("* SECTION 9.6: Heterogeneous Coefficient Regression with\n")
@@ -124,9 +158,9 @@ cat("  Fiscal years:", min(df$FY), "to", max(df$FY), "\n\n")
 pdf <- pdata.frame(df, index = c("state", "FY"))
 cat("  Panel declared: state (entity) × FY (time)\n\n")
 
-# ================================================================
+# ============================================================================
 # Section 9.6.1: Macroeconomic Panel Data
-# ================================================================
+# ============================================================================
 
 cat("*=======================================================\n")
 cat("* Section 9.6.1: Macroeconomic Panel Data\n")
@@ -144,7 +178,7 @@ fig9_1 <- ggplot(df, aes(x = FY, y = lny1)) +
   labs(title    = "Fig. 9.1  Trends in Log of State Appropriations by State",
        x        = "Fiscal Year",
        y        = "Log of State Appropriations") +
-  theme_bw(base_size = 7) +
+  theme_springer(base_size = 7) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         strip.text   = element_text(size = 6))
 save_fig(fig9_1, "fig9_1_lny1_by_state_R.png", width_px = 1800, height_px = 1400)
@@ -161,14 +195,14 @@ fig9_2 <- ggplot(df, aes(x = FY, y = lnx3)) +
   labs(title    = "Fig. 9.2  Trends in Log of Per Capita Income by State",
        x        = "Fiscal Year",
        y        = "Log of Per Capita Income") +
-  theme_bw(base_size = 7) +
+  theme_springer(base_size = 7) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         strip.text   = element_text(size = 6))
 save_fig(fig9_2, "fig9_2_lnx3_by_state_R.png", width_px = 1800, height_px = 1400)
 
-# ================================================================
+# ============================================================================
 # Section 9.6.2: Tests for Nonstationary Data
-# ================================================================
+# ============================================================================
 
 cat("\n*=======================================================\n")
 cat("* Section 9.6.2: Tests for Nonstationary Data\n")
@@ -255,9 +289,9 @@ for (i in seq_along(vars_diff)) {
   cat("\n")
 }
 
-# ================================================================
+# ============================================================================
 # Section 9.6.3: Tests for Cointegration
-# ================================================================
+# ============================================================================
 
 cat("\n*=======================================================\n")
 cat("* Section 9.6.3: Tests for Cointegration\n")
@@ -471,9 +505,9 @@ if (isTRUE(Gt_p < 0.05) | isTRUE(Ga_p < 0.05)) {
   cat("  RESULT: No strong evidence of cointegration (or test inconclusive)\n\n")
 }
 
-# ================================================================
+# ============================================================================
 # Section 9.6.4: Tests for Cross-Sectional Independence
-# ================================================================
+# ============================================================================
 
 cat("\n*=======================================================\n")
 cat("* Section 9.6.4: Tests for Cross-Sectional Independence\n")
@@ -500,9 +534,9 @@ for (i in seq_along(vars_levels)) {
   cat("\n")
 }
 
-# ================================================================
+# ============================================================================
 # Section 9.6.5: Test of Homogeneous Coefficients
-# ================================================================
+# ============================================================================
 
 cat("\n*=======================================================\n")
 cat("* Section 9.6.5: Test of Homogeneous Coefficients\n")
@@ -624,9 +658,9 @@ pesaran_yamagata_test(
   label    = "Levels: lny1 ~ L1.lny1 + lnx1 + lnx2 + lnx3"
 )
 
-# ================================================================
+# ============================================================================
 # Section 9.6.6: Results of the HCR with DCCE and MG Estimators
-# ================================================================
+# ============================================================================
 
 cat("\n*=======================================================\n")
 cat("* Section 9.6.6: Results of the HCR with DCCE and MG Estimators\n")
@@ -847,12 +881,12 @@ dcce_result_v2 <- dcce_mg(
   label    = "DCCE-MG ARDL-ECM: cr_lags(1 3 3 3), showindividual"
 )
 
-# ================================================================
+# ============================================================================
 # Close log — equivalent to: log close
-# ================================================================
+# ============================================================================
 cat("Chapter 9 R script completed:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n")
 sink()
 
-# ================================================================
+# ============================================================================
 # END OF CHAPTER 9 R CODE
-# ================================================================
+# ============================================================================

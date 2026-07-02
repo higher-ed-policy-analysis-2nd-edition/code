@@ -1,25 +1,30 @@
-# ================================================================
+# ============================================================================
 # Chapter 6 - Using Descriptive Statistics and Graphs
 # R Translation of Complete Stata Code
 # Higher Education Policy Analysis Using Quantitative Techniques
 # (2nd Edition)
-# Source: https://github.com/higher-ed-policy-analysis-2nd-
-#         edition/tree/main/code/ch6
+# Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch6
 # Author: Marvin A. Titus
 # Date: November 14, 2025
-# ================================================================
+# NOTE: Code development was assisted by Claude (Anthropic). The author
+#       provided specifications and reviewed, tested, and validated all code.
+# ============================================================================
 
 # Script tested in R 4.4.x
 # Required packages: readxl, haven, dplyr, tidyr, psych,
 #                    plm, ggplot2, scales, patchwork
 
-# ----------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Install any missing packages (run once)
-# ----------------------------------------------------------------
-required_pkgs <- c("readxl", "haven", "dplyr", "tidyr", "psych",
-                   "plm", "ggplot2", "scales", "patchwork")
-new_pkgs <- required_pkgs[!required_pkgs %in% installed.packages()[, "Package"]]
-if (length(new_pkgs)) install.packages(new_pkgs)
+# ----------------------------------------------------------------------------
+install_if_missing <- function(pkgs) {
+  to_install <- pkgs[!sapply(pkgs, requireNamespace, quietly = TRUE)]
+  if (length(to_install) > 0)
+    install.packages(to_install, dependencies = TRUE)
+}
+
+install_if_missing(c("readxl", "haven", "dplyr", "tidyr", "psych",
+                      "plm", "ggplot2", "scales", "patchwork"))
 
 library(readxl)    # read_excel()        — replaces: import excel
 library(haven)     # read_dta()          — replaces: use *.dta
@@ -31,13 +36,38 @@ library(ggplot2)   # all graphs          — replaces: histogram, graph box, two
 library(scales)    # percent_format()    — axis formatting
 library(patchwork) # plot composition    — side-by-side panels
 
-# ================================================================
+# ============================================================================
+# GLOBAL GGPLOT2 THEME
+# Monochrome; approximates Stata s2mono for Springer B&W print.
+# ============================================================================
+
+theme_springer <- function(base_size = 11) {
+  theme_bw(base_size = base_size) %+replace%
+    theme(
+      panel.grid.minor  = element_blank(),
+      plot.title        = element_text(face = "bold", hjust = 0.5, size = base_size),
+      plot.subtitle     = element_text(hjust = 0.5,   size = base_size - 1),
+      plot.caption      = element_text(hjust = 0,     size = base_size - 3),
+      legend.background = element_rect(fill = "white", color = NA),
+      strip.background  = element_rect(fill = "grey90", color = "grey50")
+    )
+}
+theme_set(theme_springer())
+
+# ============================================================================
 # WORKING DIRECTORY AND OUTPUT PATHS
 # Paths switch automatically by username, mirroring the Stata logic.
-# ================================================================
+# ============================================================================
 
-graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output/graphs"
-log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output/logs/Chapter6_R_output.log"
+user <- Sys.info()[["user"]]
+
+if (user == "marvi") {
+  graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output/graphs"
+  log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 6/Output/logs/Chapter6_R_output.log"
+} else {
+  graphs_dir <- "Output/graphs"
+  log_path   <- "Output/logs/Chapter6_R_output.log"
+}
 dir.create(graphs_dir,        showWarnings = FALSE, recursive = TRUE)
 dir.create(dirname(log_path), showWarnings = FALSE, recursive = TRUE)
 
@@ -46,6 +76,8 @@ dir.create(dirname(log_path), showWarnings = FALSE, recursive = TRUE)
 sink(log_path, split = TRUE)   # split=TRUE also prints to console
 cat("Chapter 6 log opened:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n")
 cat("Graphs directory:", graphs_dir, "\n\n")
+
+options(warn = 1)   # print warnings immediately (Stata default)
 
 # Helper: save ggplot to graphs_dir at 1200px wide (matches Stata width(1200))
 save_fig <- function(plot, filename, width_px = 1200, height_px = 900, dpi = 150) {
@@ -74,9 +106,9 @@ save_fig <- function(plot, filename, width_px = 1200, height_px = 900, dpi = 150
   }
 }
 
-# ================================================================
+# ============================================================================
 # Section 6.2.1: Measures of Central Tendency
-# ================================================================
+# ============================================================================
 cat("\n")
 cat("*========================================================================\n")
 cat("* Section 6.2.1: Measures of Central Tendency\n")
@@ -127,9 +159,9 @@ print(psych::describe(df_621[, c("Public", "Private")],
                       quant = c(.01, .05, .10, .25, .50, .75, .90, .95, .99)))
 cat("\n")
 
-# ================================================================
+# ============================================================================
 # Section 6.2.2: Measures of Dispersion
-# ================================================================
+# ============================================================================
 cat("*========================================================================\n")
 cat("* Section 6.2.2: Measures of Dispersion\n")
 cat("*========================================================================\n\n")
@@ -185,9 +217,9 @@ tbl_fy <- tabstat_by(df_622, c("NetTuition", "FTEStudents"), "FY")
 print(as.data.frame(tbl_fy), digits = 4, row.names = FALSE)
 cat("\n")
 
-# ================================================================
+# ============================================================================
 # Section 6.2.3: Distributions
-# ================================================================
+# ============================================================================
 cat("*========================================================================\n")
 cat("* Section 6.2.3: Distributions\n")
 cat("*========================================================================\n\n")
@@ -360,9 +392,9 @@ trans_tbl <- trans |>
 print(as.data.frame(trans_tbl), digits = 2, row.names = FALSE)
 cat("\n")
 
-# ================================================================
+# ============================================================================
 # Section 6.2.4: Testing Differences in Means Across Groups (ANOVA)
-# ================================================================
+# ============================================================================
 cat("*========================================================================\n")
 cat("* Section 6.2.4: Testing Differences in Means Across Groups (ANOVA)\n")
 cat("*========================================================================\n\n")
@@ -434,9 +466,9 @@ interaction_test <- anova(aov2_add, aov2)
 print(interaction_test)
 cat("\n")
 
-# ================================================================
+# ============================================================================
 # Section 6.3.1: Graphs — Exploratory Data Analysis (EDA)
-# ================================================================
+# ============================================================================
 cat("*========================================================================\n")
 cat("* Section 6.3.1: Graphs — Exploratory Data Analysis (EDA)\n")
 cat("*========================================================================\n\n")
@@ -463,7 +495,7 @@ fig6_8 <- ggplot(df_graphs, aes(x = stapr_fte)) +
   labs(title = "Fig. 6.8  Histogram of State Appropriations per FTE Student",
        x = "State Appropriations per FTE Student ($)",
        y = "Density") +
-  theme_bw()
+  theme_springer()
 save_fig(fig6_8, "fig6_8_histogram_stapr_fte_R.png")
 
 # --- Fig. 6.9: Box Chart of State Appropriations per FTE Student ---
@@ -474,7 +506,7 @@ fig6_9 <- ggplot(df_graphs, aes(y = stapr_fte)) +
                outlier.shape = 16, outlier.colour = "firebrick") +
   labs(title = "Fig. 6.9  Box Chart of State Appropriations per FTE Student",
        y = "State Appropriations per FTE Student ($)") +
-  theme_bw() +
+  theme_springer() +
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 save_fig(fig6_9, "fig6_9_box_stapr_fte_R.png")
 
@@ -495,7 +527,7 @@ fig6_10 <- ggplot(rc_pct, aes(x = region_compact, y = pct,
   labs(title = "Fig. 6.10  Histogram of Membership in Regional Compacts",
        x = "Regional Compact",
        y = "Percent") +
-  theme_bw() +
+  theme_springer() +
   theme(panel.grid.major.x = element_blank())
 save_fig(fig6_10, "fig6_10_histogram_region_compact_R.png")
 
@@ -508,7 +540,7 @@ fig6_11 <- ggplot(df_graphs, aes(x = stapr_fte)) +
   labs(title = "Fig. 6.11  State Appropriations per FTE Student by Regional Compact",
        x = "State Appropriations per FTE Student ($)",
        y = "Frequency") +
-  theme_bw()
+  theme_springer()
 save_fig(fig6_11, "fig6_11_histogram_stapr_fte_by_region_R.png")
 
 # --- Fig. 6.12: Box Chart of State Appropriations per FTE by Regional Compact ---
@@ -520,7 +552,7 @@ fig6_12 <- ggplot(df_graphs, aes(x = region_compact, y = stapr_fte,
   facet_wrap(~ region_compact, scales = "free_x", nrow = 1) +
   labs(title = "Fig. 6.12  Box Chart of State Appropriations per FTE by Regional Compact",
        x = NULL, y = "State Appropriations per FTE Student ($)") +
-  theme_bw() +
+  theme_springer() +
   theme(legend.position = "none",
         axis.text.x     = element_blank(),
         axis.ticks.x    = element_blank())
@@ -537,7 +569,7 @@ fig6_13 <- ggplot(df_2016, aes(x = netuit_fte, y = stapr_fte)) +
   labs(title = "Fig. 6.13  State Appropriations and Net Tuition Revenue per FTE Student, FY2016",
        x = "Net Tuition Revenue per FTE Student ($)",
        y = "State Appropriations per FTE Student ($)") +
-  theme_bw()
+  theme_springer()
 save_fig(fig6_13, "fig6_13_scatter_2016_R.png")
 
 # --- Fig. 6.14: Scatter Plot with Fitted Regression Line (Method 1) ---
@@ -549,7 +581,7 @@ fig6_14 <- ggplot(df_2016, aes(x = netuit_fte, y = stapr_fte)) +
   labs(title = "Fig. 6.14  State Appropriations and Net Tuition Revenue per FTE with Fitted Line, FY2016",
        x = "Net Tuition Revenue per FTE Student ($)",
        y = "State Appropriations per FTE Student ($)") +
-  theme_bw()
+  theme_springer()
 save_fig(fig6_14, "fig6_14_scatter_fitted_2016_R.png")
 
 # --- Fig. 6.15: Scatter Plot with Fitted Line and State Labels (Method 2) ---
@@ -562,7 +594,7 @@ fig6_15 <- ggplot(df_2016, aes(x = netuit_fte, y = stapr_fte, label = state)) +
   labs(title = "Fig. 6.15  State Appropriations and Net Tuition Revenue per FTE with State Labels, FY2016",
        x = "Net Tuition Revenue per FTE Student ($)",
        y = "State Appropriations per FTE Student ($)") +
-  theme_bw()
+  theme_springer()
 save_fig(fig6_15, "fig6_15_scatter_labels_2016_R.png")
 
 # --- Fig. 6.16 & 6.17: aaplot equivalent — scatter with regression line,
@@ -591,7 +623,7 @@ aaplot_r <- function(data, year_val, fig_num, file_name) {
       x = "State Appropriations per FTE Student ($)",
       y = "Net Tuition Revenue per FTE Student ($)"
     ) +
-    theme_bw()
+    theme_springer()
 
   save_fig(p, file_name)
 }
@@ -604,13 +636,13 @@ aaplot_r(df_graphs, 2016, 17, "fig6_17_aaplot_2016_R.png")
 
 cat("\nAll graphs saved to:", graphs_dir, "\n")
 
-# ================================================================
+# ============================================================================
 # Close log
 # Equivalent to: log close
-# ================================================================
+# ============================================================================
 cat("\nChapter 6 R script completed:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n")
 sink()   # closes the log connection
 
-# ================================================================
+# ============================================================================
 # END OF CHAPTER 6 R CODE
-# ================================================================
+# ============================================================================

@@ -1,4 +1,4 @@
-# ================================================================
+# ============================================================================
 # Chapter 7 - Introduction to Intermediate Statistical Techniques
 # R Translation of Complete Stata Code
 # Higher Education Policy Analysis Using Quantitative Techniques
@@ -6,18 +6,24 @@
 # Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch7
 # Author: Marvin A. Titus
 # Date: December 2025
-# ================================================================
+# NOTE: Code development was assisted by Claude (Anthropic). The author
+#       provided specifications and reviewed, tested, and validated all code.
+# ============================================================================
 
 # Script tested in R 4.4.x
 # Required packages: haven, dplyr, lmtest, sandwich, plm, ivreg, ggplot2
 
-# ----------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Install any missing packages (run once)
-# ----------------------------------------------------------------
-required_pkgs <- c("haven", "dplyr", "lmtest", "sandwich",
-                   "plm", "ivreg", "ggplot2", "scales", "clubSandwich")
-new_pkgs <- required_pkgs[!required_pkgs %in% installed.packages()[, "Package"]]
-if (length(new_pkgs)) install.packages(new_pkgs)
+# ----------------------------------------------------------------------------
+install_if_missing <- function(pkgs) {
+  to_install <- pkgs[!sapply(pkgs, requireNamespace, quietly = TRUE)]
+  if (length(to_install) > 0)
+    install.packages(to_install, dependencies = TRUE)
+}
+
+install_if_missing(c("haven", "dplyr", "lmtest", "sandwich",
+                      "plm", "ivreg", "ggplot2", "scales", "clubSandwich"))
 
 suppressPackageStartupMessages({
   library(haven)         # read_dta()               — replaces: use *.dta
@@ -34,12 +40,38 @@ suppressPackageStartupMessages({
                          # with time-invariant regressors (avoids vcovHC singularity)
 })
 
-# ================================================================
-# WORKING DIRECTORY AND OUTPUT PATHS
-# ================================================================
+# ============================================================================
+# GLOBAL GGPLOT2 THEME
+# Monochrome; approximates Stata s2mono for Springer B&W print.
+# ============================================================================
 
-graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 7/Output/graphs"
-log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 7/Output/logs/Chapter7_R_output.log"
+theme_springer <- function(base_size = 11) {
+  theme_bw(base_size = base_size) %+replace%
+    theme(
+      panel.grid.minor  = element_blank(),
+      plot.title        = element_text(face = "bold", hjust = 0.5, size = base_size),
+      plot.subtitle     = element_text(hjust = 0.5,   size = base_size - 1),
+      plot.caption      = element_text(hjust = 0,     size = base_size - 3),
+      legend.background = element_rect(fill = "white", color = NA),
+      strip.background  = element_rect(fill = "grey90", color = "grey50")
+    )
+}
+theme_set(theme_springer())
+
+# ============================================================================
+# WORKING DIRECTORY AND OUTPUT PATHS
+# Paths switch automatically by username, mirroring the Stata logic.
+# ============================================================================
+
+user <- Sys.info()[["user"]]
+
+if (user == "marvi") {
+  graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 7/Output/graphs"
+  log_path   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 7/Output/logs/Chapter7_R_output.log"
+} else {
+  graphs_dir <- "Output/graphs"
+  log_path   <- "Output/logs/Chapter7_R_output.log"
+}
 dir.create(graphs_dir,        showWarnings = FALSE, recursive = TRUE)
 dir.create(dirname(log_path), showWarnings = FALSE, recursive = TRUE)
 
@@ -48,9 +80,11 @@ sink(log_path, split = TRUE)
 cat("Chapter 7 log opened:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n")
 cat("Graphs directory:    ", graphs_dir, "\n\n")
 
-# ----------------------------------------------------------------
+options(warn = 1)   # print warnings immediately (Stata default)
+
+# ----------------------------------------------------------------------------
 # Helper: safe download
-# ----------------------------------------------------------------
+# ----------------------------------------------------------------------------
 safe_download <- function(url, dest) {
   tryCatch(
     download.file(url, dest, mode = "wb", quiet = TRUE),
@@ -111,13 +145,13 @@ print_reg <- function(model, vcov_mat = NULL, title = NULL) {
   invisible(ct)
 }
 
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 #
 #              SECTION 7.2: REVIEW OF OLS REGRESSION
 #
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 
 cat("\n*======================================================================\n")
 cat("* SECTION 7.2: REVIEW OF OLS REGRESSION\n")
@@ -167,9 +201,9 @@ ols_multi <- lm(netuit_fte ~ stapr_fte + stapr_fte2 + pc_income, data = df_2016)
 print_reg(ols_multi,
           title = ". regress netuit_fte stapr_fte stapr_fte2 pc_income if year==2016")
 
-# ================================================================
+# ============================================================================
 # Section 7.2.3: Pooled OLS Regression
-# ================================================================
+# ============================================================================
 cat("\n*------------------------------------------------------------------------\n")
 cat("* Section 7.2.3: Pooled OLS Regression (all years)\n")
 cat("*------------------------------------------------------------------------\n")
@@ -265,7 +299,7 @@ fig7_1 <- ggplot(pred_grid,
        subtitle = "Predicted net tuition per FTE at stapr_fte = 0 and 10,000",
        x        = "State need-based aid per FTE ($)",
        y        = "Predicted net tuition per FTE ($)") +
-  theme_bw()
+  theme_springer()
 save_fig(fig7_1, "fig7_1_marginsplot_R.png")
 
 # ---- Testing Regression Assumptions ----
@@ -287,7 +321,7 @@ fig7_2 <- ggplot(df_diag, aes(x = fitted, y = residual)) +
   labs(title = "Fig. 7.2  Residuals vs. Fitted Values",
        x     = "Fitted values",
        y     = "Residuals") +
-  theme_bw()
+  theme_springer()
 save_fig(fig7_2, "fig7_2_rvfplot_R.png")
 
 # Information matrix test — equivalent to: estat imtest
@@ -315,13 +349,13 @@ vcov_cl <- sandwich::vcovCL(ols_base, cluster = ~ state)
 print_reg(ols_base, vcov_mat = vcov_cl,
           title = ". regress netuit_fte stapr_fte stapr_fte2 pc_income i.region_compact, cluster(state)")
 
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 #
 #               SECTION 7.3: FIXED-EFFECTS REGRESSION
 #
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 
 cat("\n*======================================================================\n")
 cat("* SECTION 7.3: FIXED-EFFECTS REGRESSION\n")
@@ -417,13 +451,13 @@ var_e   <- as.numeric(
 rho     <- var_u / (var_u + var_e)
 cat(sprintf("  rho:        %.4f  (fraction of variance due to fixed effects)\n\n", rho))
 
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 #
 #              SECTION 7.4: RANDOM-EFFECTS REGRESSION
 #
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 
 cat("\n*======================================================================\n")
 cat("* SECTION 7.4: RANDOM-EFFECTS REGRESSION\n")
@@ -544,13 +578,13 @@ tryCatch({
   cat("  [Robust Hausman: vcov matrix not invertible — consider standard phtest]\n\n")
 })
 
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 #
 #    SECTION 7.5: INSTRUMENTAL VARIABLES AND TWO-STAGE LEAST SQUARES
 #
-# ================================================================
-# ================================================================
+# ============================================================================
+# ============================================================================
 
 cat("\n*======================================================================\n")
 cat("* SECTION 7.5: INSTRUMENTAL VARIABLES AND TWO-STAGE LEAST SQUARES\n")
@@ -663,9 +697,9 @@ cat(sprintf("\n  IV/2SLS Estimate: %.4f (SE = %.4f)\n", iv_est, iv_se))
 cat(sprintf("  95%% CI: [%.4f, %.4f]\n\n",
             iv_est - 1.96*iv_se, iv_est + 1.96*iv_se))
 
-# ================================================================
+# ============================================================================
 # Section 7.5.1.7: Assessing Instrument Validity
-# ================================================================
+# ============================================================================
 cat("*----------------------------------------------------------------------\n")
 cat("* ASSESSING INSTRUMENT VALIDITY\n")
 cat("*----------------------------------------------------------------------\n\n")
@@ -739,12 +773,12 @@ cat("  (Coefficients should be identical; SEs differ)\n\n")
 
 df_753$masters_hat <- NULL   # equivalent to: drop masters_hat
 
-# ================================================================
+# ============================================================================
 # Close log — equivalent to: log close
-# ================================================================
+# ============================================================================
 cat("Chapter 7 R script completed:", format(Sys.time(), "%d %b %Y %H:%M:%S"), "\n")
 sink()
 
-# ================================================================
+# ============================================================================
 # END OF CHAPTER 7 R CODE
-# ================================================================
+# ============================================================================
