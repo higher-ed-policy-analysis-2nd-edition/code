@@ -546,6 +546,8 @@ KEY RECOMMENDATIONS FOR DATASET CREATION AND MANAGEMENT:
 
 clear all
 
+capture window manage close editor
+
 log close
 
 exit
