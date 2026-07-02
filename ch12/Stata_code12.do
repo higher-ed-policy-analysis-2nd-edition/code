@@ -1,5 +1,5 @@
 /*===========================================================================
-  Chapter 11: Bayesian MTE Microsimulation
+  Chapter 12: Bayesian MTE Microsimulation
   Cost–Benefit Analysis of a $100k Lifetime Cap on Grad PLUS Loans
   
   Book:   Higher Education Policy Analysis Using Quantitative Techniques
@@ -10,7 +10,7 @@
   and output.
   
   Repository:
-    https://github.com/higher-ed-policy-analysis-2nd-edition/code/blob/main/ch11/Stata_code11.do
+    https://github.com/higher-ed-policy-analysis-2nd-edition/code/blob/main/ch12/Stata_code12.do
   
   Overview:
     This script evaluates the net social benefit of a $100,000 lifetime
@@ -61,9 +61,9 @@ set more off
 set seed 20251201
 
 * ── Working directory ────────────────────────────────────────────────────────
-* Set explicitly so all relative paths resolve to the Chapter 11 folder.
+* Set explicitly so all relative paths resolve to the Chapter 12 folder.
 * Adjust only if running on a different machine.
-cd "C:\Users\marvi\Dropbox\Book\2nd Edition\Chapter 11"
+cd "C:\Users\marvi\Dropbox\Book\2nd Edition\Chapter 12"
 di "Working directory: " c(pwd)
 
 * ── Directory structure ─────────────────────────────────────────────────────
@@ -77,9 +77,9 @@ global graphs_dir  "Output/graphs"
 
 * ── Log ─────────────────────────────────────────────────────────────────────
 capture log close _all
-log using "Output/logs/Chapter11_Stata_output.log", replace text
-di "Log file: " c(pwd) "/Output/logs/Chapter11_Stata_output.log"
-di "Chapter 11 log opened: " c(current_date) " " c(current_time)
+log using "Output/logs/Chapter12_Stata_output.log", replace text
+di "Log file: " c(pwd) "/Output/logs/Chapter12_Stata_output.log"
+di "Chapter 12 log opened: " c(current_date) " " c(current_time)
 
 * ── Global macros ───────────────────────────────────────────────────────────
 * Individual-level controls (same set as Chapter 10 for consistency)
@@ -107,7 +107,7 @@ global S_draws         1000     // Number of Bayesian posterior draws
   income, and a student-specific unobserved borrowing propensity.
   
   GitHub data repository:
-    https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch11
+    https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch12
 ---------------------------------------------------------------------------*/
 
 di _n "============================================================"
@@ -116,171 +116,175 @@ di    "============================================================"
 
 * ── Attempt to load from repository; generate synthetically if unavailable ──
 capture copy ///
-    "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch11/Example_11_1.dta" ///
-    "Example_11_1.dta", replace
+    "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch12/Example_12_1.dta" ///
+    "Example_12_1.dta", replace
+
 if _rc != 0 {
     di as text "Remote data not found. Generating synthetic dataset."
+
+    * ── DGP ────────────────────────────────────────────────────────────────
+    clear
+    set obs 8000
+    gen id = _n
+
+    * ── Individual characteristics ──────────────────────────────────────────────
+    gen female          = (runiform() < 0.52)
+    gen black           = (runiform() < 0.13)
+    gen hispanic        = (runiform() < 0.10)
+    gen asian           = (runiform() < 0.07)
+    gen age_ba          = round(rnormal(24, 3))
+    replace age_ba      = max(21, min(35, age_ba))
+    gen firstgen        = (runiform() < 0.26)
+    gen parent_income_q = ceil(runiform() * 4)          // 1 = bottom, 4 = top
+    gen parent_grad     = (runiform() < 0.38)
+    gen ugpa            = round(rnormal(3.3, 0.45) * 100) / 100
+    replace ugpa        = max(2.0, min(4.0, ugpa))
+
+    * ── Program area ────────────────────────────────────────────────────────────
+    gen prog_draw   = runiform()
+    gen stem_major  = (prog_draw < 0.22)
+    gen bus_major   = (prog_draw >= 0.22 & prog_draw < 0.40)
+    gen ed_major    = (prog_draw >= 0.40 & prog_draw < 0.56)
+    gen health_major = (prog_draw >= 0.56 & prog_draw < 0.70)
+    * Base category: Other / Social Sciences
+
+    * ── Institution characteristics ─────────────────────────────────────────────
+    gen selective_inst = (runiform() < 0.28)
+    gen public_ug      = (runiform() < 0.72)
+    gen state_unemp    = round(rnormal(5.2, 1.3) * 10) / 10
+    replace state_unemp = max(2.5, min(10.5, state_unemp))
+    gen metro          = (runiform() < 0.68)
+
+    * ── State GA funding (instrument) ───────────────────────────────────────────
+    * Each student is assigned a state GA funding level. Variation is driven by
+    * state budgetary conditions and is plausibly exogenous to individual earnings.
+    gen ga_funding_adj = round(rnormal(7.5, 2.2) * 10) / 10
+    replace ga_funding_adj = max(2.0, min(14.0, ga_funding_adj))
+
+    * ── Grad PLUS loan amount ────────────────────────────────────────────────────
+    * Loan amounts reflect program costs (STEM and business programs cost more),
+    * institutional selectivity, and family income need. An individual-specific
+    * unobserved borrowing propensity adds idiosyncratic variation.
+    * Units: $000s. The $100k policy cap implies threshold = 100.
+    gen loan_noise = rnormal(0, 22)
+    gen grad_plus_loans = 30 ///
+        + 25 * stem_major             ///  STEM: higher program costs
+        + 35 * bus_major              ///  Business/MBA: highest costs
+        + 10 * ed_major               ///  Education: moderate
+        + 20 * health_major           ///  Health: moderate-high
+        + 15 * selective_inst         ///  Selective institutions: higher CoA
+        + 12 * (4 - parent_income_q)  ///  Lower income → higher borrowing need
+        - 0.8 * ga_funding_adj        ///  Higher GA funding → less need to borrow
+        + loan_noise
+    replace grad_plus_loans = max(0, grad_plus_loans)
+    replace grad_plus_loans = min(250, grad_plus_loans)
+
+    * ── Institutional revenue variables ─────────────────────────────────────────
+    * Annual tuition and program length determine the institutional revenue stake.
+    * Business/MBA programs carry the highest sticker price; Education the lowest.
+    * Selective institutions charge a premium of roughly $12–15k per year.
+    * Net revenue to the institution after variable (instructional) costs is
+    * approximately 65 cents per tuition dollar — the marginal cost share is ~35%.
+    * An additional 20% of net revenue cross-subsidizes undergraduate programs
+    * and need-based aid; a graduate enrollment drop therefore has a ripple effect
+    * on the institution's broader financial model.
+    gen tuition_noise = rnormal(0, 4)
+    gen annual_tuition = 25 ///
+        + 35 * bus_major              ///  Business/MBA: highest tuition
+        + 10 * stem_major             ///  STEM: moderate (TA/RA lowers net cost)
+        +  0 * ed_major               ///  Education: at baseline
+        + 20 * health_major           ///  Health: high program costs
+        + 12 * selective_inst         ///  Selective institutions: premium
+        -  3 * public_ug              ///  Public institutions: lower sticker price
+        + tuition_noise
+    replace annual_tuition = max(10, annual_tuition)   // Floor at $10k/year
+    label variable annual_tuition "Annual Graduate Tuition ($000s)"
+
+    * Program length (years to degree): MBA = 2, STEM = 2.5, others = 2
+    gen program_years = 2 + 0.5 * stem_major
+    label variable program_years "Expected Years to Degree"
+
+    * Total gross tuition revenue per enrolled student
+    gen gross_tuition = annual_tuition * program_years
+    label variable gross_tuition "Gross Tuition Revenue per Student ($000s)"
+
+    * Net institutional revenue (65% of gross; 35% is variable instructional cost)
+    gen net_inst_rev = 0.65 * gross_tuition
+    label variable net_inst_rev "Net Institutional Revenue per Student ($000s)"
+
+    drop tuition_noise
+
+    * ── Latent propensity to complete ───────────────────────────────────────────
+    * The selection equation follows Chapter 10. Students select into completion
+    * based on observed covariates, GA funding, and an unobserved individual factor.
+    gen epsilon = rnormal(0, 1)    // Latent selection error (positive correlation
+    gen nu      = rnormal(0, 1)    //   with earnings error to create selection bias)
+
+    * Latent index (linear combination of instrument + controls + noise)
+    gen index_latent = -1.97 ///
+        + 0.13 * ga_funding_adj ///
+        + 0.04 * ugpa * 10 ///
+        + 0.08 * parent_grad ///
+        - 0.10 * firstgen ///
+        + 0.06 * (parent_income_q - 2) ///
+        + 0.05 * selective_inst ///
+        + 0.05 * metro ///
+        + 0.07 * ed_major ///
+        - 0.03 * age_ba ///
+        + epsilon
+
+    gen masters = (index_latent > 0)
+    label variable masters "Completed Master's Degree (1=Yes)"
+
+    * ── Propensity score (true) ─────────────────────────────────────────────────
+    gen phat_true = normal(index_latent)
+
+    * ── Heterogeneous treatment effects ─────────────────────────────────────────
+    * MTE(u) = b0 + b1*u + b2*u^2 + b3*u^3  (cubic polynomial)
+    * True parameters imply declining MTE → positive selection on gains.
+    * Interpretation: students most likely to complete (low u) benefit the most.
+    local b0_true = -2.50
+    local b1_true =  19.30
+    local b2_true = -30.25
+    local b3_true =  15.12
+
+    gen u_true      = 1 - phat_true
+    gen mte_true    = `b0_true' + `b1_true'*u_true + `b2_true'*u_true^2 + `b3_true'*u_true^3
+    gen Y1_latent   = mte_true + rnormal(0, 0.40)    // Log-salary under D=1
+    gen Y0_latent   = rnormal(0, 0.70)               // Log-salary under D=0
+
+    * ── Observed log salary ─────────────────────────────────────────────────────
+    gen ln_salary = 10.0 ///
+        + Y1_latent * masters ///
+        + Y0_latent * (1 - masters) ///
+        + 0.25 * ugpa ///
+        + 0.15 * stem_major ///
+        + 0.25 * bus_major ///
+        - 0.18 * ed_major ///
+        + 0.10 * selective_inst ///
+        - 0.07 * female ///
+        - 0.06 * black ///
+        + 0.025 * (parent_income_q - 2) ///
+        + rnormal(0, 0.20)
+    label variable ln_salary "Log Annual Salary"
+
+    gen salary = exp(ln_salary)
+    label variable salary "Annual Salary ($)"
+
+    * ── Drop construction intermediates ─────────────────────────────────────────
+    drop prog_draw loan_noise epsilon nu index_latent phat_true u_true ///
+         mte_true Y1_latent Y0_latent
+
+    * ── Save synthetic dataset ──────────────────────────────────────────────
+    save "Example_12_1.dta", replace
+    di as text "Synthetic dataset saved as Example_12_1.dta"
+}
+else {
+    di as text "Canonical dataset downloaded from GitHub repository."
 }
 
-* ── DGP ────────────────────────────────────────────────────────────────────
-clear
-set obs 8000
-gen id = _n
-
-* ── Individual characteristics ──────────────────────────────────────────────
-gen female          = (runiform() < 0.52)
-gen black           = (runiform() < 0.13)
-gen hispanic        = (runiform() < 0.10)
-gen asian           = (runiform() < 0.07)
-gen age_ba          = round(rnormal(24, 3))
-replace age_ba      = max(21, min(35, age_ba))
-gen firstgen        = (runiform() < 0.26)
-gen parent_income_q = ceil(runiform() * 4)          // 1 = bottom, 4 = top
-gen parent_grad     = (runiform() < 0.38)
-gen ugpa            = round(rnormal(3.3, 0.45) * 100) / 100
-replace ugpa        = max(2.0, min(4.0, ugpa))
-
-* ── Program area ────────────────────────────────────────────────────────────
-gen prog_draw   = runiform()
-gen stem_major  = (prog_draw < 0.22)
-gen bus_major   = (prog_draw >= 0.22 & prog_draw < 0.40)
-gen ed_major    = (prog_draw >= 0.40 & prog_draw < 0.56)
-gen health_major = (prog_draw >= 0.56 & prog_draw < 0.70)
-* Base category: Other / Social Sciences
-
-* ── Institution characteristics ─────────────────────────────────────────────
-gen selective_inst = (runiform() < 0.28)
-gen public_ug      = (runiform() < 0.72)
-gen state_unemp    = round(rnormal(5.2, 1.3) * 10) / 10
-replace state_unemp = max(2.5, min(10.5, state_unemp))
-gen metro          = (runiform() < 0.68)
-
-* ── State GA funding (instrument) ───────────────────────────────────────────
-* Each student is assigned a state GA funding level. Variation is driven by
-* state budgetary conditions and is plausibly exogenous to individual earnings.
-gen ga_funding_adj = round(rnormal(7.5, 2.2) * 10) / 10
-replace ga_funding_adj = max(2.0, min(14.0, ga_funding_adj))
-
-* ── Grad PLUS loan amount ────────────────────────────────────────────────────
-* Loan amounts reflect program costs (STEM and business programs cost more),
-* institutional selectivity, and family income need. An individual-specific
-* unobserved borrowing propensity adds idiosyncratic variation.
-* Units: $000s. The $100k policy cap implies threshold = 100.
-gen loan_noise = rnormal(0, 22)
-gen grad_plus_loans = 30 ///
-    + 25 * stem_major             ///  STEM: higher program costs
-    + 35 * bus_major              ///  Business/MBA: highest costs
-    + 10 * ed_major               ///  Education: moderate
-    + 20 * health_major           ///  Health: moderate-high
-    + 15 * selective_inst         ///  Selective institutions: higher CoA
-    + 12 * (4 - parent_income_q)  ///  Lower income → higher borrowing need
-    - 0.8 * ga_funding_adj        ///  Higher GA funding → less need to borrow
-    + loan_noise
-replace grad_plus_loans = max(0, grad_plus_loans)
-replace grad_plus_loans = min(250, grad_plus_loans)
-
-* ── Institutional revenue variables ─────────────────────────────────────────
-* Annual tuition and program length determine the institutional revenue stake.
-* Business/MBA programs carry the highest sticker price; Education the lowest.
-* Selective institutions charge a premium of roughly $12–15k per year.
-* Net revenue to the institution after variable (instructional) costs is
-* approximately 65 cents per tuition dollar — the marginal cost share is ~35%.
-* An additional 20% of net revenue cross-subsidizes undergraduate programs
-* and need-based aid; a graduate enrollment drop therefore has a ripple effect
-* on the institution's broader financial model.
-gen tuition_noise = rnormal(0, 4)
-gen annual_tuition = 25 ///
-    + 35 * bus_major              ///  Business/MBA: highest tuition
-    + 10 * stem_major             ///  STEM: moderate (TA/RA lowers net cost)
-    +  0 * ed_major               ///  Education: at baseline
-    + 20 * health_major           ///  Health: high program costs
-    + 12 * selective_inst         ///  Selective institutions: premium
-    -  3 * public_ug              ///  Public institutions: lower sticker price
-    + tuition_noise
-replace annual_tuition = max(10, annual_tuition)   // Floor at $10k/year
-label variable annual_tuition "Annual Graduate Tuition ($000s)"
-
-* Program length (years to degree): MBA = 2, STEM = 2.5, others = 2
-gen program_years = 2 + 0.5 * stem_major
-label variable program_years "Expected Years to Degree"
-
-* Total gross tuition revenue per enrolled student
-gen gross_tuition = annual_tuition * program_years
-label variable gross_tuition "Gross Tuition Revenue per Student ($000s)"
-
-* Net institutional revenue (65% of gross; 35% is variable instructional cost)
-gen net_inst_rev = 0.65 * gross_tuition
-label variable net_inst_rev "Net Institutional Revenue per Student ($000s)"
-
-drop tuition_noise
-
-* ── Latent propensity to complete ───────────────────────────────────────────
-* The selection equation follows Chapter 10. Students select into completion
-* based on observed covariates, GA funding, and an unobserved individual factor.
-gen epsilon = rnormal(0, 1)    // Latent selection error (positive correlation
-gen nu      = rnormal(0, 1)    //   with earnings error to create selection bias)
-
-* Latent index (linear combination of instrument + controls + noise)
-gen index_latent = -1.97 ///
-    + 0.13 * ga_funding_adj ///
-    + 0.04 * ugpa * 10 ///
-    + 0.08 * parent_grad ///
-    - 0.10 * firstgen ///
-    + 0.06 * (parent_income_q - 2) ///
-    + 0.05 * selective_inst ///
-    + 0.05 * metro ///
-    + 0.07 * ed_major ///
-    - 0.03 * age_ba ///
-    + epsilon
-
-gen masters = (index_latent > 0)
-label variable masters "Completed Master's Degree (1=Yes)"
-
-* ── Propensity score (true) ─────────────────────────────────────────────────
-gen phat_true = normal(index_latent)
-
-* ── Heterogeneous treatment effects ─────────────────────────────────────────
-* MTE(u) = b0 + b1*u + b2*u^2 + b3*u^3  (cubic polynomial)
-* True parameters imply declining MTE → positive selection on gains.
-* Interpretation: students most likely to complete (low u) benefit the most.
-local b0_true = -2.50
-local b1_true =  19.30
-local b2_true = -30.25
-local b3_true =  15.12
-
-gen u_true      = 1 - phat_true
-gen mte_true    = `b0_true' + `b1_true'*u_true + `b2_true'*u_true^2 + `b3_true'*u_true^3
-gen Y1_latent   = mte_true + rnormal(0, 0.40)    // Log-salary under D=1
-gen Y0_latent   = rnormal(0, 0.70)               // Log-salary under D=0
-
-* ── Observed log salary ─────────────────────────────────────────────────────
-gen ln_salary = 10.0 ///
-    + Y1_latent * masters ///
-    + Y0_latent * (1 - masters) ///
-    + 0.25 * ugpa ///
-    + 0.15 * stem_major ///
-    + 0.25 * bus_major ///
-    - 0.18 * ed_major ///
-    + 0.10 * selective_inst ///
-    - 0.07 * female ///
-    - 0.06 * black ///
-    + 0.025 * (parent_income_q - 2) ///
-    + rnormal(0, 0.20)
-label variable ln_salary "Log Annual Salary"
-
-gen salary = exp(ln_salary)
-label variable salary "Annual Salary ($)"
-
-* ── Drop construction intermediates ─────────────────────────────────────────
-drop prog_draw loan_noise epsilon nu index_latent phat_true u_true ///
-     mte_true Y1_latent Y0_latent
-
-* ── Save synthetic dataset ──────────────────────────────────────────────────
-save "Example_11_1.dta", replace
-di as text "Synthetic dataset saved as Example_11_1.dta"
-
 * ── Always load the dataset (whether downloaded or just generated) ───────────
-use "Example_11_1.dta", clear
+use "Example_12_1.dta", clear
 
 
 /*---------------------------------------------------------------------------
@@ -291,7 +295,7 @@ di _n "============================================================"
 di    "  Section 3: Descriptive Statistics and Policy Exposure"
 di    "============================================================"
 
-use "Example_11_1.dta", clear
+use "Example_12_1.dta", clear
 
 * ── Sample overview ─────────────────────────────────────────────────────────
 tab masters
@@ -799,9 +803,9 @@ di _n "P(Extended NB > 0, incl. institutional costs): " %5.3f r(mean)
 tabstat b0_s b1_s b2_s b3_s ate_s att_s atu_s mprte_s, ///
     stats(mean sd) columns(statistics)
 
-* ── Treatment Parameter Posterior Summary (Table 11.5 inputs) ────────────────
+* ── Treatment Parameter Posterior Summary (Table 12.5 inputs) ────────────────
 * Posterior means and 95% credible intervals for ATE, ATT, MPRTE, ATU.
-* These four numbers populate the Estimate column of Table 11.5 and provide
+* These four numbers populate the Estimate column of Table 12.5 and provide
 * the inferential basis for the MPRTE > ATT claim in the chapter narrative.
 di _n "--- Treatment Parameter Posterior (log-salary units) ---"
 foreach var in ate_s att_s mprte_s atu_s {
@@ -848,7 +852,7 @@ di "NB/student:  mean = " %8.2f `xm' "  sd = " %8.2f `xs' ///
     "  95% CI: [" %8.2f r(r1) ", " %8.2f r(r2) "]"
 
 * ── Save results for figures ─────────────────────────────────────────────────
-save "$tables_dir/sim_results_ch11.dta", replace
+save "$tables_dir/sim_results_ch12.dta", replace
 restore
 
 
@@ -861,7 +865,7 @@ di    "  Section 9: Posterior Summaries and Inference"
 di    "============================================================"
 
 preserve
-use "$tables_dir/sim_results_ch11.dta", clear
+use "$tables_dir/sim_results_ch12.dta", clear
 
 * ── 95% credible intervals ───────────────────────────────────────────────────
 * r(p2) and r(p97) are not stored by sum,detail. Use _pctile instead.
@@ -898,7 +902,7 @@ else {
 }
 
 * ── LaTeX-ready summary table ────────────────────────────────────────────────
-file open ftab using "$tables_dir/Table11_1_CBA_Summary.tex", write replace
+file open ftab using "$tables_dir/Table12_1_CBA_Summary.tex", write replace
 file write ftab "\begin{table}[ht]" _n
 file write ftab "\caption{Posterior Cost--Benefit Summary: \$100k Grad PLUS Cap}" _n
 file write ftab "\begin{tabular}{lrrrr}" _n
@@ -935,7 +939,7 @@ file write ftab "\end{tabular}" _n
 file write ftab "\end{table}" _n
 file close ftab
 
-di _n "Summary table written to $tables_dir/Table11_1_CBA_Summary.tex"
+di _n "Summary table written to $tables_dir/Table12_1_CBA_Summary.tex"
 
 restore
 
@@ -949,10 +953,10 @@ di    "  Section 10: Figures"
 di    "============================================================"
 
 * ─────────────────────────────────────────────────────────────────────────────
-* Fig. 11.1: Posterior Distribution of Net Social Benefits
+* Fig. 12.1: Posterior Distribution of Net Social Benefits
 * ─────────────────────────────────────────────────────────────────────────────
 preserve
-use "$tables_dir/sim_results_ch11.dta", clear
+use "$tables_dir/sim_results_ch12.dta", clear
 
 qui sum net_benefit_s
 local nb_mean_plot = r(mean)
@@ -967,19 +971,19 @@ histogram net_benefit_s, ///
     note("Dashed line at zero. Solid line at posterior mean (" ///
          %6.1f `nb_mean_plot' " $000s)." ///
          "N = $S_draws posterior draws.") ///
-    name(fig11_1_posterior_nb, replace)
+    name(fig12_1_posterior_nb, replace)
 
-graph export "$graphs_dir/fig11_1_posterior_nb_Stata.png", ///
-    name(fig11_1_posterior_nb) replace width(1200)
+graph export "$graphs_dir/fig12_1_posterior_nb_Stata.png", ///
+    name(fig12_1_posterior_nb) replace width(1200)
 
 restore
 
 * ─────────────────────────────────────────────────────────────────────────────
-* Fig. 11.2: MTE Curve with Policy-Affected Region Shaded
+* Fig. 12.2: MTE Curve with Policy-Affected Region Shaded
 * Based on posterior mean MTE polynomial coefficients.
 * ─────────────────────────────────────────────────────────────────────────────
 preserve
-use "$tables_dir/sim_results_ch11.dta", clear
+use "$tables_dir/sim_results_ch12.dta", clear
 
 * Posterior mean coefficients — each command on its own line
 qui sum b0_s
@@ -1024,19 +1028,19 @@ twoway ///
     note("Shaded region: u {&isin} [0.30, 0.65] (policy-affected margin)." ///
          "Dark gray = human capital loss; light gray = efficiency gain from" ///
          "removing low-return borrowers.") ///
-    name(fig11_2_mte_policy, replace)
+    name(fig12_2_mte_policy, replace)
 
-graph export "$graphs_dir/fig11_2_mte_policy_Stata.png", ///
-    name(fig11_2_mte_policy) replace width(1200)
+graph export "$graphs_dir/fig12_2_mte_policy_Stata.png", ///
+    name(fig12_2_mte_policy) replace width(1200)
 
 restore
 
 * ─────────────────────────────────────────────────────────────────────────────
-* Fig. 11.3: Benefit–Cost Decomposition — Stacked Bar Chart
+* Fig. 12.3: Benefit–Cost Decomposition — Stacked Bar Chart
 * Shows posterior mean of each component and their net contribution.
 * ─────────────────────────────────────────────────────────────────────────────
 preserve
-use "$tables_dir/sim_results_ch11.dta", clear
+use "$tables_dir/sim_results_ch12.dta", clear
 
 * Compute posterior means — each command on its own line (no inline semicolons)
 qui sum fiscal_s
@@ -1073,19 +1077,19 @@ graph bar value, over(label, sort(component)) ///
     subtitle("$100k Federal Loan Cap (Posterior Mean Components)") ///
     note("Behavioral cost shown as negative (subtracted from net benefit)." ///
          "Net benefit = Fiscal Savings + Efficiency Gain − Behavioral Cost.") ///
-    name(fig11_3_cba_decomp, replace)
+    name(fig12_3_cba_decomp, replace)
 
-graph export "$graphs_dir/fig11_3_cba_decomp_Stata.png", ///
-    name(fig11_3_cba_decomp) replace width(1200)
+graph export "$graphs_dir/fig12_3_cba_decomp_Stata.png", ///
+    name(fig12_3_cba_decomp) replace width(1200)
 
 restore
 
 * ─────────────────────────────────────────────────────────────────────────────
-* Fig. 11.4: Posterior Distribution of ATE, ATT, ATU
+* Fig. 12.4: Posterior Distribution of ATE, ATT, ATU
 * Illustrates treatment effect heterogeneity across the posterior.
 * ─────────────────────────────────────────────────────────────────────────────
 preserve
-use "$tables_dir/sim_results_ch11.dta", clear
+use "$tables_dir/sim_results_ch12.dta", clear
 
 * Plot three overlapping density curves for the three treatment parameters
 kdensity ate_s, generate(ate_x ate_d) nograph n(200)
@@ -1102,17 +1106,17 @@ twoway ///
     note("ATU > ATT > ATE reflects negative selection: financially constrained" ///
          "students have higher potential returns than self-selected completers." ///
          "N = $S_draws posterior draws.") ///
-    name(fig11_4_param_posteriors, replace)
+    name(fig12_4_param_posteriors, replace)
 
-graph export "$graphs_dir/fig11_4_param_posteriors_Stata.png", ///
-    name(fig11_4_param_posteriors) replace width(1200)
+graph export "$graphs_dir/fig12_4_param_posteriors_Stata.png", ///
+    name(fig12_4_param_posteriors) replace width(1200)
 
 drop ate_x ate_d att_x att_d atu_x atu_d
 
 restore
 
 * ─────────────────────────────────────────────────────────────────────────────
-* Fig. 11.5: MTE Curve by Graduate Program Area (Heterogeneity)
+* Fig. 12.5: MTE Curve by Graduate Program Area (Heterogeneity)
 * Field-specific MTE curves reveal which programs drive the efficiency verdict.
 * ─────────────────────────────────────────────────────────────────────────────
 * This figure uses the field-specific interacted model (est store mte_byarea)
@@ -1157,20 +1161,20 @@ twoway ///
     note("Field-specific MTE adjusted by program-area ATE differentials from" ///
          "the interacted model (Chapter 10, Table 10.1). Business programs" ///
          "show the largest returns; Education the lowest.") ///
-    name(fig11_5_mte_byfield, replace)
+    name(fig12_5_mte_byfield, replace)
 
-graph export "$graphs_dir/fig11_5_mte_byfield_Stata.png", ///
-    name(fig11_5_mte_byfield) replace width(1200)
+graph export "$graphs_dir/fig12_5_mte_byfield_Stata.png", ///
+    name(fig12_5_mte_byfield) replace width(1200)
 
 restore
 
 
 * ─────────────────────────────────────────────────────────────────────────────
-* Fig. 11.6: Institutional Revenue Loss by Program Area
+* Fig. 12.6: Institutional Revenue Loss by Program Area
 * Illustrates which programs bear the heaviest burden from the cap.
 * ─────────────────────────────────────────────────────────────────────────────
 preserve
-use "Example_11_1.dta", clear
+use "Example_12_1.dta", clear
 
 * Recompute displaced_E (requires above_cap and p_displaced regeneration)
 gen above_cap    = (grad_plus_loans > $cap_threshold)
@@ -1205,19 +1209,19 @@ graph bar inst_rev_loss_i, over(prog_area, sort(sort_order)) ///
     subtitle("Cap-displaced students × net tuition revenue per student") ///
     note("Net revenue = 65% of gross tuition (35% variable cost excluded)." ///
          "Excludes cross-subsidy disruption. Based on point estimates.") ///
-    name(fig11_6_inst_rev_byfield, replace)
+    name(fig12_6_inst_rev_byfield, replace)
 
-graph export "$graphs_dir/fig11_6_inst_rev_byfield_Stata.png", ///
-    name(fig11_6_inst_rev_byfield) replace width(1200)
+graph export "$graphs_dir/fig12_6_inst_rev_byfield_Stata.png", ///
+    name(fig12_6_inst_rev_byfield) replace width(1200)
 
 restore
 
 * ─────────────────────────────────────────────────────────────────────────────
-* Fig. 11.7: Full Social Cost Stack — Student + Institutional Channels
+* Fig. 12.7: Full Social Cost Stack — Student + Institutional Channels
 * Stacks all costs and savings to show the complete distributional picture.
 * ─────────────────────────────────────────────────────────────────────────────
 preserve
-use "$tables_dir/sim_results_ch11.dta", clear
+use "$tables_dir/sim_results_ch12.dta", clear
 
 qui sum fiscal_s
 scalar sc_fs  = r(mean)
@@ -1264,10 +1268,10 @@ graph bar value, over(label, sort(component) label(angle(30))) ///
     note("Benefits shown positive; costs shown negative." ///
          "Human capital loss and institutional revenue loss dominate." ///
          "Cross-subsidy disruption captures upstream undergraduate impact.") ///
-    name(fig11_7_full_cost_stack, replace)
+    name(fig12_7_full_cost_stack, replace)
 
-graph export "$graphs_dir/fig11_7_full_cost_stack_Stata.png", ///
-    name(fig11_7_full_cost_stack) replace width(1200)
+graph export "$graphs_dir/fig12_7_full_cost_stack_Stata.png", ///
+    name(fig12_7_full_cost_stack) replace width(1200)
 
 restore
 
@@ -1277,17 +1281,19 @@ restore
 ---------------------------------------------------------------------------*/
 
 di _n "============================================================"
-di    "  Chapter 11 Script Complete"
+di    "  Chapter 12 Script Complete"
 di    "============================================================"
 di as text "Output files:"
-di as text "  Stata log:    Output/logs/Chapter11_Stata_output.log"
-di as text "  Data:         Example_11_1.dta"
-di as text "  Table:        $tables_dir/Table11_1_CBA_Summary.tex"
-di as text "  Sim results:  $tables_dir/sim_results_ch11.dta"
-di as text "  Figures:      $graphs_dir/fig11_1_posterior_nb_Stata.png"
-di as text "                $graphs_dir/fig11_2_mte_policy_Stata.png"
-di as text "                $graphs_dir/fig11_3_cba_decomp_Stata.png"
-di as text "                $graphs_dir/fig11_4_param_posteriors_Stata.png"
-di as text "                $graphs_dir/fig11_5_mte_byfield_Stata.png"
+di as text "  Stata log:    Output/logs/Chapter12_Stata_output.log"
+di as text "  Data:         Example_12_1.dta"
+di as text "  Table:        $tables_dir/Table12_1_CBA_Summary.tex"
+di as text "  Sim results:  $tables_dir/sim_results_ch12.dta"
+di as text "  Figures:      $graphs_dir/fig12_1_posterior_nb_Stata.png"
+di as text "                $graphs_dir/fig12_2_mte_policy_Stata.png"
+di as text "                $graphs_dir/fig12_3_cba_decomp_Stata.png"
+di as text "                $graphs_dir/fig12_4_param_posteriors_Stata.png"
+di as text "                $graphs_dir/fig12_5_mte_byfield_Stata.png"
+di as text "                $graphs_dir/fig12_6_inst_rev_byfield_Stata.png"
+di as text "                $graphs_dir/fig12_7_full_cost_stack_Stata.png"
 
 log close
