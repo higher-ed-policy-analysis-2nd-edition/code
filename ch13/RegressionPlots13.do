@@ -53,6 +53,18 @@ if "`r(status)'" != "on" {
     di "Log location: $logdir/RegressionPlots13_output.log"
 }
 
+* Publication export helper (idempotent redefinition -- see
+* Stata_code13.do's Presentation Settings block for the master-run
+* definition and full rationale). Defined here too so this script also
+* works when run standalone.
+capture program drop pubexport
+program define pubexport
+    args gname
+    graph export "$graphs_dir/`gname'_Stata.svg", replace
+    graph export "$graphs_dir/`gname'_Stata.pdf", replace
+    graph export "$graphs_dir/`gname'_Stata.png", replace width(2400)
+end
+
 *========================================================================
 * 13.5.1 Regression Coefficient Plots
 *========================================================================
@@ -79,7 +91,14 @@ use "$data_dir/Example_13_1.dta", clear
 *------------------------------------------------------------------------
 reg D1.lnnetut L1.D1.lnstateap L1.D1.lnfte L1.D1.lnperinc
 
-mata: st_matrix("e(box)", (st_matrix("e(b)") :- 2 \ st_matrix("e(b)") :+ 2))
+* NOTE -- BUG FIX (integrity issue, not just cosmetic): this line
+* previously overwrote coefplot's confidence interval with an
+* ARBITRARY fixed window (point estimate +/- a constant), completely
+* disconnected from the actual standard errors -- whether the bars
+* crossed zero had nothing to do with statistical significance, only
+* whether the coefficient's magnitude happened to be smaller than the
+* constant. Removed so coefplot uses its own default behavior: a
+* genuine confidence interval computed from the model's own e(V).
 
 coefplot, xline(0) drop(_cons) mlabel format(%9.2g) mlabposition(0) ///
     msymbol(i) ciopts(recast(. rbar) barwidt(. 0.35) fcolor(. white) ///
@@ -89,7 +108,7 @@ coefplot, xline(0) drop(_cons) mlabel format(%9.2g) mlabposition(0) ///
     ytitle(10 Percent Change in . . .) xtitle(Change in Net Tuition Revenue) ///
     name(fig13_7_ols_coefplot, replace)
 
-graph export "$graphs_dir/fig13_7_ols_coefplot_Stata.png", replace
+pubexport fig13_7_ols_coefplot
 
 *------------------------------------------------------------------------
 * Figure 13.8: Same, with CCEMG Estimator (cross-sectional dependence)
@@ -101,7 +120,14 @@ gen LDlnperinc  = LD1.lnperinc
 
 xtmg Dlnnetut LDlnstateap LDlnfte LDlnperinc, cce
 
-mata: st_matrix("e(box)", (st_matrix("e(b)") :- 2 \ st_matrix("e(b)") :+ 2))
+* NOTE -- BUG FIX (integrity issue, not just cosmetic): this line
+* previously overwrote coefplot's confidence interval with an
+* ARBITRARY fixed window (point estimate +/- a constant), completely
+* disconnected from the actual standard errors -- whether the bars
+* crossed zero had nothing to do with statistical significance, only
+* whether the coefficient's magnitude happened to be smaller than the
+* constant. Removed so coefplot uses its own default behavior: a
+* genuine confidence interval computed from the model's own e(V).
 
 coefplot, xline(0) keep(LDlnstateap LDlnfte LDlnperinc) ///
     mlabel format(%9.2g) mlabposition(0) msymbol(i) ///
@@ -115,7 +141,7 @@ coefplot, xline(0) keep(LDlnstateap LDlnfte LDlnperinc) ///
     size(medium) margin(small) justification(center)) ///
     name(fig13_8_ccemg_coefplot, replace)
 
-graph export "$graphs_dir/fig13_8_ccemg_coefplot_Stata.png", replace
+pubexport fig13_8_ccemg_coefplot
 
 *------------------------------------------------------------------------
 * Figure 13.9: HCR Model with DCCE-MG Estimator and ARDL
@@ -158,7 +184,14 @@ foreach pctl in median p25 p75 {
 
     xtscc $y L1.$x1 L1.$x2 L1.$x3 L1.$x4
     margins, eyex(L1.$x1 L1.$x2 L1.$x3 L1.$x4) at(`at_opt') post
-    mata: st_matrix("e(box)", (st_matrix("e(b)") :- 1 \ st_matrix("e(b)") :+ 1))
+    * NOTE -- BUG FIX (integrity issue, not just cosmetic): this line
+    * previously overwrote coefplot's confidence interval with an
+    * ARBITRARY fixed window (point estimate +/- a constant), completely
+    * disconnected from the actual standard errors -- whether the bars
+    * crossed zero had nothing to do with statistical significance, only
+    * whether the coefficient's magnitude happened to be smaller than the
+    * constant. Removed so coefplot uses its own default behavior: a
+    * genuine confidence interval computed from the model's own e(V).
 
     coefplot (., keep(L.net_tuition_rev_adj) color(black)) ///
         (., keep(L.state_appro_adj) color(gray)) (., keep(L.fedrev_r) color(gray)) ///
@@ -176,7 +209,7 @@ foreach pctl in median p25 p75 {
         ytitle(Percent) xtitle("At the `pctl'", size(small)) ///
         name(fig13_10_`pctl', replace)
 
-    graph export "$graphs_dir/fig13_10_`pctl'_Stata.png", replace
+    pubexport fig13_10_`pctl'
 }
 
 *========================================================================
@@ -189,12 +222,26 @@ global x "L1.net_tuition_rev_adj L1.state_appro_adj L1.fedrev_r L1.FTE_enroll"
 
 qui xtscc y $x if CGB == 0
 qui margins, eyex(*) post
-mata: st_matrix("e(box)", (st_matrix("e(b)") :- 1 \ st_matrix("e(b)") :+ 1))
+* NOTE -- BUG FIX (integrity issue, not just cosmetic): this line
+* previously overwrote coefplot's confidence interval with an
+* ARBITRARY fixed window (point estimate +/- a constant), completely
+* disconnected from the actual standard errors -- whether the bars
+* crossed zero had nothing to do with statistical significance, only
+* whether the coefficient's magnitude happened to be smaller than the
+* constant. Removed so coefplot uses its own default behavior: a
+* genuine confidence interval computed from the model's own e(V).
 eststo NoCGB
 
 qui xtscc y $x if CGB == 1
 qui margins, eyex(*) post
-mata: st_matrix("e(box)", (st_matrix("e(b)") :- 1 \ st_matrix("e(b)") :+ 1))
+* NOTE -- BUG FIX (integrity issue, not just cosmetic): this line
+* previously overwrote coefplot's confidence interval with an
+* ARBITRARY fixed window (point estimate +/- a constant), completely
+* disconnected from the actual standard errors -- whether the bars
+* crossed zero had nothing to do with statistical significance, only
+* whether the coefficient's magnitude happened to be smaller than the
+* constant. Removed so coefplot uses its own default behavior: a
+* genuine confidence interval computed from the model's own e(V).
 eststo CGB
 
 *------------------------------------------------------------------------
@@ -213,7 +260,7 @@ coefplot NoCGB CGB, xline(0) format(%9.0f) rescale(10) recast(bar) ///
     size(medium) margin(small) justification(center)) ///
     name(fig13_11_cgb_coefplot, replace)
 
-graph export "$graphs_dir/fig13_11_cgb_coefplot_Stata.png", replace
+pubexport fig13_11_cgb_coefplot
 
 *------------------------------------------------------------------------
 * Close the standalone log opened above, if this script opened one.

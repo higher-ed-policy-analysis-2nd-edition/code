@@ -44,6 +44,18 @@ if "`r(status)'" != "on" {
     di "Log location: $logdir/TrendGraphs13_output.log"
 }
 
+* Publication export helper (idempotent redefinition -- see
+* Stata_code13.do's Presentation Settings block for the master-run
+* definition and full rationale). Defined here too so this script also
+* works when run standalone.
+capture program drop pubexport
+program define pubexport
+    args gname
+    graph export "$graphs_dir/`gname'_Stata.svg", replace
+    graph export "$graphs_dir/`gname'_Stata.pdf", replace
+    graph export "$graphs_dir/`gname'_Stata.png", replace width(2400)
+end
+
 * Retained from 1st ed. Ch. 10 -- no new Stata routines required.
 * R equivalent (ggplot2 + theme_springer()) belongs in R_code13.R,
 * translating each example below for direct comparison.
@@ -53,12 +65,16 @@ use "$data_dir/Example_13_1.dta", clear
 *------------------------------------------------------------------------
 * Figure 13.3: State Appropriations per Population, FY 1980-2018
 * (Maryland vs. all other states)
+*
+* Presentation Enhancements: bw (grayscale-safe line patterns) and a
+* 12-o'clock legend position keep this print-ready without color, per
+* Springer's B&W requirement noted throughout the book's other chapters.
 *------------------------------------------------------------------------
 lgraph y_pop fy, nom by(MD) xlabel(1980(3)2018) bw ///
-    title("State Appropriations Per Population" "FY 1980-2018") ///
+    title("State Appropriations Per Population" "FY 1980-2018", $TITLESIZE) ///
     ytitle(Dollars) legend(pos(12) col(2)) name(fig13_3_md_v_nation, replace)
 
-graph export "$graphs_dir/fig13_3_md_v_nation_Stata.png", replace
+pubexport fig13_3_md_v_nation
 
 *------------------------------------------------------------------------
 * Figure 13.4: State Appropriations per FTE, Maryland vs. All Other
@@ -79,10 +95,10 @@ if _rc {
 label values MDSREB MDSREB1
 
 lgraph yfte fy if region_compact == 1, nom by(MDSREB) xlabel(1980(2)2018, ///
-    labsize(vsmall)) bw title("State Appropriations Per FTE" "FY 1980-2018") ///
+    labsize(vsmall)) bw title("State Appropriations Per FTE" "FY 1980-2018", $TITLESIZE) ///
     ytitle(Dollars) legend(pos(12) col(2)) name(fig13_4_md_v_sreb, replace)
 
-graph export "$graphs_dir/fig13_4_md_v_sreb_Stata.png", replace
+pubexport fig13_4_md_v_sreb
 
 *------------------------------------------------------------------------
 * Figure 13.5: Colorado Net Tuition Revenue per FTE Before and After
@@ -117,10 +133,10 @@ global y "netuit_fte"
 lgraph $y fy if fy > 1999, by(T) stat(mean) xline(2005) xlabel(2000(2)2016, ///
     labsize(small)) ylab(, nogrid) scheme(s2mono) bw ///
     title("Colorado's Net Tuition Revenue Per FTE" ///
-    "Before and After Colorado Senate Bill 189") ytitle(Dollars) ///
+    "Before and After Colorado Senate Bill 189", $TITLESIZE) ytitle(Dollars) ///
     legend(pos(12) col(2)) name(fig13_5_co_sb189_v_all, replace)
 
-graph export "$graphs_dir/fig13_5_co_sb189_v_all_Stata.png", replace
+pubexport fig13_5_co_sb189_v_all
 
 *------------------------------------------------------------------------
 * Figure 13.6: Colorado Net Tuition Revenue per FTE Before and After
@@ -151,10 +167,10 @@ lgraph $y fy if region_compact == 2 & fy > 1999, nom by(COWICHE) ///
     stat(mean) xline(2005) xlabel(2000(2)2016, labsize(small)) ///
     ylab(, nogrid) scheme(s2mono) bw ///
     title("Colorado's Net Tuition Revenue Per FTE" ///
-    "Before and After Colorado Senate Bill 189") ytitle(Dollars) ///
+    "Before and After Colorado Senate Bill 189", $TITLESIZE) ytitle(Dollars) ///
     legend(pos(12) col(2)) name(fig13_6_co_sb189_v_wiche, replace)
 
-graph export "$graphs_dir/fig13_6_co_sb189_v_wiche_Stata.png", replace
+pubexport fig13_6_co_sb189_v_wiche
 
 *------------------------------------------------------------------------
 * Close the standalone log opened above, if this script opened one.

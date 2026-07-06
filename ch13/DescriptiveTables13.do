@@ -97,8 +97,23 @@ tabstat y_pop x1fte x3_pop x4_pop x5_pop, statistics(mean median) ///
 * Modern path (Stata 18+): dtable -- official StataCorp command,
 * purpose-built for descriptive/"Table 1" style tables. Replaces the
 * asdoc/tabstat workaround with no third-party dependency.
+*
+* Presentation Enhancements: dtable builds and exports its own
+* collection internally, so collect style commands need to be set
+* BEFORE calling dtable (not after) for them to take effect on its
+* export -- this refines number formatting and hides redundant header
+* rows without touching the underlying statistical content at all.
 *------------------------------------------------------------------------
 if c(stata_version) >= 18 {
+    collect style cell result, nformat(%9.2f)
+    collect style header result, level(hide)
+    * NOTE: a third style command ("collect style putdocx") was also
+    * suggested but isn't complete, valid syntax on its own -- collect's
+    * putdocx-related styling needs specific sub-options (e.g., layout()
+    * or a named style). Left out until confirmed rather than risk a
+    * broken command; the two lines above already cover the main ask
+    * (cleaner number formatting, no redundant header rows).
+
     dtable y_pop x1fte x3_pop x4_pop x5_pop, ///
         continuous(y_pop x1fte x3_pop x4_pop x5_pop, statistics(mean median)) ///
         title("Table 13.1 Descriptive Statistics") ///

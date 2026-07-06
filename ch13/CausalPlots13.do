@@ -44,6 +44,18 @@ if "`r(status)'" != "on" {
     di "Log location: $logdir/CausalPlots13_output.log"
 }
 
+* Publication export helper (idempotent redefinition -- see
+* Stata_code13.do's Presentation Settings block for the master-run
+* definition and full rationale). Defined here too so this script also
+* works when run standalone.
+capture program drop pubexport
+program define pubexport
+    args gname
+    graph export "$graphs_dir/`gname'_Stata.svg", replace
+    graph export "$graphs_dir/`gname'_Stata.pdf", replace
+    graph export "$graphs_dir/`gname'_Stata.png", replace width(2400)
+end
+
 *========================================================================
 * 13.6.1 Event-Study / DiD Plots
 *========================================================================
@@ -177,6 +189,16 @@ preserve
     }
     sort t
 
+    * Presentation Enhancements for Policymakers (fig13_12)
+    *   - Shaded rarea bands (not just error bars) make the pre/post
+    *     periods visually distinct at a glance
+    *   - Reference period marked with an X marker, not just omitted
+    *   - "Policy Adopted" printed directly on the chart at the break
+    *     point -- a thin dotted line alone is easy to miss on a skim;
+    *     labeling it removes any need to cross-reference the caption
+    qui sum hi
+    local ytxt = r(max) * 0.92
+
     twoway ///
         (rarea lo hi t if t < 0, fcolor(gs14) lwidth(none))                   ///
         (rarea lo hi t if t >= 0, fcolor(gs10) lwidth(none))                  ///
@@ -184,13 +206,14 @@ preserve
         (scatter b t if t == -1, mcolor(gs0) msymbol(X) msize(large)),        ///
         yline(0, lpattern(dash) lcolor(gs8))                                  ///
         xline(-0.5, lpattern(dot) lcolor(gs6))                                ///
+        text(`ytxt' -0.5 "Policy Adopted", orientation(vertical) place(w) size(small)) ///
         xtitle("Years Relative to Consolidation (FY 2018 = 0)")               ///
         ytitle("Coefficient (log operating expenses)")                       ///
-        title("Event Study: Georgia Higher Education Consolidation")         ///
-        subtitle("TWFE, single treated unit. Reference period: t = -1.")    ///
+        title("Event Study: Georgia Higher Education Consolidation", $TITLESIZE) ///
+        subtitle("TWFE, single treated unit. Reference period: t = -1.", $SUBTITLESIZE) ///
         legend(off) name(fig13_12_twfe_event_study, replace)
 
-    graph export "$graphs_dir/fig13_12_twfe_event_study_Stata.png", replace width(1200)
+    pubexport fig13_12_twfe_event_study
 restore
 
 *------------------------------------------------------------------------
@@ -260,17 +283,29 @@ preserve
     gen double hi = att + 1.96*se
     sort event
 
+    * Presentation Enhancements for Policymakers (fig13_13)
+    *   - Connected line + markers (not bare points) makes the event-time
+    *     path readable; rcap intervals in a muted gray so they recede
+    *     behind the point estimates rather than competing with them
+    *   - "Treatment Begins" printed on the chart at the break point, same
+    *     rationale as fig13_12 -- don't make the reader infer it from an
+    *     axis label alone. Deliberately does NOT smooth over the kink at
+    *     t = 0 -- see the caution box immediately below for why.
+    qui sum hi
+    local ytxt13 = r(max) * 0.90
+
     twoway (rcap hi lo event, lcolor(gs8))                                  ///
            (connected att event, lcolor(black) mcolor(black) msymbol(O)) , ///
         yline(0, lpattern(dash) lcolor(gs10))                              ///
         xline(-0.5, lpattern(dot) lcolor(gs8))                             ///
-        title("ETWFE Event Study: Staggered Adoption")                    ///
-        subtitle("Covariate-adjusted, never-treated controls")            ///
+        text(`ytxt13' -0.5 "Treatment Begins", orientation(vertical) place(w) size(small)) ///
+        title("ETWFE Event Study: Staggered Adoption", $TITLESIZE)         ///
+        subtitle("Covariate-adjusted, never-treated controls", $SUBTITLESIZE) ///
         ytitle("ATT on log operations")                                   ///
         xtitle("Years relative to treatment")                             ///
         legend(off) name(fig13_13_etwfe_event_study, replace)
 
-    graph export "$graphs_dir/fig13_13_etwfe_event_study_Stata.png", replace width(1200)
+    pubexport fig13_13_etwfe_event_study
 restore
 
 *------------------------------------------------------------------------
@@ -322,9 +357,17 @@ if c(stata_version) >= 18 {
     xthdidregress ra (lngenop $controls) (treated_bin), group(fips) ///
         controlgroup(never) vce(cluster fips)
 
-    estat atetplot, name(fig13_13b_xthdidregress_event_study, replace)
+    * NOTE -- BUG FIX: the original name here, "fig13_13b_xthdidregress_
+    * event_study" (35 chars), exceeded Stata's 32-character limit for
+    * name-class identifiers, throwing "invalid name" -- confirmed this
+    * wasn't an estat atetplot-specific quirk, since a same-length-issue
+    * name on a plain twoway command elsewhere failed identically. The
+    * pubexport call below also previously referenced a different,
+    * mismatched name that was never the graph's actual assigned name --
+    * both are now the same, shortened, consistent name.
+    estat atetplot, name(fig13_13b_xthdid_es, replace)
 
-    graph export "$graphs_dir/fig13_13b_xthdidregress_Stata.png", replace width(1200)
+    pubexport fig13_13b_xthdid_es
 }
 else {
     di as error "Stata 18+ required for xthdidregress -- skipping this demonstration."
@@ -435,21 +478,33 @@ drop Y1_s Y1_f mu0 pr_take_up
 *------------------------------------------------------------------------
 * Figure 13.14: Publication-quality RD plot -- Second-Year Persistence
 * Adapted from RDD.do Section 10.2.9 (fig10_2_4).
+*
+* Presentation Enhancements for Policymakers:
+*   - IMSE-optimal binned scatter (nbins()) rather than a raw scatter of
+*     4,000 points, which would just look like noise to a policymaker
+*   - Cutoff marked with a vertical line, not left implicit in the axis
+*   - Subtitle states the actual estimated effect size in plain language
+*     (percentage points), not just "there's a jump at the cutoff"
+*   - note() explains bin selection so the figure is self-documenting
 *------------------------------------------------------------------------
+qui rdrobust persist_sharp x, c(0)
+local late_pp : display %4.1f (e(tau_cl) * 100)
+
 rdplot persist_sharp x, c(0) nbins(30 30)                              ///
     graph_options(                                                      ///
         title("Effect of Institutional Merit Scholarship on"           ///
-              "Second-Year Persistence")                               ///
-        subtitle("Sharp RD -- HS GPA cutoff c = 3.25")                ///
+              "Second-Year Persistence", $TITLESIZE)                   ///
+        subtitle("Scholarship recipients persist at a `late_pp' percentage-point" ///
+                 " higher rate", $SUBTITLESIZE) ///
         xtitle("High-School GPA (centered at cutoff)")                 ///
         ytitle("Second-Year Persistence Rate")                         ///
         xline(0, lcolor(gs0) lpattern(dash) lwidth(medthin))          ///
         legend(off) scheme(s2mono)                                     ///
         name(fig13_14_rdplot_persistence, replace)                     ///
-        note("Circles = bin means; lines = local polynomial fit."     ///
-             "Bins selected by IMSE-minimizing method (Calonico et al., 2015)."))
+        note("Sharp RD, HS GPA cutoff = 3.25. Circles = bin means; lines =" ///
+             "local polynomial fit, bins IMSE-optimal (Calonico et al., 2015).", $NOTESIZE))
 
-graph export "$graphs_dir/fig13_14_rdplot_persistence_Stata.png", replace width(1400)
+pubexport fig13_14_rdplot_persistence
 
 *------------------------------------------------------------------------
 * Figure 13.15: Bandwidth Sensitivity -- the visual analog of a
@@ -476,6 +531,17 @@ preserve
     clear
     svmat BW, names(col)
 
+    * Presentation Enhancements for Policymakers (fig13_15)
+    *   - This IS the "visual robustness table" -- a reference zero-line
+    *     shows at a glance which bandwidths keep the LATE distinguishable
+    *     from zero, rather than making a reader scan a table of p-values
+    *   - Subtitle states the robustness verdict directly, computed from
+    *     whether any bandwidth's CI actually crosses zero
+    qui count if CI_lo <= 0 & CI_hi >= 0
+    local crosses_zero = r(N)
+    if `crosses_zero' == 0 local robust_txt "Robust: positive at every bandwidth tested"
+    else local robust_txt "Caution: not distinguishable from zero at `crosses_zero' of `nrow' bandwidths"
+
     twoway                                                          ///
         (rcap CI_lo CI_hi h, lcolor(gs10) lwidth(medthin))         ///
         (scatter LATE h, mcolor(gs0) msize(medlarge) msymbol(D))   ///
@@ -484,11 +550,12 @@ preserve
         legend(off)                                                 ///
         xtitle("Bandwidth (HS GPA units)")                         ///
         ytitle("Estimated LATE (pp)")                              ///
-        title("Bandwidth Sensitivity -- Sharp RD")                 ///
-        subtitle("Outcome: Second-Year Persistence, c = 3.25")     ///
+        title("Bandwidth Sensitivity -- Sharp RD", $TITLESIZE)     ///
+        subtitle("`robust_txt'", $SUBTITLESIZE) ///
+        note("Outcome: Second-Year Persistence, cutoff = 3.25 HS GPA.", $NOTESIZE) ///
         scheme(s2mono) name(fig13_15_rdd_bw_sensitivity, replace)
 
-    graph export "$graphs_dir/fig13_15_rdd_bw_sensitivity_Stata.png", replace width(1400)
+    pubexport fig13_15_rdd_bw_sensitivity
 restore
 
 *========================================================================
@@ -565,6 +632,11 @@ if _rc == 0 {
     *--------------------------------------------------------------------
     * Figure 13.16: Actual vs. Synthetic Georgia Trend
     * Adapted from Georgia_DiD.do Section 10.5 (fig10_4).
+    *
+    * Presentation Enhancements:
+    *   - Solid vs. dashed lines (not color alone) distinguish the two
+    *     series, so the figure still reads correctly in grayscale print
+    *   - Legend spelled out in plain language, not "treated"/"synthetic"
     *--------------------------------------------------------------------
     preserve
         use synth_results_ch13, clear
@@ -572,31 +644,52 @@ if _rc == 0 {
         rename _Y_synthetic Y_synth
         rename _time fy
 
+        qui sum Y_ga if fy >= 2014 & fy < 2018
+        local ytxt16 = r(max) * 1.01
+
+        * Presentation Enhancements for Policymakers (fig13_16)
+        *   - "Consolidation" printed on the chart at 2018, matching the
+        *     fig13_12/13_13 pattern -- consistent visual language for
+        *     "the policy happens here" across every event-style figure
+        *     in the chapter, not just a dotted line the reader has to
+        *     notice on their own
         twoway ///
             (line Y_ga    fy, lcolor(gs0)  lwidth(medthick) lpattern(solid)) ///
             (line Y_synth fy, lcolor(gs0)  lwidth(medthick) lpattern(dash)), ///
             xline(2018, lpattern(dot) lcolor(gs6))                           ///
+            text(`ytxt16' 2018 "Consolidation", place(w) size(small))       ///
             legend(label(1 "Georgia") label(2 "Synthetic Georgia") rows(1))  ///
             ytitle("Log Operating Expenses") xtitle("Fiscal Year")           ///
-            title("SCM: Georgia vs. Synthetic Control")                      ///
-            subtitle("Dashed = synthetic Georgia; dotted = 2018 consolidation") ///
+            title("SCM: Georgia vs. Synthetic Control", $TITLESIZE)         ///
+            subtitle("Dashed = synthetic Georgia (the counterfactual)", $SUBTITLESIZE) ///
             name(fig13_16_scm_trends, replace)
-        graph export "$graphs_dir/fig13_16_scm_trends_Stata.png", replace width(1200)
+        pubexport fig13_16_scm_trends
 
         *----------------------------------------------------------------
         * Figure 13.17: SCM Gap Plot (actual minus synthetic)
         * Adapted from Georgia_DiD.do Section 10.5 (fig10_5_1).
+        *
+        * Presentation Enhancements for Policymakers:
+        *   - Companion figure to fig13_16 -- isolates the effect itself
+        *     rather than making the reader eyeball the gap between two
+        *     overlapping trend lines
+        *   - Subtitle states the average post-policy gap directly,
+        *     computed from the data, not just the sign convention
         *----------------------------------------------------------------
         gen gap = Y_ga - Y_synth
+        qui sum gap if fy >= 2018
+        local avg_gap : display %5.3f r(mean)
+
         twoway ///
             (line gap fy, lcolor(gs0) lwidth(medthick) lpattern(solid)), ///
             yline(0, lpattern(dash) lcolor(gs8))                          ///
             xline(2018, lpattern(dot) lcolor(gs6))                        ///
             ytitle("Gap: Log Expenses (Georgia - Synthetic)") xtitle("Fiscal Year") ///
-            title("SCM Gap: Effect of Georgia Consolidation")             ///
-            subtitle("Above zero = Georgia > synthetic counterfactual")   ///
+            title("SCM Gap: Effect of Georgia Consolidation", $TITLESIZE) ///
+            subtitle("Average post-consolidation gap: `avg_gap' log points", $SUBTITLESIZE) ///
+            note("Above zero = Georgia's actual spending exceeded its synthetic counterfactual.", $NOTESIZE) ///
             name(fig13_17_scm_gap, replace)
-        graph export "$graphs_dir/fig13_17_scm_gap_Stata.png", replace width(1200)
+        pubexport fig13_17_scm_gap
     restore
 }
 else {

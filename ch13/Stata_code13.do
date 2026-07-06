@@ -90,6 +90,87 @@ foreach pkg of local required_pkgs {
 * net install st0085_2.pkg, replace
 
 *========================================================================
+* PRESENTATION SETTINGS
+*========================================================================
+* Adds a reusable presentation layer on top of the chapter's existing
+* analytical code, per reviewer recommendation. Rather than hand-editing
+* every individual graph, define global style settings and reusable
+* macros once, here, that every sub-script below can draw on. This
+* keeps the underlying statistical commands completely unchanged while
+* giving every figure a consistent, publication-ready appearance --
+* and it's reusable code a reader can lift directly for their own work.
+*------------------------------------------------------------------------
+* Install packages (only first time). NOTE: unlike the warn-only pattern
+* used for required_pkgs above, these three auto-install if missing --
+* grstyle/palettes/colrspace only affect graph styling, not estimation,
+* so auto-installing carries none of the risk of silently changing how
+* a model is fit. Test grstyle's specific sub-commands below once in
+* your own Stata session before relying on them -- the exact syntax can
+* be version-sensitive.
+*
+* NOTE -- BUG FIX: "if _rc ssc install X" left the install command
+* itself uncaptured -- if ssc install fails for any reason (e.g., a file
+* conflict with an already-installed, differently-versioned copy of a
+* dependency, which is what actually happened here: colorpalette.ado
+* already present and different), that failure (r(602)) was not caught
+* and produced visible error noise. Wrapped in capture below. Note that
+* palettes/colrspace failing to (re)install is not actually a problem
+* for this chapter specifically -- we only call grstyle's own built-in
+* commands (init/set plain/color/linewidth), not anything from palettes
+* or colrspace directly, so a conflicting pre-existing version of either
+* doesn't block anything this chapter's figures depend on.
+capture which grstyle
+if _rc {
+    capture ssc install grstyle
+    if _rc di as error "Could not auto-install grstyle -- install manually if grstyle commands below fail."
+}
+capture which palettes
+if _rc {
+    capture ssc install palettes
+    if _rc di as text "palettes not (re)installed -- likely a conflicting existing version; not required for this chapter's grstyle commands."
+}
+capture which colrspace
+if _rc {
+    capture ssc install colrspace
+    if _rc di as text "colrspace not (re)installed -- likely a conflicting existing version; not required for this chapter's grstyle commands."
+}
+
+* Publication graphics
+grstyle init
+grstyle set plain
+grstyle color background white
+grstyle linewidth medium
+grstyle set grid
+grstyle set legend 6
+
+*------------------------------------------------------------------------
+* Graph formatting macros -- change a size here once instead of editing
+* every figure's title()/subtitle()/xtitle() calls individually. If
+* Springer requests larger fonts for print, only these five lines need
+* to change, not every figure across eight sub-scripts.
+*------------------------------------------------------------------------
+global TITLESIZE      "size(large)"
+global SUBTITLESIZE   "size(medium)"
+global LABELSIZE      "labsize(medium)"
+global LEGENDSIZE     "size(medium)"
+global NOTESIZE       "size(small)"
+
+*------------------------------------------------------------------------
+* Publication export helper -- exports svg + pdf + a high-res png for
+* whichever graph name is currently in memory, in one call instead of
+* three separate graph export lines at every figure. Defined here for
+* the master run; each sub-script also defines it (idempotently) in its
+* own standalone-fallback block so it works when run on its own too.
+*------------------------------------------------------------------------
+capture program drop pubexport
+program define pubexport
+    args gname
+    graph export "$graphs_dir/`gname'_Stata.svg", replace
+    graph export "$graphs_dir/`gname'_Stata.pdf", replace
+    graph export "$graphs_dir/`gname'_Stata.png", replace width(2400)
+end
+
+*========================================================================
 * SECTION 13.2 -- PRESENTING DESCRIPTIVE STATISTICS
 *========================================================================
 do "$syntax_dir/DescriptiveTables13.do"
@@ -138,6 +219,19 @@ do "$syntax_dir/BayesianPlots13.do"
 * institutional leaders vs. federal policymakers). If a one-page Word
 * template artifact is developed per the outline's open question #3, it
 * belongs in its own AudienceTemplate13.do (putdocx-based), called here.
+*
+* NOTE -- PowerPoint export for policymaker audiences: Stata has no
+* native putpptx command and no supported way to build an editable
+* .pptx deck without an external dependency (e.g. a Node.js/pptxgenjs
+* pipeline). This chapter's R translation, R_code13.R (on GitHub at
+* .../code/tree/main/ch13), includes a PolicymakerDeck13.R sub-script
+* that builds an example five-slide deck directly from this chapter's
+* validated figures -- descriptive, associational, causal, and
+* simulation/bottom-line -- using officer::read_pptx() and rvg::dml()
+* for fully editable vector graphics (colors, fonts, and labels
+* editable directly in PowerPoint, not flattened images). See
+* R_code13.R and PolicymakerDeck13.R for that export path; there is no
+* Stata equivalent for this step.
 
 *------------------------------------------------------------------------
 * SAVE ALL NAMED GRAPHS AS .GPH (for later recall via `graph use`)

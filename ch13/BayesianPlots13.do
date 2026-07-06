@@ -44,6 +44,18 @@ if "`r(status)'" != "on" {
     di "Log location: $logdir/BayesianPlots13_output.log"
 }
 
+* Publication export helper (idempotent redefinition -- see
+* Stata_code13.do's Presentation Settings block for the master-run
+* definition and full rationale). Defined here too so this script also
+* works when run standalone.
+capture program drop pubexport
+program define pubexport
+    args gname
+    graph export "$graphs_dir/`gname'_Stata.svg", replace
+    graph export "$graphs_dir/`gname'_Stata.pdf", replace
+    graph export "$graphs_dir/`gname'_Stata.png", replace width(2400)
+end
+
 * Adapted directly from Stata_code12.do (Sections 7-10: Bayesian
 * Microsimulation, Cost-Benefit Decomposition, Posterior Summaries, and
 * Figures). Chapter 12's script saves its S=1000 posterior draws to a
@@ -86,6 +98,17 @@ use "$ch12_tables_dir/sim_results_ch12.dta", clear
 qui sum net_benefit_s
 local nb_mean_plot = r(mean)
 
+*------------------------------------------------------------------------
+* Presentation Enhancements for Policymakers (fig13_18)
+*   - Subtitle now carries the VERDICT in plain language ("this policy
+*     would reduce net value"), not a technical description of what the
+*     chart shows -- a legislative staffer's eyes go title -> subtitle
+*     first; that's where the bottom line needs to live, not in a note()
+*     that may go unread.
+*   - Technical detail (credible interval, Scenario B mechanism) moved
+*     to note(), shortened, for readers who want the "why"
+*   - Posterior mean marked with its own reference line, not just zero
+*------------------------------------------------------------------------
 histogram net_benefit_s, ///
     percent ///
     fcolor(gs8) lcolor(gs0) lwidth(thin) ///
@@ -93,15 +116,14 @@ histogram net_benefit_s, ///
     xline(`nb_mean_plot', lpattern(solid) lcolor(gs0) lwidth(medthick)) ///
     ytitle("Percent of Posterior Draws") ///
     xtitle("Net Social Benefit ($000s)") ///
-    title("Posterior Distribution of Net Social Benefit") ///
-    subtitle("$100k Grad PLUS Lifetime Cap") ///
-    note("Dashed line at zero. Solid line at posterior mean (" ///
-         %6.1f `nb_mean_plot' " $000s)." ///
-         "Entire 95% credible interval falls below zero (Scenario B: cap" ///
-         "displaces students with positive marginal returns).") ///
+    title("$100k Grad PLUS Lifetime Cap: Net Social Benefit", $TITLESIZE) ///
+    subtitle("Bottom line: this policy would REDUCE net social value", $SUBTITLESIZE) ///
+    note("95% of simulated outcomes fall below zero (posterior mean:" ///
+         %6.1f `nb_mean_plot' " thousand). Human capital loss from" ///
+         "displaced students outweighs the fiscal savings.", $NOTESIZE) ///
     name(fig13_18_posterior_density, replace)
 
-graph export "$graphs_dir/fig13_18_posterior_density_Stata.png", replace width(1200)
+pubexport fig13_18_posterior_density
 
 *========================================================================
 * 13.8.2 CBA Component Breakdown (Waterfall Chart)
@@ -158,25 +180,70 @@ gen running_start = running_end - delta
 * correct direction regardless of whether the step is a gain or a loss.
 gen bar_lo = min(running_start, running_end)
 gen bar_hi = max(running_start, running_end)
+gen mid    = (bar_lo + bar_hi) / 2
+
+* Dollar-value label for each bar, printed directly on the chart --
+* a policymaker shouldn't have to eyeball bar height against the axis
+* to know a component's actual dollar contribution.
+* NOTE -- BUG FIX: "%+9.0f" is not a valid Stata display format -- Stata's
+* numeric formats support a leading "-" for left-alignment but have no "+"
+* flag to force an explicit plus sign on positive values (unlike C's
+* printf). This previously aborted the do-file with "invalid %format"
+* (r(120)) before the waterfall chart (fig13_19) was ever built. Fixed by
+* formatting the magnitude with a plain %9.0f and prepending "+" by hand
+* for benefit bars (delta > 0); cost bars already display their own "-"
+* sign from the negated delta values set above, so no change needed there.
+gen str16 dlabel = ""
+forvalues i = 1/5 {
+    local dv : display %9.0f delta[`i']
+    local dv = trim("`dv'")
+    if delta[`i'] > 0 {
+        local dv = "+" + "`dv'"
+    }
+    quietly replace dlabel = "`dv'" + "K" in `i'
+}
+
+*------------------------------------------------------------------------
+* Presentation Enhancements for Policymakers (fig13_19)
+*   - Cascading running-total construction (see the block above) is
+*     itself the main enhancement over Ch. 12's own fig12_7, which uses
+*     a plain signed bar chart with no cumulative total at all
+*   - Each bar's dollar value is printed directly on the chart (mlabel
+*     layer below) -- no need to cross-reference the y-axis to know
+*     what a component is actually worth
+*   - Legend distinguishes benefit vs. cost bars explicitly, in words
+*   - Subtitle states which direction the running total ends up moving
+*------------------------------------------------------------------------
+* NOTE -- BUG FIX: the subtitle below originally referenced `nb_mean',
+* a local macro that isn't actually defined until Section 13.8.4,
+* several hundred lines later in this same file -- at this point it
+* would have been blank. Fixed by reading the final cumulative total
+* (running_end in row 5) directly from data already built in this
+* section, rather than depending on a macro defined elsewhere.
+local nb_final = running_end[5]
 
 twoway ///
     (rbar bar_lo bar_hi step if delta >= 0, ///
         barwidth(0.6) fcolor(gs11) lcolor(gs0)) ///
     (rbar bar_lo bar_hi step if delta <  0, ///
-        barwidth(0.6) fcolor(gs4)  lcolor(gs0)), ///
+        barwidth(0.6) fcolor(gs4)  lcolor(gs0)) ///
+    (scatter mid step, mcolor(none) msymbol(none) ///
+        mlabel(dlabel) mlabpos(0) mlabsize(medsmall) mlabcolor(gs0)), ///
     yline(0, lpattern(dash) lcolor(gs8)) ///
     xlabel(1 "Fiscal" 2 "Efficiency" 3 "Human Capital" ///
            4 "Inst. Revenue" 5 "Cross-Subsidy", angle(30) labsize(small)) ///
     ytitle("Cumulative Net Benefit ($000s)") ///
     xtitle("") ///
     legend(order(1 "Benefit" 2 "Cost") cols(2)) ///
-    title("Cost-Benefit Decomposition: $100k Grad PLUS Cap") ///
-    subtitle("Posterior mean components, cumulative left to right") ///
-    note("Light bars = benefits; dark bars = costs. Final bar height =" ///
-         "posterior mean net social benefit (matches fig13_18).") ///
+    title("Cost-Benefit Decomposition: $100k Grad PLUS Cap", $TITLESIZE) ///
+    subtitle("Bottom line: costs exceed savings by " ///
+             %6.0f -`nb_final' " thousand per student", $SUBTITLESIZE) ///
+    note("Light bars = benefits; dark bars = costs. Values on each bar are" ///
+         "posterior-mean dollar amounts ($000s); final bar = net social benefit" ///
+         "(matches fig13_18).", $NOTESIZE) ///
     name(fig13_19_cba_waterfall, replace)
 
-graph export "$graphs_dir/fig13_19_cba_waterfall_Stata.png", replace width(1200)
+pubexport fig13_19_cba_waterfall
 
 *========================================================================
 * 13.8.3 Sensitivity Analysis (Tornado Diagram)
@@ -233,17 +300,26 @@ preserve
     label define tornado_lbl `lbldef'
     label values plotrow tornado_lbl
 
+    local most_uncertain = complabel[1]
+
+    * Presentation Enhancements for Policymakers (fig13_20)
+    *   - Sorted by interval width so the most uncertain component reads
+    *     first, top to bottom -- not alphabetical or estimation order
+    *   - Subtitle names that component directly rather than making the
+    *     reader infer "most uncertain" from bar length alone
+    *   - Horizontal orientation keeps long component labels readable
+    *     without rotating text
     twoway rbar lo hi plotrow, horizontal barwidth(0.5) ///
         fcolor(gs8) lcolor(gs0) ///
         ylabel(1/5, valuelabel angle(0) labsize(small)) ///
         yscale(reverse) ///
         xtitle("95% Credible Interval ($000s)") ///
         ytitle("") ///
-        title("Posterior Uncertainty by CBA Component") ///
-        subtitle("Sorted by width of 95% credible interval") ///
+        title("Posterior Uncertainty by CBA Component", $TITLESIZE) ///
+        subtitle("Most uncertain: `most_uncertain'", $SUBTITLESIZE) ///
         name(fig13_20_tornado, replace)
 
-    graph export "$graphs_dir/fig13_20_tornado_Stata.png", replace width(1200)
+    pubexport fig13_20_tornado
 restore
 
 *========================================================================
@@ -272,20 +348,25 @@ preserve
     gen lo = `nb_lo'
     gen hi = `nb_hi'
 
+    * Presentation Enhancements (fig13_21)
+    *   - Deliberately stripped down relative to fig13_18: one point, one
+    *     interval, nothing else -- this IS the enhancement, the point of
+    *     the figure is what it leaves out for a time-constrained audience
+    *   - Diamond marker + horizontal cap makes it read at a glance
     twoway ///
         (rcap lo hi j, horizontal lcolor(gs0) lwidth(medium)) ///
         (scatter j b, mcolor(gs0) msymbol(D) msize(large)), ///
         xline(0, lpattern(dash) lcolor(gs8)) ///
         ylabel(1 "Net Social Benefit", angle(0) labsize(medium)) ///
         ytitle("") xtitle("$000s") legend(off) ///
-        title("$100k Grad PLUS Cap: Net Social Benefit") ///
-        subtitle("Posterior mean with 95% credible interval") ///
-        note("Point estimate summarizes fig13_18's full posterior" ///
-             "distribution for audiences who need one number, not a" ///
-             "distribution -- see Section 13.9 on audience tailoring.") ///
+        title("$100k Grad PLUS Cap: Net Social Benefit", $TITLESIZE) ///
+        subtitle("Recommendation: does not pay for itself", $SUBTITLESIZE) ///
+        note("Point estimate = " %6.0f `nb_mean' " thousand per student" ///
+             "(95% credible interval entirely below zero). Full" ///
+             "distribution in fig13_18; see Section 13.9 for audience tailoring.", $NOTESIZE) ///
         name(fig13_21_single_policy_number, replace)
 
-    graph export "$graphs_dir/fig13_21_single_policy_number_Stata.png", replace width(1200)
+    pubexport fig13_21_single_policy_number
 restore
 
 *------------------------------------------------------------------------

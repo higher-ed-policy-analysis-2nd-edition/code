@@ -66,13 +66,76 @@ if "`r(status)'" != "on" {
 *========================================================================
 * 13.7.2 CATE by Subgroup (margins-based)
 *========================================================================
-* NOTE -- NEW CODE NEEDED. Pull from Ch. 11 CATE.do. Forest-plot style
-* coefplot of subgroup treatment effects, reusing the master's-completion
-* CATE subgroup results already estimated there.
+* NOTE -- NEW CODE NEEDED (real version). Pull from Ch. 11 CATE.do.
+* Forest-plot style coefplot of subgroup treatment effects, reusing the
+* master's-completion CATE subgroup results already estimated there.
 *
 *   * coefplot subgroup1 subgroup2 subgroup3 ..., ///
 *   *    name(fig13_15_cate_forest, replace)
-*   * graph export "$graphs_dir/fig13_15_cate_forest_Stata.png", replace
+*   * pubexport fig13_15_cate_forest
+*
+*------------------------------------------------------------------------
+* ILLUSTRATIVE DEMONSTRATION (placeholder data): the block below shows
+* the coefplot presentation technique the reviewer specifically asked
+* for -- policymakers generally read a forest plot faster than a
+* regression table -- using clearly-synthetic subgroup values so the
+* figure runs today. Replace `catevals' with actual per-subgroup CATE
+* point estimates and standard errors from Ch. 11's CATE.do the moment
+* those are available; nothing here should be cited as a real finding.
+*------------------------------------------------------------------------
+preserve
+    clear
+    input str24 subgroup cate se
+    "First-Generation"        0.062 0.021
+    "Non-First-Generation"    0.041 0.015
+    "Low-Income"              0.078 0.024
+    "Higher-Income"           0.033 0.014
+    "STEM Majors"             0.028 0.018
+    "Non-STEM Majors"         0.055 0.016
+    end
+
+    gen lo = cate - 1.96*se
+    gen hi = cate + 1.96*se
+    gen order = _n
+
+    * Build value labels for "order" directly from the input rows above,
+    * rather than "encode subgroup" -- encode alphabetizes, which would
+    * silently reorder the subgroups away from the sequence intended
+    * (First-Gen/Non-First-Gen, Low-/Higher-Income, STEM/Non-STEM pairs).
+    local lbldef ""
+    forvalues i = 1/6 {
+        local thislbl = subgroup[`i']
+        local lbldef `lbldef' `i' "`thislbl'"
+    }
+    label define subgroup_lbl `lbldef'
+    label values order subgroup_lbl
+
+    * Presentation Enhancements:
+    *   - Forest-plot layout (point + CI per subgroup) rather than a
+    *     regression table with one row per interaction term
+    *   - Vertical zero line so "no effect" is visually unambiguous
+    *   - Subgroup labels in plain language, not variable names
+    twoway ///
+        (rcap hi lo order, horizontal lcolor(gs8)) ///
+        (scatter order cate, mcolor(gs0) msymbol(D) msize(medlarge)), ///
+        xline(0, lpattern(dash) lcolor(gs8)) ///
+        ylabel(1/6, valuelabel angle(0) labsize(medium)) ///
+        yscale(reverse) ///
+        xtitle("Conditional Average Treatment Effect") ///
+        ytitle("") ///
+        title("Illustrative CATE by Subgroup (PLACEHOLDER DATA)", $TITLESIZE) ///
+        subtitle("Replace with Ch. 11 CATE.do estimates -- not a real finding", $SUBTITLESIZE) ///
+        legend(off) ///
+        name(fig13_15_cate_illus, replace)
+    * NOTE -- BUG FIX: original name "fig13_15_cate_forest_illustrative"
+    * was 33 characters, one over Stata's 32-char limit for name-class
+    * identifiers -- threw "invalid name" on an otherwise-ordinary
+    * twoway command, confirming the same limit tripped up estat
+    * atetplot's name() elsewhere in this chapter too. Shortened and
+    * kept consistent with the pubexport call below.
+
+    pubexport fig13_15_cate_illus
+restore
 
 *========================================================================
 * 13.7.2a Official cate/categraph Workflow (Stata 19)
@@ -84,7 +147,7 @@ if "`r(status)'" != "on" {
 *   global catecovars "[covariate list from Ch. 11 B&B model]"
 *   cate po (completion $catecovars) (treatment_var)
 *   categraph histogram
-*   graph export "$graphs_dir/fig13_16_cate_histogram_Stata.png", replace
+*   pubexport fig13_16_cate_histogram
 *   estat heterogeneity
 *   estat gatetest
 *   * dose-response over a continuous moderator, if applicable:
