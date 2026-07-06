@@ -1,75 +1,66 @@
-# Chapter 11 — Instrumental Variables, CATE, MTE/MPRTE, and Policy Cost-Benefit Analysis
+# Chapter 13 — Presenting Analyses to Policymakers
 
-This folder holds the Stata and R code for Chapter 11 of *Higher Education Policy Analysis Using Quantitative Techniques* (2nd Edition, Springer). The chapter works through instrumental variables (IV) estimation, conditional average treatment effects (CATE), marginal treatment effects (MTE), marginal policy-relevant treatment effects (MPRTE), and policy cost-benefit analysis (CBA), all applied to a synthetic panel dataset on master's degree completion.
+Code companion for Chapter 13 of *Higher Education Policy Analysis Using Quantitative Techniques* (2nd Ed.), Marvin A. Titus. Every analytical routine in this chapter is fully implemented in **both Stata and R**, run from a single master driver in each language. This README documents the code only — for the datasets these scripts load, see the [`data`](https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch13) repository's `ch13` folder.
 
-## Empirical Setting
+## Master drivers
 
-The running example draws on a synthetic dataset built to mirror the Baccalaureate and Beyond (B&B) longitudinal study, with master's degree completion as the treatment and labor market outcomes as the dependent variables. State-level GA (Georgia) higher education funding is the instrument, chosen because it creates exogenous variation in the likelihood of graduate enrollment without directly affecting individual earnings — a feature that motivates the heterogeneity and policy-relevance extensions taken up in the CATE and MTE/MPRTE sections.
-
-## File Structure
-
-### Stata Scripts
-
-| File | Description |
+| File | Role |
 |---|---|
-| `Stata_code11.do` | Master driver script. Calls `CATE.do` and `MTE_MPRTE.do`, in that order. Does not construct the dataset itself — see `Synthetic_truncated_BB.do` below. |
-| `CATE.do` | Runs first. Implements conditional average treatment effect estimation: subgroup IV, interaction IV, and visualization of heterogeneous treatment effects. Produces CATE figures. |
-| `MTE_MPRTE.do` | Runs second. Implements marginal treatment effect and marginal policy-relevant treatment effect estimation, including the MTE curve and the policy cost-benefit analysis components. Produces MTE/MPRTE figures. |
-| `Synthetic_truncated_BB.do` | Standalone, one-time data-generation script. Builds the synthetic, truncated B&B-style panel dataset (`Example_7_5_3.dta`) used throughout the chapter. **Not called by `Stata_code11.do`** — run separately, only when the dataset needs to be (re)generated. |
+| `Stata_code13.do` | Stata master driver. Sets up paths, log, package checks, and presentation-style globals, then calls each sub-script below in order. |
+| `R_code13.R` | R translation of the same driver. Sets up paths, log, a `fig13_registry` environment (used later by `PolicymakerDeck13.R`), and package checks, then sources each `.R` sub-script in order. |
 
-### R Translations
+Both drivers use username-conditional path logic (`c(username) == "marvi"` in Stata, `Sys.getenv("USERNAME") == "marvi"` in R) so the same script runs unmodified on the author's machine or a clean clone, falling back to the current working directory for anyone else.
 
-| File | Stata Counterpart | Description |
-|---|---|---|
-| `R_code11.R` | `Stata_code11.do` | Master R script. Sources `CATE_R.R` and `MTE_MPRTE_R.R`, in that order. Does not construct the dataset itself. |
-| `CATE_R.R` | `CATE.do` | Runs first. R implementation of the CATE estimation and visualization workflow. |
-| `MTE_MPRTE_R.R` | `MTE_MPRTE.do` | Runs second. R implementation of the MTE/MPRTE estimation and cost-benefit analysis workflow. |
-| `R_Synthetic_truncated_BB.R` | `Synthetic_truncated_BB.do` | Standalone, one-time R version of the synthetic dataset construction. **Not sourced by `R_code11.R`** — run separately, only when the dataset needs to be (re)generated. |
+## Sub-scripts (Stata / R pairs)
 
-## Data
+| Section | Stata | R | Content |
+|---|---|---|---|
+| 13.2 | `DescriptiveTables13.do` | `DescriptiveTables13.R` | Descriptive statistics tables (Table 13.1, 13.2), exported to Word |
+| 13.2.2 / 13.7.4 | `EstimationTables13.do` | `EstimationTables13.R` | Driscoll-Kraay panel SEs and elasticity table (Table 13.Appendix) |
+| 13.3 | `Maps13.do` | `Maps13.R` | Choropleth map, percent change in state appropriations per FTE (Fig. 13.2). AK/HI not shown — see file header for the limitation note. |
+| 13.4 | `TrendGraphs13.do` | `TrendGraphs13.R` | State/regional trend comparisons (Figs. 13.3–13.6) |
+| 13.5 | `RegressionPlots13.do` | `RegressionPlots13.R` | Associational coefficient plots and marginal effects — pooled OLS, CCEMG, DCCE-MG/ARDL (Figs. 13.7–13.11). Deliberately kept separate from Section 13.6: these are associational, not causal, results. Fig. 13.9 (DCCE-MG/ARDL) has no R equivalent implemented yet, matching the Stata original's own incomplete state. |
+| 13.6 | `CausalPlots13.do` | `CausalPlots13.R` | Causal inference results: TWFE event study (Fig. 13.12), ETWFE staggered adoption (Fig. 13.13), RD (Figs. 13.14–13.15), synthetic control (Figs. 13.16–13.17). Fig. 13.13b (`xthdidregress`/`atetplot`) has no CRAN-available R equivalent in this environment — documented placeholder. |
+| 13.7 | `MTE_CATE_Plots13.do` | `MTE_CATE_Plots13.R` | IV, CATE, and MTE/MPRTE presentation. Sections 13.7.1, 13.7.2a, and 13.7.3 are documented stubs in both languages, pending Chapter 11/12 finalization — this section is a pointer to Chapter 11's worked examples, not a standalone one. |
+| 13.8 | `BayesianPlots13.do` | `BayesianPlots13.R` | Bayesian posterior density (Fig. 13.18) and CBA waterfall (Fig. 13.19), drawing on Chapter 12's microsimulation output. See **Known issues** below. |
 
-Datasets for this chapter are in the [data repository](https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch11). The file the current scripts actually load:
+## Supplementary: PowerPoint export
 
-| File | Used by | Description |
-|---|---|---|
-| `Example_7_5_3.dta` | `CATE.do`/`CATE_R.R`, `MTE_MPRTE.do`/`MTE_MPRTE_R.R`; produced by `Synthetic_truncated_BB.do`/`R_Synthetic_truncated_BB.R` | The dataset actually loaded by every script run today — synthetic B&B-style panel (N = 8,000) on master's degree completion. `ma_*` program-area variables are generated at runtime rather than pre-loaded. |
+`PolicymakerDeck13.R` (**R only** — Stata has no `putpptx` command and no supported dependency-free path to an editable `.pptx`) builds an example five-slide deck directly from this chapter's own validated figures, read live from the `fig13_registry` environment populated during the `R_code13.R` run:
 
-> **Note:** All four sub-scripts try `Example_7_5_3_updated.dta` first — a version with `ma_*` variables pre-generated — then fall back to `Example_7_5_3.dta` if it isn't found. Since `Example_7_5_3_updated.dta` isn't currently in `data/ch11`, the fallback is what every run actually uses. Consider either adding the updated file or simplifying the loading logic to target `Example_7_5_3.dta` directly.
+1. Descriptive — Fig. 13.2 (choropleth map)
+2. Associational — Fig. 13.7 (OLS coefficient plot)
+3. Causal — Fig. 13.12 (TWFE event study)
+4. Uncertainty — Fig. 13.18 (posterior density)
+5. Bottom line — Fig. 13.19 (CBA waterfall)
 
-## Running the Code
+Figures are embedded as fully editable vector graphics via `officer::read_pptx()` and `rvg::dml()` when the `rvg` package is available, falling back to static PNG embedding otherwise (`rvg` is intentionally warn-only rather than auto-installed — see the driver's comments for the Windows font-lock issue that motivated this). `PolicymakerDeck13.R` is called at the very end of `R_code13.R`, after every other sub-script, so the deck always reflects a fully validated run rather than partial or stale figures.
 
-**Prerequisite:** `Example_7_5_3.dta` must be in the working directory before running either master script. If it isn't, `MTE_MPRTE.do` and `MTE_MPRTE_R.R` will attempt to download it from the data repository — the first attempt (for the `_updated` version) will fail since that file doesn't exist there yet, but the second attempt pulls `Example_7_5_3.dta` directly and succeeds. `CATE.do` and `CATE_R.R` do not have their own download logic, so they require the file to already be present locally. To build the dataset from scratch, run the standalone generator first:
-```stata
-do Synthetic_truncated_BB.do
-```
+## Known issues
 
-**Stata** (target version 19; tested for compatibility with `version 19`):
-```stata
-do Stata_code11.do
-```
-This calls `CATE.do` followed by `MTE_MPRTE.do`.
+- **Fixed**: `BayesianPlots13.do` previously used an invalid Stata display format (`%+9.0f` — Stata has no `+` sign flag) to label the CBA waterfall's dollar values, which aborted the script before Fig. 13.19 was ever built. Fixed by formatting the magnitude with `%9.0f` and prepending `+` manually for benefit bars; cost bars already carry their own `-` sign from the negated `delta` values. Confirmed producing `fig13_19_cba_waterfall` in both languages as of this fix.
+- **Open**: `BayesianPlots13.do` reads `ch12/sim_results_ch12.dta` from a local path rather than downloading it from GitHub the way `CausalPlots13.do` does for its Chapter 10 CSVs. This is a reproducibility gap for anyone running from a clean clone — see the [`data`](https://github.com/higher-ed-policy-analysis-2nd-edition/data) repo's README for the same note. Not yet fixed.
+- **Documented stubs, not bugs**: Fig. 13.9, Fig. 13.13b, and Sections 13.7.1/13.7.2a/13.7.3/13.7.4 are intentionally incomplete in both languages, matching the Stata original's own scope. These are not translation gaps — the content genuinely doesn't exist yet pending other chapters' finalization.
 
-**R**:
-```r
-source("R_code11.R")
-```
-This sources `CATE_R.R` followed by `MTE_MPRTE_R.R`. To regenerate the dataset instead, run `R_Synthetic_truncated_BB.R` first.
+## Package requirements
 
-Required packages cover IV and heterogeneous treatment effect estimation; the book's shared `theme_springer()` plotting theme is also needed (see Chapter 1 setup or the repository root for shared utilities).
+**Stata** (19.5): `asdoc`, `rescale`, `maptile`, `spmap`, `statastates`, `lgraph`, `coefplot`, `xtmg`, `xtdcce2`, `xtscc`, `rdrobust`, `synth`, `sdid`, `jwdid`, `reghdfe`, plus `grstyle`/`palettes`/`colrspace` for presentation styling (auto-installed; safe since these only affect graph appearance, not estimation). `dtable`, `etable`/`collect`, and `cate`/`categraph` are native Stata 18/19 commands — no install needed, but the driver checks `c(stata_version)` and warns if unavailable. Several non-SSC installs are required once (`asdoc`, `rescale`, `maptile`'s shapefile, `esttab`/`estout`) — see the driver's preamble for the exact `net install` commands.
 
-> **Note:** Path setup uses username-conditional branching (`if c(username) == "marvi"` in Stata) with a GitHub raw-URL fallback, following the same convention used across the rest of the 2nd edition codebase.
-
-## Methods Covered
-
-- **Instrumental variables (IV):** identification using GA state funding as an instrument
-- **Conditional average treatment effects (CATE):** subgroup IV, interaction IV, and heterogeneity visualization
-- **Marginal treatment effects (MTE) and MPRTE:** local instrument variation, policy-relevant treatment parameters
-- **Cost-benefit analysis (CBA):** policy evaluation built on the MTE/MPRTE framework
+**R**: `haven`, `dplyr`, `tidyr`, `ggplot2`, `plm`, `sandwich`, `lmtest`, `quadprog`, `sf`, `maps`, `officer` (warn-only, not auto-installed — these carry real estimation-method choices). `rvg` (plus `systemfonts`/`gdtools`) is optional, needed only for editable-vector figures in `PolicymakerDeck13.R`; install once in a fresh R session with `install.packages(c("systemfonts", "gdtools", "rvg"), type = "binary")`.
 
 ## Output
 
-Running the scripts produces the figures and tables referenced in Chapter 11 — CATE plots and MTE/MPRTE curves — rendered in Stata's `s2mono` scheme for Springer monochrome print compatibility.
+Both drivers write to the same structure under the chapter root:
+```
+Output/
+├── figures/   svg + pdf + high-res png (Stata: pubexport; R: matching helper)
+├── tables/    Word (.docx) tables via asdoc / officer
+├── logs/      Chapter13_Stata_output.log, Chapter13_R_output.log
+└── Chapter13_Policymaker_Deck_R.pptx   (R only)
+```
 
-## Related Chapters
+Figures follow the naming convention `fig13_N_descriptive_name`. In Stata, all named graphs are saved as `.gph` files (via `graph save`) at the end of the master run, before the closing `clear`/`log close` block, so they remain reloadable via `graph use` even after the script finishes.
 
-Chapter 7 introduced the IV/2SLS framework this chapter builds on; here that estimate is recast as a local average treatment effect (LATE), then extended into the MTE/MPRTE and CBA framework. Chapter 10 is the natural companion for state- and institution-level causal inference (DiD, SCM, SDID, CS-DiD, RDD) — the two chapters approach identification from different angles, with Chapter 10 handling treatment assigned across a small number of units and Chapter 11 focusing on individual-level selection.
+## Presentation style
+
+Both languages target grayscale-safe print output — `s2mono` scheme in Stata, `theme_springer()` in R — since the printed book renders in black and white. Section 13.9 (prose-only; no executable code) discusses the presentation habits these figures are built to demonstrate: leading with the finding rather than the method, one idea per visual, stating uncertainty as a probability rather than a hedge, and closing on a single actionable number.
