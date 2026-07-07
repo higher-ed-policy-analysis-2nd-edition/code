@@ -19,6 +19,47 @@
 #=========================================================================
 
 #-------------------------------------------------------------------------
+# SYSTEM REQUIREMENTS
+#-------------------------------------------------------------------------
+# Tested and confirmed to run error-free under R 4.5.2.
+#
+# If more than one R version is installed (common on Windows, where
+# each release installs to its own folder under C:/Program Files/R/),
+# confirm which version is ACTIVE before running this script:
+#   R.version.string
+# In RStudio: Tools > Global Options > General > R version.
+#
+# Each R version keeps its OWN separate package library. Installing a
+# package under one version does not make it available when this
+# script is later run under a different version (e.g. via double-click,
+# Rscript, or a batch file pointing at another installation).
+#
+# Required package versions:
+#   svglite      -- requires systemfonts >= 1.3.0
+#   systemfonts  -- must be >= 1.3.0, or svglite fails to load
+#   gdtools, rvg -- optional; see PACKAGE CHECKS below for rvg's
+#                   warn-only rationale
+#
+# If you see:
+#   Error in loadNamespace(...) :
+#     namespace 'systemfonts' 1.2.2 is already loaded, but >= 1.3.0
+#     is required
+# an outdated systemfonts is installed under the R version currently
+# running this script. Fix:
+#   1. Close ALL R/RStudio windows and processes completely.
+#   2. Open one fresh R session under the intended R version.
+#   3. install.packages(c("systemfonts", "svglite", "gdtools", "rvg"),
+#                        type = "binary")
+#   4. Restart R again, then confirm packageVersion("systemfonts")
+#      reports >= 1.3.0.
+#   5. Re-run this script from that fresh session.
+#
+# Harmless and safe to ignore: warnings like "package 'officer'/'rvg'
+# was built under R version 4.5.3" -- this only means the package was
+# compiled under a slightly newer R than the one in use here.
+#-------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------
 # PREAMBLE / PATH SETUP
 #-------------------------------------------------------------------------
 # Mirrors Stata_code13.do's own username-conditional path logic

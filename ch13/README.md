@@ -42,6 +42,29 @@ Figures are embedded as fully editable vector graphics via `officer::read_pptx()
 - **Open**: `BayesianPlots13.do` reads `ch12/sim_results_ch12.dta` from a local path rather than downloading it from GitHub the way `CausalPlots13.do` does for its Chapter 10 CSVs. This is a reproducibility gap for anyone running from a clean clone — see the [`data`](https://github.com/higher-ed-policy-analysis-2nd-edition/data) repo's README for the same note. Not yet fixed.
 - **Documented stubs, not bugs**: Fig. 13.9, Fig. 13.13b, and Sections 13.7.1/13.7.2a/13.7.3/13.7.4 are intentionally incomplete in both languages, matching the Stata original's own scope. These are not translation gaps — the content genuinely doesn't exist yet pending other chapters' finalization.
 
+## System requirements (R)
+
+The R pipeline (`R_code13.R` and its eight sub-scripts) was tested and confirmed to run error-free under **R 4.5.2**.
+
+If more than one R version is installed (common on Windows, where each release installs to its own folder under `C:/Program Files/R/`), confirm which version is active before running this chapter's R code:
+
+```r
+R.version.string
+```
+
+In RStudio: **Tools > Global Options > General > R version**. Each R version maintains a separate, independent package library — installing a package while running one version does not make it available under a different version (e.g. via double-click, `Rscript`, or a batch file pointing at another installation).
+
+`svglite` requires `systemfonts >= 1.3.0`. If you see:
+
+```
+Error in loadNamespace(...) :
+  namespace 'systemfonts' 1.2.2 is already loaded, but >= 1.3.0 is required
+```
+
+an outdated `systemfonts` is installed under the R version currently running the script. Fix: close all R/RStudio processes completely, open one fresh session under the intended R version, run `install.packages(c("systemfonts", "svglite", "gdtools", "rvg"), type = "binary")`, restart R once more, and confirm `packageVersion("systemfonts")` reports `>= 1.3.0` before re-running.
+
+Warnings such as `package 'officer'/'rvg' was built under R version 4.5.3` are harmless and can be ignored — they only mean the package was compiled under a slightly newer R than the one in use.
+
 ## Package requirements
 
 **Stata** (19.5): `asdoc`, `rescale`, `maptile`, `spmap`, `statastates`, `lgraph`, `coefplot`, `xtmg`, `xtdcce2`, `xtscc`, `rdrobust`, `synth`, `sdid`, `jwdid`, `reghdfe`, plus `grstyle`/`palettes`/`colrspace` for presentation styling (auto-installed; safe since these only affect graph appearance, not estimation). `dtable`, `etable`/`collect`, and `cate`/`categraph` are native Stata 18/19 commands — no install needed, but the driver checks `c(stata_version)` and warns if unavailable. Several non-SSC installs are required once (`asdoc`, `rescale`, `maptile`'s shapefile, `esttab`/`estout`) — see the driver's preamble for the exact `net install` commands.
