@@ -97,6 +97,12 @@ coefplot_r <- function(est_df, title, subtitle = NULL, xlab = "Percent Change in
 #=========================================================================
 # 13.5.1 Regression Coefficient Plots
 #=========================================================================
+# DATA PROVENANCE (Figures 13.7-13.9 only): Example_13_1.dta is the same
+# state appropriations panel as Chapter 10's Example_10_2_1.dta
+# (confirmed in the data repository's own README) -- same source as
+# Tables 13.1/13.2, Maps13.R's Figure 13.1, and TrendGraphs13.R's
+# Figures 13.3-13.4. Section 13.5.2 below switches to a different
+# Chapter 10 file -- see the note above its own load call.
 d1 <- load_ch13_dta("Example_13_1.dta", data_dir) %>% arrange(fips, fy)
 
 #-------------------------------------------------------------------------
@@ -175,6 +181,12 @@ cat("the Stata original's own incomplete state for this figure.\n")
 #=========================================================================
 # 13.5.2 Marginal Effects (Continuous Variables) and Graphs
 #=========================================================================
+# DATA PROVENANCE: Example_13_4.dta is the same file as Chapter 10's
+# "Example 10.dta" (net tuition/administrative staffing panel),
+# confirmed in the data repository's own README -- a DIFFERENT Chapter
+# 10 dataset than 13.5.1's Example_13_1.dta above. This same file is
+# also used by EstimationTables13.R (Section 13.2.2/13.7.4) and, via
+# pd4 still in memory, Section 13.5.3 below.
 d4 <- load_ch13_dta("Example_13_4.dta", data_dir)
 pd4 <- pdata.frame(d4, index = c("id", "year"))
 pd4$L_lnnet_tuition_rev_adj <- plm::lag(pd4$lnnet_tuition_rev_adj, 1)

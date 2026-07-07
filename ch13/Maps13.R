@@ -98,6 +98,13 @@ us_sf <- st_as_sf(map("state", plot = FALSE, fill = TRUE)) %>%
 
 #-------------------------------------------------------------------------
 # Figure 13.1: State Appropriations per Capita by State, FY 2017
+#
+# DATA PROVENANCE (Figure 13.1 only): Example_13_1.dta is the same
+# state appropriations panel as Chapter 10's Example_10_2_1.dta
+# (confirmed in the data repository's own README) -- same source as
+# Tables 13.1/13.2, TrendGraphs13.R's Figures 13.3-13.4, and
+# RegressionPlots13.R's Figures 13.7-13.9. Figure 13.2 below switches
+# to a different Chapter 10 file -- see the note above its own load call.
 #-------------------------------------------------------------------------
 d1 <- load_ch13_dta("Example_13_1.dta", data_dir)
 
@@ -135,6 +142,12 @@ pubexport(fig13_1, "fig13_1_appro_percapita_2017")
 #-------------------------------------------------------------------------
 # Figure 13.2: Percent Change in State Appropriations per FTE Enrollment,
 # FY 2009-FY 2017
+#
+# DATA PROVENANCE: Example_13_2.dta is the same file as Chapter 10's
+# Example_10_3.dta (confirmed in the data repository's own README) -- a
+# DIFFERENT Chapter 10 dataset than Figure 13.1's Example_13_1.dta
+# above; not to be confused with CausalPlots13.R's Example_10_3_1.csv
+# either, which is a separate file despite the similar name.
 #-------------------------------------------------------------------------
 d2 <- load_ch13_dta("Example_13_2.dta", data_dir)
 

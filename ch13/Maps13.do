@@ -60,6 +60,14 @@ end
 * R equivalent (tigris + ggplot2, or usmap) belongs in R_code13.R,
 * rebuilding these two maps on the same data for direct comparison.
 *
+* DATA PROVENANCE (Figure 13.1 only): Example_13_1.dta is the same
+* state appropriations panel as Chapter 10's Example_10_2_1.dta
+* (confirmed in the data repository's own README) -- same source as
+* Tables 13.1/13.2, TrendGraphs13.do's Figures 13.3-13.4, and
+* RegressionPlots13.do's Figures 13.7-13.9. Figure 13.2 below switches
+* to a different Chapter 10 file -- see the note above its own "use"
+* statement.
+*
 * NOTE -- BUG FIX: this section previously had no "use" statement of its
 * own and silently relied on whichever dataset happened to still be in
 * memory from the previous sub-script in the master's call sequence.
@@ -135,6 +143,12 @@ pubexport fig13_1_appro_percapita_2017
 * shared for this file) -- written defensively below with a capture, so
 * it falls back to reporting by FIPS code if no state-name-style
 * variable exists, rather than risk a "variable not found" error.
+*
+* DATA PROVENANCE: Example_13_2.dta is the same file as Chapter 10's
+* Example_10_3.dta (confirmed in the data repository's own README) --
+* a DIFFERENT Chapter 10 dataset than Figure 13.1's Example_13_1.dta
+* above; not to be confused with CausalPlots13.do's Example_10_3_1.csv
+* either, which is a separate file despite the similar name.
 *------------------------------------------------------------------------
 use "$data_dir/Example_13_2.dta", clear
 

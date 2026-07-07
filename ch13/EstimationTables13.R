@@ -68,6 +68,13 @@ load_ch13_dta <- function(filename, data_dir) {
 
 cat("EstimationTables13.R running:", format(Sys.time()), "\n")
 
+# DATA PROVENANCE: Example_13_4.dta is the same file as Chapter 10's
+# "Example 10.dta" (net tuition/administrative staffing panel),
+# confirmed in the data repository's own README -- a DIFFERENT Chapter
+# 10 dataset than Example_13_1.dta, which feeds Tables 13.1/13.2,
+# Maps13.R's Figure 13.1, and RegressionPlots13.R's Figures 13.7-13.9.
+# This same Example_13_4.dta file also feeds RegressionPlots13.R's
+# Figures 13.10-13.11 (Sections 13.5.2/13.5.3).
 d4 <- load_ch13_dta("Example_13_4.dta", data_dir)
 pd4 <- pdata.frame(d4, index = c("id", "year"))
 
