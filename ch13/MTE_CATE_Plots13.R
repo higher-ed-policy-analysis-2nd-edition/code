@@ -38,6 +38,12 @@ suppressPackageStartupMessages({
 cat("MTE_CATE_Plots13.R running:", format(Sys.time()), "\n")
 
 pubexport <- function(p, gname, w = 8, h = 5.5) {
+  # NOTE: slightly shorter default height than the chapter's other
+  # pubexport() copies (h = 5.8 elsewhere) -- intentional, not drift:
+  # this section's illustrative CATE/MTE curves read cleanly at a
+  # slightly flatter aspect. See Technical Appendix 13 for the
+  # cross-script comparison of all pubexport() defaults used in this
+  # chapter.
   ggsave(file.path(graphs_dir, paste0(gname, "_R.svg")), p, width = w, height = h)
   ggsave(file.path(graphs_dir, paste0(gname, "_R.pdf")), p, width = w, height = h)
   ggsave(file.path(graphs_dir, paste0(gname, "_R.png")), p, width = w, height = h, dpi = 300)

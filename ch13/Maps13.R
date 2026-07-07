@@ -73,6 +73,11 @@ load_ch13_dta <- function(filename, data_dir) {
 cat("Maps13.R running:", format(Sys.time()), "\n")
 
 pubexport <- function(p, gname, w = 9, h = 6) {
+  # NOTE: wider default than the chapter's other pubexport() copies
+  # (w = 8, h = 5.8 elsewhere) -- intentional, not drift: a full US
+  # choropleth reads better at a wider aspect ratio than a coefficient
+  # plot or trend line. See Technical Appendix 13 for the cross-script
+  # comparison of all pubexport() defaults used in this chapter.
   ggsave(file.path(graphs_dir, paste0(gname, "_R.svg")), p, width = w, height = h)
   ggsave(file.path(graphs_dir, paste0(gname, "_R.pdf")), p, width = w, height = h)
   ggsave(file.path(graphs_dir, paste0(gname, "_R.png")), p, width = w, height = h, dpi = 300)
