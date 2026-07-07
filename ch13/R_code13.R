@@ -12,10 +12,11 @@
 # Code development assisted by Claude (Anthropic). The author provided
 # specifications and reviewed, tested, and validated all code.
 #
-# IMPORTANT -- PowerPoint export subroutine intentionally NOT included
-# yet, per author's instruction: this driver and its sub-scripts must
-# run error-free first. Once validated end to end, a PolicymakerDeck13.R
-# sub-script (officer + rvg) can be added as its own optional section.
+# PowerPoint export: PolicymakerDeck13.R (officer + rvg) is included as
+# the final sub-script below. It was added only after every preceding
+# sub-script was confirmed to run error-free end to end, per the
+# author's original instruction, and is now validated as of the
+# 2026-07-07 run (see Chapter13_R_output.log).
 #=========================================================================
 
 #-------------------------------------------------------------------------
