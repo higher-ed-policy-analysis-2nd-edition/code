@@ -49,6 +49,13 @@ if "`r(status)'" != "on" {
 *------------------------------------------------------------------------
 * Primary path: dtable (Stata 18+). asdoc/tabstat retained as a
 * version-gated fallback for Stata <18 below.
+*
+* DATA PROVENANCE: Example_13_1.dta is the same state appropriations
+* panel dataset as Chapter 10's Example_10_2_1.dta (confirmed in the
+* data repository's own README) -- Tables 13.1 and 13.2 below are built
+* on data already analyzed in Chapter 10, not newly collected. The same
+* file also feeds Maps13.do (Section 13.3), RegressionPlots13.do's
+* Figure 13.7 (Section 13.5), and CausalPlots13.do (Section 13.6).
 *------------------------------------------------------------------------
 use "$data_dir/Example_13_1.dta", clear
 

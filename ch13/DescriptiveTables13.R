@@ -72,6 +72,13 @@ cat("DescriptiveTables13.R running:", format(Sys.time()), "\n")
 #-------------------------------------------------------------------------
 # 13.2.1 Descriptive Statistics in Microsoft Word Tables
 #-------------------------------------------------------------------------
+# DATA PROVENANCE: Example_13_1.dta is the same state appropriations
+# panel dataset as Chapter 10's Example_10_2_1.dta (confirmed in the
+# data repository's own README) -- Tables 13.1 and 13.2 below are built
+# on data already analyzed in Chapter 10, not newly collected. The same
+# file also feeds Maps13.R (Section 13.3), RegressionPlots13.R's
+# Figure 13.7 (Section 13.5), and CausalPlots13.R (Section 13.6).
+#-------------------------------------------------------------------------
 d <- load_ch13_dta("Example_13_1.dta", data_dir)
 
 # rescale y, x1, x3, x4, x5 to millions (Stata: rescale ..., millions)
