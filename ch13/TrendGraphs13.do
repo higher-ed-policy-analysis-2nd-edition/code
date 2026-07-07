@@ -59,6 +59,12 @@ end
 * Retained from 1st ed. Ch. 10 -- no new Stata routines required.
 * R equivalent (ggplot2 + theme_springer()) belongs in R_code13.R,
 * translating each example below for direct comparison.
+*
+* DATA PROVENANCE (Figures 13.3-13.4): Example_13_1.dta is the same
+* state appropriations panel dataset as Chapter 10's Example_10_2_1.dta
+* (confirmed in the data repository's own README) -- same source as
+* Tables 13.1/13.2, Maps13.do, RegressionPlots13.do's Figure 13.7, and
+* CausalPlots13.do.
 
 use "$data_dir/Example_13_1.dta", clear
 
@@ -103,6 +109,14 @@ pubexport fig13_4_md_v_sreb
 *------------------------------------------------------------------------
 * Figure 13.5: Colorado Net Tuition Revenue per FTE Before and After
 * Senate Bill 189, vs. All Other States
+*
+* DATA PROVENANCE (Figures 13.5-13.6): Example_13_3.dta is the same file
+* as Chapter 7's "Example 7.1.dta" (confirmed in the data repository's
+* own README) -- these two figures draw on Chapter 7's Colorado net
+* tuition/SB 189 panel, NOT the Chapter 10 state appropriations panel
+* used above for Figures 13.3-13.4. The blanket "Retained from 1st ed.
+* Ch. 10" note above this file's data load applies only to Figures
+* 13.3-13.4; it does not describe this dataset's origin.
 *------------------------------------------------------------------------
 use "$data_dir/Example_13_3.dta", clear
 

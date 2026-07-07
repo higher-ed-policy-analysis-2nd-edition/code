@@ -92,6 +92,12 @@ pubexport <- function(p, gname, w = 8, h = 5.8) {
 #-------------------------------------------------------------------------
 # Figure 13.3: State Appropriations per Population, FY 1980-2018
 # (Maryland vs. all other states)
+#
+# DATA PROVENANCE (Figures 13.3-13.4): Example_13_1.dta is the same
+# state appropriations panel dataset as Chapter 10's Example_10_2_1.dta
+# (confirmed in the data repository's own README) -- same source as
+# Tables 13.1/13.2, Maps13.R, RegressionPlots13.R's Figure 13.7, and
+# CausalPlots13.R.
 #-------------------------------------------------------------------------
 d1 <- load_ch13_dta("Example_13_1.dta", data_dir)
 
@@ -143,6 +149,12 @@ pubexport(fig13_4, "fig13_4_md_v_sreb")
 #-------------------------------------------------------------------------
 # Figure 13.5: Colorado Net Tuition Revenue per FTE Before and After
 # Senate Bill 189, vs. All Other States
+#
+# DATA PROVENANCE (Figures 13.5-13.6): Example_13_3.dta is the same file
+# as Chapter 7's "Example 7.1.dta" (confirmed in the data repository's
+# own README) -- these two figures draw on Chapter 7's Colorado net
+# tuition/SB 189 panel, NOT the Chapter 10 state appropriations panel
+# used above for Figures 13.3-13.4.
 #-------------------------------------------------------------------------
 d3 <- load_ch13_dta("Example_13_3.dta", data_dir)
 
