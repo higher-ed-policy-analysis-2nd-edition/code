@@ -27,6 +27,17 @@
 *            fig10_8_2_loo                 fig10_9_1_summary
 *   Data:    results.csv  results_lasso.csv  results_combined.csv
 *
+* MANUSCRIPT CROSS-REFERENCES (Chapter10_version_30.docx)
+* -------------------------------------------------------
+* This script is the source of record for Sections 10.3-10.9 of the chapter;
+* where the manuscript and this file disagree, the manuscript is revised, not
+* the code.  Numbered equations estimated here:
+*   Eq. 10.9   Section 10.3.2  TWFE DiD model            (xtreg ... did)
+*   Eq. 10.10  Section 10.3.2  Placebo / falsification   (xtreg ... did_placebo)
+*   Eq. 10.11  Section 10.3.3  Pre-trend slope test      (reghdfe c.treat_state#c.fy)
+* Equation numbers above are those of the 28-equation sequence in v30 of the
+* manuscript.  Renumbering the chapter changes them; the specifications do not.
+*
 * CHANGE LOG
 * ----------
 * v1  Apr 2026 — initial draft
@@ -35,6 +46,39 @@
 * v4  May 2026 — Add fig10_4_1; fix sdid/csdid/staggered failures; revise close-out
 * v5  May 2026 — Separate sdid estimation/graph captures; csdid noisily for log visibility
 * v6  May 2026 — Fix csdid_plot r(693): plot before estimates store; sdid g1on→g2on reps(5); staggered noisily
+* v7  Aug 2026 — BUG FIX: Section 10.7.3 CSV path never executed (schema mismatch).
+*                Also: estat event now precedes csdid_plot (r(693)).
+* v8  Aug 2026 — Section 10.7.3: add use_synthetic toggle.  Default 1 (simulated
+*                panel with known cohort effects); set 0 for the 48-state CSV.
+* v9  Aug 2026 — Comments only (no code change): manuscript equation cross-references
+*                added to Sections 10.3.2–10.3.3; column-name warning in Section
+*                10.3.1; corrected the misleading rationale comments on robustness
+*                specs (c) and (d) in Section 10.3.4.
+* v10 Aug 2026 — BUG FIX (Section 10.3.3): the reghdfe branch computed the
+*                pre-trend p with normal(...), which disagreed with the p-value
+*                reghdfe itself prints (t = -4.42, p = 0.0005) and overstated
+*                significance.  Now 2 * ttail(e(N_clust) - 1, ...), matching both
+*                that table and the R translation.  One line changed.
+*
+* BUG FIX (v7):
+*   Symptom:  Section 10.7.3 always printed "Download failed" and ran the
+*             synthetic 16-state fallback, even though copy/import succeeded.
+*   Root cause: Example_10_7_3.csv holds the raw SHEEO schema
+*             (fips, state, state_abbrev, fy, TotalStateSupport,
+*             TotalFinancialAid, GeneralPublicOperations,
+*             NetTuitionandFeeRevenue, NetFTEEnrollment).  It contains no
+*             state_id, year, lngenop, or first_treat column, so
+*             -confirm var state_id year lngenop first_treat- always failed
+*             and _rc sent control to the fallback.  A second, latent bug:
+*             the outcome resolver below never tested for -lngenop-, the very
+*             name the validator demanded, so even a passing validation would
+*             have resolved s_y to a nonexistent -outcome-.
+*   Fix applied here:
+*     1. Validate against the columns the file actually has.
+*     2. Build the canonical variables (state_id, year, lngenop_s, gvar_s)
+*        after import, so the existing resolver picks them up unchanged.
+*     3. Assign the three staggered consolidation cohorts by FIPS.
+*     4. Correct the fallback message: it reports validation failure too.
 *
 * BUG FIX (v2):
 *   Symptom:  reghdfe aborts with r(3000):
@@ -150,10 +194,19 @@ replace fips = 54 if state == "West Virginia"
 gen byte treat_state  = (state == "Georgia")    // 1 = Georgia
 gen byte post         = (fy >= 2018)             // post-consolidation
 gen byte did          = treat_state * post       // TWFE DiD term
+* The placebo pair below feeds the falsification test in Section 10.3.2
+* (Eq. 10.10).  FY 2012 is chosen as a pseudo-treatment date far enough
+* inside the pre-period that no genuine post-2018 year enters that model.
 gen byte post_placebo = (fy >= 2012)             // placebo treatment year
 gen byte did_placebo  = treat_state * post_placebo
 
 * Log-transformed financial variables
+* NOTE ON COLUMN NAMES: Example_10_3_1.csv carries underscore-separated
+* headers, so -import delimited- yields general_public_operations,
+* total_state_support, etc.  This differs from Example_10_7_3.csv used in
+* Section 10.7.3, whose raw SHEEO headers arrive lowercased WITHOUT
+* underscores (generalpublicoperations, ...).  Do not copy variable names
+* between the two sections.
 gen lngenop  = log(general_public_operations)
 gen lntotsup = log(total_state_support)
 gen lnfinaid = log(total_financial_aid)
@@ -184,6 +237,15 @@ di as text    "SECTION 10.3.2: TWFE DiD ESTIMATION"
 di as text    "============================================================"
 
 * Primary TWFE estimate (state + year FEs, clustered SEs)
+* Estimates Eq. 10.9:
+*     lngenop_it = alpha_i + lambda_t + delta*(T_i x Post_t) + X_it'beta + e_it
+* i.fy supplies lambda_t and the -fe- option supplies alpha_i.  T_i and Post_t
+* do not appear as separate regressors: T_i is collinear with the state fixed
+* effects and Post_t with the year fixed effects, so only their interaction
+* (did) is estimable.  delta is the coefficient on did.
+* NOTE: the reported model F is missing here (F(15,15) = .) because the
+* cluster-robust VCE has rank 15 with 16 clusters.  The coefficient estimates
+* and their cluster-robust t-tests are unaffected.
 xtreg lngenop did $controls i.fy, fe vce(cluster fips)
 estimates store twfe_did
 
@@ -198,6 +260,13 @@ di as text    "   DiD coef = " %8.4f `twfe_b' ///
               "   p  = " %6.4f `twfe_p'
 
 * Pre-treatment placebo (falsification: 2012 pseudo-treatment date)
+* Estimates Eq. 10.10 — identical to Eq. 10.9 except that the interaction is
+* redated to FY 2012 and the sample is restricted to FY 2001-2017.
+* SCOPE OF THIS TEST: it looks for a discrete SHIFT IN LEVEL at a false
+* treatment date.  A steady annual divergence between Georgia and the
+* comparison states produces no sharp break at 2012 and is largely invisible
+* to it.  A pass here is therefore weak evidence; the slope test in Section
+* 10.3.3 (Eq. 10.11) is the binding one, and in this panel the two disagree.
 xtreg lngenop did_placebo $controls i.fy if fy < 2018, fe vce(cluster fips)
 estimates store twfe_placebo
 
@@ -205,6 +274,8 @@ local placebo_b  = _b[did_placebo]
 local placebo_se = _se[did_placebo]
 local placebo_p  = 2 * ttail(e(df_r), abs(`placebo_b'/`placebo_se'))
 di as text "   Placebo DiD (2012) = " %8.4f `placebo_b' "   p = " %6.4f `placebo_p'
+* Read PASS below as "no LEVEL shift at the false date" — not as evidence that
+* parallel trends holds.  Section 10.3.3 rejects it on the slope test.
 if `placebo_p' > 0.10 di as text "   PASS: no pre-2018 treatment effect detected."
 else                   di as text "   WARNING: significant placebo — inspect pre-trends."
 
@@ -267,12 +338,23 @@ local pt_method ""
 * ("unrecognized command") even after ssc install reghdfe runs successfully.
 capture discard
 
+* Estimates Eq. 10.11:
+*     lngenop_it = alpha_i + lambda_t + pi*(T_i x t) + X_it'beta + e_it,  t < 2018
+* absorb(fips fy) supplies alpha_i and lambda_t.  Because lambda_t absorbs any
+* trend common to all states, pi is identified only from Georgia's deviation
+* from that common path.  Under parallel trends pi = 0.  Unlike the placebo in
+* Eq. 10.10, this is a SLOPE test, matched to the form the violation takes.
 capture reghdfe lngenop c.treat_state#c.fy $controls if fy < 2018, ///
     absorb(fips fy) vce(cluster fips)
 if _rc == 0 {
     local pt_b      = _b[c.treat_state#c.fy]
     local pt_se     = _se[c.treat_state#c.fy]
-    local pt_p      = 2 * normal(-abs(`pt_b'/`pt_se'))
+    * Cluster-robust t, df = G - 1, matching the p-value reghdfe prints in the
+    * table above (t = -4.42, p = 0.0005).  The earlier normal(...) form
+    * disagreed with that table and overstated significance.  The xtreg
+    * fallback below already uses ttail(e(df_r)), which xtreg sets to G - 1
+    * under vce(cluster fips), so the two branches now agree.
+    local pt_p      = 2 * ttail(e(N_clust) - 1, abs(`pt_b'/`pt_se'))
     local pt_method "reghdfe"
 }
 else {
@@ -398,7 +480,11 @@ local se_tr = _se[did]
 local p_tr  = 2 * ttail(e(df_r), abs(`b_tr'/`se_tr'))
 di as text "   + State trends: DiD = " %7.4f `b_tr' "   p = " %6.4f `p_tr'
 
-* (c) Southern SREB states only (drop non-contiguous: Delaware)
+* (c) Drop Delaware (geographic and system-size outlier within the SREB bloc).
+*     Earlier versions of this comment described Delaware as the one
+*     "non-contiguous" SREB state.  That is wrong: Delaware borders Maryland,
+*     itself an SREB member.  The defensible rationale is that it is the
+*     northernmost member and has the smallest public system in the bloc.
 qui xtreg lngenop did $controls i.fy if fips != 10, fe vce(cluster fips)
 estimates store twfe_nodela
 local b_nd  = _b[did]
@@ -406,7 +492,10 @@ local se_nd = _se[did]
 local p_nd  = 2 * ttail(e(df_r), abs(`b_nd'/`se_nd'))
 di as text "   Drop Delaware: DiD = " %7.4f `b_nd' "   p = " %6.4f `p_nd'
 
-* (d) Balanced two-period DiD (2015-2021 window; 2015-2017 = pre)
+* (d) Restricted estimation window (FY 2015-2021; FY 2015-2017 = pre).
+*     NOT a two-period DiD: i.fy is retained, so every year keeps its own
+*     fixed effect.  Only the sample is narrowed.  The earlier "Balanced
+*     two-period DiD" label misdescribed the specification actually run.
 qui xtreg lngenop did $controls i.fy if fy >= 2015, fe vce(cluster fips)
 estimates store twfe_window
 local b_wn = _b[did]
@@ -731,6 +820,10 @@ capture noisily {
     * csdid_plot reads; calling it after store gives r(693) "matrix has
     * no columns" because those objects are gone.
     capture {
+        * FIX v7: csdid_plot reads the event-time aggregation, which does not
+        * exist until estat event has run.  Calling it directly after csdid
+        * gives r(693) "matrix has no columns".
+        estat event
         csdid_plot, title("CS-DiD Event Study: Georgia Consolidation") ///
             ytitle("ATT(g,t): Log Operating Expenses")                 ///
             xtitle("Fiscal Year")                                      ///
@@ -775,28 +868,69 @@ di as text _n "============================================================"
 di as text    "SECTION 10.7.3: MULTI-STATE STAGGERED ADOPTION"
 di as text    "============================================================"
 *
-* Application: hypothetical SREB-wide staggered consolidation policy.
-* Three cohorts of treated states (2014, 2016, 2018).
+* Application: hypothetical staggered consolidation policy.
 * Demonstrates heterogeneous treatment timing and the importance
 * of using Callaway-Sant'Anna over naive TWFE when ATTs differ by cohort.
+*
+* TWO DATA PATHS, selected by the use_synthetic toggle below.
+*
+*   use_synthetic 1 (default, used in the chapter)
+*     Simulated 16-unit panel, 20 years (2001-2020), cohorts 2014, 2016, 2018
+*     plus 4 never-treated units.  Cohort effects are hardcoded in the DGP at
+*     -0.06, -0.04, and -0.03, so the true cohort-weighted ATT is about -0.043.
+*     A known target is what makes the TWFE-vs-CS comparison interpretable:
+*     the reader can check which estimator recovers it.  set seed 20260511
+*     makes the panel exactly reproducible.
+*
+*   use_synthetic 0
+*     Example_10_7_3.csv from GitHub: real SHEEO data, 48 states, FY 2001-2024
+*     (N = 1,152), with cohorts assigned by FIPS to Georgia (2013),
+*     Wisconsin (2018), and Pennsylvania (2022).  Realistic panel dimensions,
+*     but the cohort assignment is arbitrary, so there is no true effect to
+*     compare the estimators against and pre-treatment ATT(g,t) are violated.
+
+* -- Data path toggle: 1 = simulated panel (chapter default), 0 = 48-state CSV --
+local use_synthetic 1
 
 * -- Attempt download; validate columns; fall back to synthetic if anything fails --
 * copy is inside capture: a 404 HTML page downloaded without error previously
 * caused import delimited to succeed (rc=0) but with wrong columns, bypassing
 * the synthetic fallback and crashing xtset with r(111) (no observations).
 * The confirm var check after import enforces the expected schema.
+* Skipped entirely when use_synthetic == 1, so the simulated path needs
+* no internet connection.
 capture {
+    if `use_synthetic' error 1
     copy "https://raw.githubusercontent.com/higher-ed-policy-analysis-2nd-edition/data/main/ch10/Example_10_7_3.csv" ///
          "Example_10_7_3.csv", replace
     import delimited "Example_10_7_3.csv", clear
-    * Validate that required columns are present
-    confirm var state_id year lngenop first_treat
-    di as text "   Example_10_7_3.csv loaded and validated from GitHub"
+
+    * Validate against the raw SHEEO schema this file actually carries.
+    * import delimited lowercases variable names by default.
+    confirm var fips fy generalpublicoperations
+
+    * Build the canonical panel variables the resolver below expects.
+    rename fips state_id
+    rename fy   year
+    gen double lngenop_s = log(generalpublicoperations)
+
+    * Staggered consolidation cohorts, assigned by state FIPS code.
+    * 0 = never treated.
+    gen int gvar_s = 0
+    replace gvar_s = 2013 if state_id == 13    // Georgia
+    replace gvar_s = 2018 if state_id == 55    // Wisconsin
+    replace gvar_s = 2022 if state_id == 42    // Pennsylvania
+
+    label var gvar_s    "First treatment year (0 = never)"
+    label var lngenop_s "Log general public operations expenses"
+
+    di as text "   Example_10_7_3.csv loaded and validated from GitHub (N = " c(N) ")"
 }
 
-* -- Fallback: synthesize staggered data if download or validation failed --
-if _rc != 0 {
-    di as text "   Download failed — generating synthetic staggered panel"
+* -- Use the simulated panel when requested, or when the CSV path failed --
+if _rc != 0 | `use_synthetic' {
+    if `use_synthetic' di as text "   use_synthetic = 1 — generating simulated staggered panel"
+    else               di as text "   Download or validation failed (r(" _rc ")) — generating simulated staggered panel"
     clear
     * 16 SREB states, 20 years (2001-2020)
     set obs 320
@@ -843,7 +977,7 @@ if c(N) > 0 {
     local s_id   "state_id"
     local s_year "year"
 
-    * Outcome: prefer lngen_s (synthetic path), then lngenop_s, then outcome (CSV)
+    * Outcome: prefer lngen_s (synthetic path), then lngenop_s (CSV path)
     capture confirm var lngen_s
     if !_rc        local s_y "lngen_s"
     else {
@@ -852,7 +986,8 @@ if c(N) > 0 {
         else       local s_y "outcome"
     }
 
-    * Cohort variable: prefer gvar_s (synthetic path), then first_treat (CSV)
+    * Cohort variable: gvar_s is built on both paths; first_treat kept as a
+    * fallback for older versions of the CSV.
     capture confirm var gvar_s
     if !_rc        local s_gvar "gvar_s"
     else {
@@ -891,9 +1026,11 @@ if c(N) > 0 {
 
         * FIX v6: csdid_plot before estimates store (same root cause as §10.7)
         capture {
+            * FIX v7: estat event must precede csdid_plot (see Section 10.7)
+            estat event
             csdid_plot, name(fig10_7, replace) ///
                 title("CS-DiD Event Study: Staggered Consolidation") ///
-                subtitle("Three cohorts: 2014, 2016, 2018") ///
+                subtitle("Three staggered treatment cohorts") ///
                 ytitle("ATT(g,t)") xtitle("Year")
             graph export "$graphs_dir/fig10_7_staggered_es_Stata.png", replace width(1200)
             di as text "   fig10_7_staggered_es_Stata.png exported"

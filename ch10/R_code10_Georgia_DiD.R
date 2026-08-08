@@ -25,6 +25,38 @@
 # Install once:
 #   install.packages(c("fixest","did","Synth","hdm","dplyr","tidyr","ggplot2"))
 #
+# MANUSCRIPT CROSS-REFERENCES (Chapter10_version_30.docx)
+# -------------------------------------------------------
+# Georgia_DiD.do is the source of record for Sections 10.3-10.9; this file is
+# its R translation and must track it.  Where either script and the manuscript
+# disagree, the manuscript is revised, not the code.  Numbered equations
+# estimated here:
+#   Eq. 10.9   Section 10.3.2  TWFE DiD model          (feols, fit_twfe)
+#   Eq. 10.10  Section 10.3.2  Placebo / falsification (feols, fit_plac)
+#   Eq. 10.11  Section 10.3.3  Pre-trend slope test    (feols, fit_pt)
+# Equation numbers are those of the 28-equation sequence in v30 of the
+# manuscript.  Renumbering the chapter changes them; the specifications do not.
+#
+# REVISION
+# --------
+# Aug 2026 — Comments only (no code change): equation cross-references added to
+#            Sections 10.3.2-10.3.3; column-name note in Section 10.3.1;
+#            corrected the misleading rationale comments on robustness specs
+#            (c) and (d) in Section 10.3.4.  Mirrors Georgia_DiD.do v9.
+# Aug 2026 — BUG FIX (p-values): every hand-computed pt() call used residual df
+#            (nobs - nparams, ~300) instead of the cluster-robust G - 1 that
+#            Stata uses with vce(cluster fips).  All p-values were understated
+#            (baseline 0.020 vs 0.034).  Introduced cl_df, and cl_df_nd = 14 for
+#            the drop-Delaware spec, which estimates on 15 clusters.
+# Aug 2026 — FIX (Section 10.4): the fig10_4_1 caption and the close-out asserted
+#            that LASSO retained the full control set and matched TWFE exactly.
+#            True in Stata, not in R.  Both strings are now generated from
+#            S_union and lasso_b - twfe_b.
+# Aug 2026 — FIX (Section 10.5): synth() aborted with "missing value where
+#            TRUE/FALSE needed".  Added pre-flight NA and balance checks that
+#            name the cause, drop the smallest thing that fixes it, and pass
+#            dataprep an unnamed integer unit id plus a real unit-names column.
+#
 # NOTE on sdid: The R package "sdid" (Clarke et al. 2023) mirrors the Stata
 #   version.  Install via: install.packages("sdid")
 #   If unavailable, the SDID block sets sdid_att = NA and continues.
@@ -100,6 +132,13 @@ df_raw <- tryCatch(
 write.csv(df_raw, "Example_10_3_1.csv", row.names = FALSE)
 
 # Normalise column names to lowercase_with_underscores.
+# THIS IS WHAT MAKES THE R AND STATA VARIABLE NAMES AGREE.  Example_10_3_1.csv
+# ships with underscore-separated headers, and Stata's -import delimited- keeps
+# them, so Georgia_DiD.do refers to general_public_operations, total_state_support,
+# and so on.  The normalisation below reproduces those exact names in R.
+# Do NOT borrow names from Section 10.7.3: Example_10_7_3.csv carries the raw
+# SHEEO headers, which arrive lowercased WITHOUT underscores
+# (generalpublicoperations, ...).  The two files differ.
 # R's read.csv(check.names=TRUE) converts spaces to "." and produces
 # double dots for "Total_ Financial_Aid" -> "Total..Financial.Aid".
 # Steps: (1) replace every run of dots/underscores with "_",
@@ -132,6 +171,9 @@ df <- df %>%
     treat_state  = as.integer(state == "Georgia"),
     post         = as.integer(fy >= 2018),
     did          = treat_state * post,
+    # The placebo pair feeds the falsification test in Section 10.3.2
+    # (Eq. 10.10).  FY 2012 sits far enough inside the pre-period that no
+    # genuine post-2018 year enters that model.
     post_placebo = as.integer(fy >= 2012),
     did_placebo  = treat_state * post_placebo,
     # Log-transformed financial variables
@@ -143,6 +185,17 @@ df <- df %>%
   )
 
 controls <- c("lntotsup", "lnfinaid", "lntuifee", "lnfte")
+
+# Cluster-robust degrees of freedom.
+# With cluster-robust standard errors, Stata bases the t distribution on
+# G - 1 (number of clusters minus one), NOT on N - k residual df.  Every
+# manual pt() call below therefore uses cl_df; using nobs - nparams instead
+# understates every p-value in this script (e.g. baseline 0.020 vs 0.034)
+# and would not reproduce the values printed in the manuscript.
+# fixest's own summary()/etest() already apply this correction; only the
+# hand-computed p-values need it.
+cl_df <- length(unique(df$fips)) - 1L
+cat(sprintf("Cluster-robust df (G - 1) = %d\n", cl_df))
 
 cat(sprintf("Panel: N = %d, G = 16 states, T = %d–%d\n",
             nrow(df), min(df$fy), max(df$fy)))
@@ -159,6 +212,16 @@ cat("============================================================\n")
 
 # Primary TWFE: state + year FEs, clustered SEs at state level
 # fixest::feols absorbs two-way FEs efficiently
+# Estimates Eq. 10.9:
+#     lngenop_it = alpha_i + lambda_t + delta*(T_i x Post_t) + X_it'beta + e_it
+# The "| fips + fy" term supplies alpha_i and lambda_t.  T_i and Post_t do not
+# appear as separate regressors: T_i is collinear with the state fixed effects
+# and Post_t with the year fixed effects, so only their interaction (did) is
+# estimable.  delta is the coefficient on did.
+# NOTE: the Stata listing in the manuscript shows F(15,15) = . for this model
+# (cluster-robust VCE of rank 15 with 16 clusters).  feols reports no model F
+# at all, so there is no R counterpart to that line; the coefficient and its
+# cluster-robust t-test match Stata.
 fml_twfe <- as.formula(paste(
   "lngenop ~ did +", paste(controls, collapse = " + "),
   "| fips + fy"
@@ -168,7 +231,7 @@ fit_twfe  <- feols(fml_twfe, data = df, cluster = ~fips)
 twfe_b  <- coef(fit_twfe)["did"]
 twfe_se <- se(fit_twfe)["did"]
 twfe_t  <- twfe_b / twfe_se
-twfe_df <- fit_twfe$nobs - fit_twfe$nparams
+twfe_df <- cl_df
 twfe_p  <- 2 * pt(-abs(twfe_t), df = twfe_df)
 
 cat(sprintf("\n--- TWFE main estimate ---\n"))
@@ -176,6 +239,13 @@ cat(sprintf("   DiD coef = %8.4f   SE = %7.4f   p = %6.4f\n",
             twfe_b, twfe_se, twfe_p))
 
 # Pre-treatment placebo (2012 pseudo-treatment date)
+# Estimates Eq. 10.10 - identical to Eq. 10.9 except that the interaction is
+# redated to FY 2012 and the sample is restricted to FY 2001-2017.
+# SCOPE OF THIS TEST: it looks for a discrete SHIFT IN LEVEL at a false
+# treatment date.  A steady annual divergence between Georgia and the
+# comparison states produces no sharp break at 2012 and is largely invisible
+# to it.  A pass here is therefore weak evidence; the slope test in Section
+# 10.3.3 (Eq. 10.11) is the binding one, and in this panel the two disagree.
 fml_plac <- as.formula(paste(
   "lngenop ~ did_placebo +", paste(controls, collapse = " + "),
   "| fips + fy"
@@ -185,8 +255,10 @@ fit_plac  <- feols(fml_plac, data = filter(df, fy < 2018), cluster = ~fips)
 placebo_b  <- coef(fit_plac)["did_placebo"]
 placebo_se <- se(fit_plac)["did_placebo"]
 placebo_p  <- 2 * pt(-abs(placebo_b / placebo_se),
-                     df = fit_plac$nobs - fit_plac$nparams)
+                     df = cl_df)
 cat(sprintf("   Placebo DiD (2012) = %8.4f   p = %6.4f\n", placebo_b, placebo_p))
+# Read PASS below as "no LEVEL shift at the false date" - not as evidence that
+# parallel trends holds.  Section 10.3.3 rejects it on the slope test.
 if (placebo_p > 0.10) {
   cat("   PASS: no pre-2018 treatment effect detected.\n")
 } else {
@@ -207,7 +279,7 @@ for (v in controls) {
   alt_b    <- coef(fit_alt)["did"]
   alt_se   <- se(fit_alt)["did"]
   alt_p    <- 2 * pt(-abs(alt_b / alt_se),
-                     df = fit_alt$nobs - fit_alt$nparams)
+                     df = cl_df)
   cat(sprintf("   %-16s %8.4f %8.4f %8.4f\n", v, alt_b, alt_se, alt_p))
   alt_fits[[v]] <- fit_alt
 }
@@ -250,6 +322,14 @@ cat("   fig10_3_parallel_trends_R.png exported\n")
 
 # -- Formal pre-trends test: treat × linear time trend -----------------
 # fixest equivalent of reghdfe c.treat_state#c.fy absorb(fips fy)
+# Estimates Eq. 10.11:
+#     lngenop_it = alpha_i + lambda_t + pi*(T_i x t) + X_it'beta + e_it,  t < 2018
+# fy_treat is built explicitly here because fixest has no direct analogue of
+# Stata's c.#c. continuous-by-continuous interaction operator; the product
+# fy * treat_state is the same regressor.  Because lambda_t absorbs any trend
+# common to all states, pi is identified only from Georgia's deviation from
+# that common path.  Under parallel trends pi = 0.  Unlike the placebo in
+# Eq. 10.10, this is a SLOPE test, matched to the form the violation takes.
 cat("\n--- Formal pre-trend test (linear trend interaction, fy < 2018) ---\n")
 
 df_pre <- df %>% filter(fy < 2018) %>%
@@ -263,7 +343,7 @@ fit_pt <- feols(
 )
 pt_b  <- coef(fit_pt)["fy_treat"]
 pt_se <- se(fit_pt)["fy_treat"]
-pt_p  <- 2 * pt(-abs(pt_b / pt_se), df = fit_pt$nobs - fit_pt$nparams)
+pt_p  <- 2 * pt(-abs(pt_b / pt_se), df = cl_df)
 
 cat(sprintf("   Trend-interaction coef = %8.4f   p = %6.4f\n", pt_b, pt_p))
 if (pt_p > 0.10) {
@@ -358,7 +438,7 @@ cat("============================================================\n")
 fit_nc <- feols(lngenop ~ did | fips + fy, data = df, cluster = ~fips)
 b_nc  <- coef(fit_nc)["did"]
 se_nc <- se(fit_nc)["did"]
-p_nc  <- 2 * pt(-abs(b_nc / se_nc), df = fit_nc$nobs - fit_nc$nparams)
+p_nc  <- 2 * pt(-abs(b_nc / se_nc), df = cl_df)
 cat(sprintf("   No controls: DiD = %7.4f   p = %6.4f\n", b_nc, p_nc))
 
 # (b) State-specific linear time trends
@@ -371,21 +451,31 @@ fit_tr <- feols(
 )
 b_tr  <- coef(fit_tr)["did"]
 se_tr <- se(fit_tr)["did"]
-p_tr  <- 2 * pt(-abs(b_tr / se_tr), df = fit_tr$nobs - fit_tr$nparams)
+p_tr  <- 2 * pt(-abs(b_tr / se_tr), df = cl_df)
 cat(sprintf("   + State trends: DiD = %7.4f   p = %6.4f\n", b_tr, p_tr))
 
-# (c) Drop Delaware (fips = 10)
+# (c) Drop Delaware (fips = 10) - geographic and system-size outlier within
+#     the SREB bloc.  Earlier versions of this comment, and of the Stata
+#     original, called Delaware the one "non-contiguous" SREB state.  That is
+#     wrong: Delaware borders Maryland, itself an SREB member.  The defensible
+#     rationale is that it is the northernmost member with the smallest public
+#     system in the bloc.
 fit_nd <- feols(fml_twfe, data = filter(df, fips != 10), cluster = ~fips)
 b_nd  <- coef(fit_nd)["did"]
 se_nd <- se(fit_nd)["did"]
-p_nd  <- 2 * pt(-abs(b_nd / se_nd), df = fit_nd$nobs - fit_nd$nparams)
+# This spec drops a state, so it has 15 clusters, not 16 - df = G - 1 = 14.
+cl_df_nd <- length(unique(df$fips[df$fips != 10])) - 1L
+p_nd  <- 2 * pt(-abs(b_nd / se_nd), df = cl_df_nd)
 cat(sprintf("   Drop Delaware: DiD = %7.4f   p = %6.4f\n", b_nd, p_nd))
 
-# (d) Balanced 2015–2021 window
+# (d) Restricted estimation window (FY 2015-2021; FY 2015-2017 = pre).
+#     NOT a balanced two-period DiD: the year fixed effects are retained via
+#     fml_twfe, so every year keeps its own effect.  Only the sample is
+#     narrowed.  The earlier "Balanced" label misdescribed the specification.
 fit_wn <- feols(fml_twfe, data = filter(df, fy >= 2015), cluster = ~fips)
 b_wn  <- coef(fit_wn)["did"]
 p_wn  <- 2 * pt(-abs(b_wn / se(fit_wn)["did"]),
-                df = fit_wn$nobs - fit_wn$nparams)
+                df = cl_df)
 cat(sprintf("   2015-2021 window: DiD = %7.4f   p = %6.4f\n", b_wn, p_wn))
 
 # Robustness forest plot: fig10_3_2
@@ -473,7 +563,7 @@ if (hdm_available) {
   lasso_b   <- coef(fit_lasso)["did"]
   lasso_se  <- se(fit_lasso)["did"]
   lasso_p   <- 2 * pt(-abs(lasso_b / lasso_se),
-                      df = fit_lasso$nobs - fit_lasso$nparams)
+                      df = cl_df)
 } else {
   message("   hdm not available — using full controls as LASSO fallback.")
   fit_lasso <- fit_twfe
@@ -489,6 +579,20 @@ cat(sprintf("   TWFE baseline: %8.4f   Difference: %7.4f\n",
             twfe_b, lasso_b - twfe_b))
 
 # LASSO comparison plot: fig10_4_1
+# The caption is BUILT from the actual selection, not asserted.  Stata's
+# dsregress retains all four controls here, making LASSO-DiD numerically
+# identical to TWFE; R's hdm::rlasso uses different penalty loadings and may
+# drop one or more, in which case the two estimates differ.  Cross-language
+# agreement is not guaranteed for this step - report whatever was selected.
+n_dropped    <- length(setdiff(controls, S_union))
+lasso_caption <- if (n_dropped == 0) {
+  sprintf("LASSO retained all %d controls; estimate is numerically identical to TWFE.",
+          length(controls))
+} else {
+  sprintf("LASSO retained %d of %d controls (%s); TWFE - LASSO difference = %.4f.",
+          length(S_union), length(controls),
+          paste(S_union, collapse = ", "), lasso_b - twfe_b)
+}
 lasso_comp_df <- data.frame(
   spec = factor(c("TWFE (full controls)", "LASSO-residualized DiD"),
                 levels = c("LASSO-residualized DiD", "TWFE (full controls)")),
@@ -506,7 +610,7 @@ p_lasso <- ggplot(lasso_comp_df, aes(x = b, y = spec)) +
        subtitle = "Point estimates with 95% CIs — outcome: lngenop",
        x        = "DiD Coefficient (log operating expenses)",
        y        = NULL,
-       caption  = "LASSO selected full control set; estimates are numerically identical.") +
+       caption  = lasso_caption) +
   theme_springer()
 
 ggsave(file.path(graphs_dir, "fig10_4_1_lasso_comparison_R.png"),
@@ -526,15 +630,77 @@ synth_res <- NULL
 
 if (synth_available) {
   cat("   Running synth (may take ~30 seconds)...\n")
-  tryCatch({
-    # Prepare data in wide format for Synth::dataprep()
-    df_synth <- df %>%
-      select(fips, fy, lngenop, lntotsup, lnfinaid, lntuifee, lnfte) %>%
-      arrange(fips, fy)
 
+  # ---- Pre-flight checks for Synth::dataprep() -------------------------
+  # dataprep() needs a STRONGLY BALANCED numeric panel with no NA in the
+  # outcome or in any predictor.  A single NA propagates into X0/X1 and
+  # resurfaces from synth() as the opaque error
+  #     "missing value where TRUE/FALSE needed"
+  # which names neither the column nor the unit-year at fault.  The Stata
+  # run reports 3 missing values on lnfinaid, so this is the expected
+  # failure mode.  The checks below report the cause and then remove the
+  # smallest thing that fixes it: an incomplete PREDICTOR is dropped first
+  # (all 15 donors are retained), and only if a donor still carries an NA
+  # in the outcome is that donor dropped.  Georgia is never dropped.
+  #
+  # dataprep() also wants an unnamed integer unit variable and a character
+  # unit-names column; df$fips arrives named (built via fips_map[df$state]),
+  # so it is unname()d here.
+  df_synth <- df %>%
+    mutate(fips  = as.integer(unname(fips)),
+           state = as.character(state)) %>%
+    select(state, fips, fy, lngenop, lntotsup, lnfinaid, lntuifee, lnfte) %>%
+    arrange(fips, fy)
+
+  scm_preds <- c("lntotsup", "lnfinaid", "lntuifee", "lnfte")
+  na_counts <- vapply(df_synth[c("lngenop", scm_preds)],
+                      function(z) sum(is.na(z)), integer(1))
+
+  if (any(na_counts > 0)) {
+    cat("   NA counts (dataprep requires zero):\n")
+    for (v in names(na_counts)) {
+      if (na_counts[[v]] > 0) cat(sprintf("     %-10s %d\n", v, na_counts[[v]]))
+    }
+  }
+
+  # Panel balance
+  obs_per_unit <- table(df_synth$fips)
+  if (length(unique(obs_per_unit)) != 1L) {
+    cat(sprintf("   WARNING: panel not strongly balanced (%d..%d obs per state).\n",
+                min(obs_per_unit), max(obs_per_unit)))
+  }
+
+  # Step 1: drop predictors that are incomplete (keeps every donor state)
+  scm_preds_use <- scm_preds[na_counts[scm_preds] == 0]
+  dropped_preds <- setdiff(scm_preds, scm_preds_use)
+  if (length(dropped_preds) > 0) {
+    cat(sprintf("   Dropping incomplete predictor(s): %s\n",
+                paste(dropped_preds, collapse = ", ")))
+  }
+
+  # Step 2: drop donors still carrying an NA in the outcome or a kept predictor
+  keep_cols  <- c("lngenop", scm_preds_use)
+  bad_units  <- unique(df_synth$fips[!complete.cases(df_synth[keep_cols])])
+  if (13 %in% bad_units) {
+    stop("Georgia (fips 13) has missing values in the SCM inputs; ",
+         "cannot run SCM without imputing or shortening the window.")
+  }
+  if (length(bad_units) > 0) {
+    cat(sprintf("   Dropping donor state(s) with missing data: %s\n",
+                paste(sort(bad_units), collapse = ", ")))
+    df_synth <- filter(df_synth, !(fips %in% bad_units))
+  }
+
+  donor_fips <- setdiff(sort(unique(df_synth$fips)), 13)
+  cat(sprintf("   SCM inputs: %d donors, %d predictors (%s), %d special predictors\n",
+              length(donor_fips), length(scm_preds_use),
+              if (length(scm_preds_use)) paste(scm_preds_use, collapse = " ") else "none",
+              7L))
+
+  tryCatch({
     dp <- dataprep(
       foo            = df_synth,
-      predictors     = c("lntotsup","lnfinaid","lntuifee","lnfte"),
+      predictors     = scm_preds_use,
       predictors.op  = "mean",
       special.predictors = list(
         list("lngenop", 2001, "mean"),
@@ -547,10 +713,10 @@ if (synth_available) {
       ),
       dependent      = "lngenop",
       unit.variable  = "fips",
-      unit.names.variable = NULL,
+      unit.names.variable = "state",   # was NULL; dataprep wants a real column
       time.variable  = "fy",
       treatment.identifier  = 13,       # Georgia FIPS
-      controls.identifier   = setdiff(unique(df_synth$fips), 13),
+      controls.identifier   = donor_fips,
       time.predictors.prior = 2001:2017,
       time.optimize.ssr     = 2001:2017,
       time.plot             = 2001:2021
@@ -659,6 +825,8 @@ if (sdid_available) {
 } else {
   message("   sdid package not available — skipping SDID.")
   message("   Install via: install.packages('sdid')")
+  message("   Until it is installed, Section 10.6 has no R figure and sdid_att")
+  message("   stays NA, so the estimator-comparison plot (fig10_9_1) omits SDID.")
 }
 
 # =====================================================================================================================
@@ -799,8 +967,10 @@ tryCatch({
     cluster = as.formula(paste("~", s_id))
   )
   stag_twfe_b <- coef(fit_stag_twfe)["s_treat"]
+  # Clusters here are state_id (the staggered panel), not fips.
+  stag_df_cl  <- length(unique(stag_df[[s_id]])) - 1L
   stag_twfe_p <- 2 * pt(-abs(stag_twfe_b / se(fit_stag_twfe)["s_treat"]),
-                         df = fit_stag_twfe$nobs - fit_stag_twfe$nparams)
+                         df = stag_df_cl)
   cat(sprintf("   Naive TWFE (staggered): DiD = %7.4f   p = %6.4f\n",
               stag_twfe_b, stag_twfe_p))
 }, error = function(e) message("   Naive TWFE failed: ", conditionMessage(e)))
@@ -1089,7 +1259,15 @@ cat("  Data files: results.csv  results_lasso.csv  results_combined.csv\n\n")
 cat("  PRIMARY FINDING\n")
 cat(sprintf("  TWFE (baseline): lngenop DiD = %7.4f (SE = %6.4f, p = %5.3f)\n",
             twfe_b, twfe_se, twfe_p))
-cat("  LASSO-DiD: identical to TWFE (full control set selected by LASSO).\n\n")
+if (n_dropped == 0) {
+  cat("  LASSO-DiD: identical to TWFE (full control set retained by LASSO).\n\n")
+} else {
+  cat(sprintf("  LASSO-DiD: %7.4f — LASSO dropped %d of %d controls (retained: %s);\n",
+              lasso_b, n_dropped, length(controls), paste(S_union, collapse = ", ")))
+  cat(sprintf("  differs from TWFE by %7.4f. Note the divergence from Stata, whose\n",
+              lasso_b - twfe_b))
+  cat("  dsregress retains all four controls; penalty loadings differ.\n\n")
+}
 cat("  CROSS-ESTIMATOR COMPARISON\n")
 if (!is.na(scm_att))
   cat(sprintf("  SCM post-treatment gap = %7.4f — OPPOSITE sign to TWFE; discuss in text.\n",
