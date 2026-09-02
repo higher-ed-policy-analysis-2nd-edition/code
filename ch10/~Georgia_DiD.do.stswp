@@ -8,10 +8,8 @@
 * NOTE:   Code development was assisted by Claude (Anthropic). The author
 *         provided specifications and reviewed, tested, and validated all code.
 *=====================================================================================================================
-* Called by:  Stata_code10.do  (inherits $graphs_dir, set scheme s2mono)
+* Called by:  Stata_code10.do  (inherits $graphs_dir, log, set scheme s2mono)
 * Standalone: can also be run directly; uses fallback paths if globals absent.
-* Logging:    opens its OWN named log (ga_did), so it records a complete
-*             record either way and never collides with the master's log.
 *
 * Data: SHEEO state-level finance panel
 *   Example_10_3_1.csv   downloaded from GitHub in Section 10.3.1
@@ -21,16 +19,13 @@
 *                    csdid, drdid, eventstudyinteract, estout
 *
 * Outputs
-*   Figures (manuscript):  fig10_5_parallel_trends   fig10_6_scm_trends
-*                          fig10_7_sdid_trends2018    fig10_8_event_study
-*                          fig10_9_staggered_es
-*   Figures (diagnostic):  fig10_3_2_robustness      fig10_4_1_lasso_comparison
-*                          fig10_5_1_scm_gap         fig10_7_2_csdid
-*                          fig10_8_1_permutation     fig10_8_2_loo
-*                          fig10_9_1_summary
-*   Data:    $tables_dir/results.csv, results_lasso.csv, results_combined.csv
-*            $out_root/data/ga_did_work.dta
-*   Log:     $log_dir/Georgia_DiD.log  (named log: ga_did)
+*   Figures: fig10_3_parallel_trends     fig10_3_2_robustness
+*            fig10_4_1_lasso_comparison    fig10_5_1_scm_gap
+*            fig10_4_scm_trends            fig10_5_sdid
+*            fig10_6_event_study         fig10_7_2_csdid
+*            fig10_7_staggered_es        fig10_8_1_permutation
+*            fig10_8_2_loo                 fig10_9_1_summary
+*   Data:    results.csv  results_lasso.csv  results_combined.csv
 *
 * MANUSCRIPT CROSS-REFERENCES (Chapter10_version_30.docx)
 * -------------------------------------------------------
@@ -42,36 +37,6 @@
 *   Eq. 10.11  Section 10.3.3  Pre-trend slope test      (reghdfe c.treat_state#c.fy)
 * Equation numbers above are those of the 28-equation sequence in v30 of the
 * manuscript.  Renumbering the chapter changes them; the specifications do not.
-*
-* FIGURE CROSS-REFERENCES (as of Chapter10_version_34.docx)
-* ---------------------------------------------------------
-* Chapter 10 gained two figures in Section 10.2 (density test, first stage),
-* which pushed every downstream figure number up by two.  The five graphs
-* below are the ones that appear as numbered figures in the manuscript:
-*
-*   Manuscript   Was    Script export                       Section
-*   ----------   ---    -------------                       -------
-*   Fig. 10.5    10.3   fig10_5_parallel_trends_Stata.png   10.3.3
-*   Fig. 10.6    10.4   fig10_6_scm_trends_Stata.png        10.5
-*   Fig. 10.7    10.5   fig10_7_sdid_trends2018.png         10.6
-*   Fig. 10.8    10.6   fig10_8_event_study_Stata.png       10.3.3
-*                       (manuscript places it in 10.7.1; this script draws
-*                        it in 10.3.3, which also prints the table shown there)
-*   Fig. 10.9    10.7   fig10_9_staggered_es_Stata.png      10.7.3
-*
-* Fig. 10.7 IS now exported.  The long-standing r(198) came from passing a
-* full filename to graph_export() instead of the (prefix, filetype) pair it
-* expects; sdid draws normally in do-file context once the syntax is right.
-* sdid appends its own suffix, hence fig10_7_sdid_trends2018.png.
-*
-* NAMING CONVENTION.  Two families share the fig10_ prefix and are told
-* apart by how many numeric components follow it:
-*   fig10_<N>_<name>        N  = MANUSCRIPT FIGURE number  (the five above)
-*   fig10_<N>_<M>_<name>    N.M = THIS SCRIPT'S SECTION number (diagnostics)
-* So fig10_8_event_study is manuscript Fig. 10.8, while fig10_8_1_permutation
-* is a diagnostic from Section 10.8 and has no manuscript figure number.
-* Sibling convention: RDD.do (Section 10.2) uses fig10_1 through fig10_4 for
-* its manuscript figures and fig10_2_<n> for its diagnostics.
 *
 * CHANGE LOG
 * ----------
@@ -94,76 +59,6 @@
 *                reghdfe itself prints (t = -4.42, p = 0.0005) and overstated
 *                significance.  Now 2 * ttail(e(N_clust) - 1, ...), matching both
 *                that table and the R translation.  One line changed.
-* v11 Aug 2026 — Comments and figure names only (no estimation changed).
-*                Chapter 10 gained Figs. 10.2 and 10.3 in Section 10.2, so
-*                every downstream figure moved up two.  Renamed the five
-*                manuscript figures produced here:
-*                  fig10_3_parallel_trends -> fig10_5_parallel_trends
-*                  fig10_4_scm_trends      -> fig10_6_scm_trends
-*                  fig10_5 (sdid message)  -> fig10_7
-*                  fig10_6_event_study     -> fig10_8_event_study
-*                  fig10_7_staggered_es    -> fig10_9_staggered_es
-*                Graph names, .gph saves, and console echoes moved with them.
-*                Diagnostic figures (fig10_3_2, fig10_4_1, fig10_5_1,
-*                fig10_7_2, fig10_8_1, fig10_8_2, fig10_9_1) are named after
-*                script SECTIONS, not manuscript figures, and are unchanged.
-*                Figure cross-reference block added above.  Matches RDD.do v4.
-* v16 Aug 2026 - $graphs_dir, $tables_dir and $log_dir are now DERIVED from
-*                $out_root unconditionally rather than inherited when
-*                absolute.  A stale ABSOLUTE global survives an "is it
-*                absolute" guard, which is how a standalone RDD.do run wrote
-*                its log to .../Output/log on 19 Aug 2026.  Three further
-*                fixes ride along: (a) the $log_dir fallback said "log", not
-*                "logs"; (b) $tables_dir was never set by this script at all,
-*                only echoed, so a standalone run wrote the three Section
-*                10.9 CSVs relative to the working directory; (c) an
-*                inherited value that differs is now announced before being
-*                replaced.  No estimation, sample, or figure changed.
-*                Version stamp: 2026-08-19a.
-* v18 Sep 2026 - chkfig added: an independent re-check after each of the
-*                eleven graph exports, plus an end-of-run roll call and a
-*                -dir- of $graphs_dir.  Stata's "saved as PNG format" only
-*                means the command returned, so the log previously carried
-*                no evidence that a figure reached disk.  Ported from
-*                RDD.do; the program is dropped and redefined
-*                unconditionally so a copy left in memory by an earlier
-*                script in the session is never inherited.  Diagnostic
-*                output only; no estimation, sample, or figure changed.
-*                Version stamp: 2026-09-02b.
-* v17 Sep 2026 - Fig. 10.9 title and subtitle rewritten to match the
-*                manuscript caption and to drop "cohorts" in favour of
-*                "groups": title now "Staggered Adoption: Three Simulated
-*                Groups", subtitle "Groups treated in 2014, 2016, and 2018".
-*                The identical strings are set in R_code10_Georgia_DiD.R.
-*                Explanatory comments and the estat group / "Cohort-specific
-*                ATTs" console output keep "cohort", which is the ATT(g,t)
-*                literature's term.  No estimation or sample changed.
-*                Version stamp: 2026-09-02a.
-* v15 Aug 2026 - $graphs_dir and $log_dir now resolve through a shared
-*                $out_root and are accepted from the environment only if
-*                ABSOLUTE.  A stale relative global left by an earlier run
-*                in the same session used to survive the "is it empty"
-*                test and redirect output to the working directory.
-*                Directories are created unconditionally.  No estimation,
-*                sample, or figure changed.
-* v12 Aug 2026 — Removed -qui- from the Section 10.3.3 event-study xtreg so
-*                the coefficient table it produces matches the output printed
-*                in manuscript Section 10.7.1.  One word removed; no
-*                specification, sample, or figure changed.  Re-running this
-*                script now reproduces both the table and Fig. 10.8.
-* v13 Aug 2026 — Added a log file.  A NAMED log (ga_did) is opened after
-*                -clear all- and closed at the end, with $log_dir resolved
-*                by the same standalone-fallback pattern already used for
-*                $graphs_dir.  Named logs coexist with the master driver's
-*                log, so running through Stata_code10.do and running
-*                standalone both produce a complete Georgia_DiD.log.  No
-*                estimation, sample, or figure changed.
-* v14 Aug 2026 - The two csdid_plot blocks changed from -capture- to
-*                -capture noisily- so the log shows whether fig10_7_2_csdid
-*                and fig10_9_staggered_es were actually exported.  A plain
-*                capture block hid both the graph export confirmation and the
-*                script's own "exported" message, leaving the run
-*                unverifiable from the log.  No estimation changed.
 *
 * BUG FIX (v7):
 *   Symptom:  Section 10.7.3 always printed "Download failed" and ran the
@@ -232,132 +127,25 @@ di as text "    Package refresh attempted (capture — safe if offline)"
 *-----------------------------------------------------
 * 1.  FALLBACK PATHS (standalone execution)
 *-----------------------------------------------------
-* Resolve $out_root once, then DERIVE every output directory from it.
-*
-* Stata globals persist across do-files within a session, so a value set by
-* an earlier run survives into this one.  Two earlier rules both leaked:
-*   "set it if it is empty"       -- a stale RELATIVE value survived and sent
-*                                    output to the working directory (the bug
-*                                    that misplaced tab10_7_etwfe.rtf on
-*                                    14 Aug 2026).
-*   "accept it if it is ABSOLUTE" -- a stale ABSOLUTE value survived too.  On
-*                                    19 Aug 2026 a standalone RDD.do run
-*                                    inherited $log_dir = .../Output/log,
-*                                    left by an earlier run whose fallback
-*                                    used the singular name; it was absolute,
-*                                    so the guard accepted it and the log was
-*                                    written to the wrong directory.
-*
-* Derivation removes the failure mode: nothing inherited can survive, so the
-* paths cannot drift from $out_root.  This costs nothing when the master
-* calls the script, because Stata_code10.do derives the same directories from
-* the same $out_root -- the values are identical.  To redirect output, change
-* $out_root, not the individual directories.
-global out_root "Output"
-if c(username) == "marvi" {
-    global out_root "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output"
+capture confirm global graphs_dir
+if _rc != 0 {
+    if c(username) == "marvi" {
+        global graphs_dir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output/graphs"
+        capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output"
+        capture mkdir "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output/graphs"
+    }
+    else {
+        global graphs_dir "Output/graphs"
+        capture mkdir "Output"
+        capture mkdir "Output/graphs"
+    }
+    di as text "Georgia_DiD.do (standalone): graphs_dir set to $graphs_dir"
 }
-capture mkdir "$out_root"
-
-local cur "$graphs_dir"
-global graphs_dir "$out_root/graphs"
-if "`cur'" != "" & "`cur'" != "$graphs_dir" {
-    di as text "Georgia_DiD.do: replacing inherited graphs_dir (`cur')"
-}
-di as text "Georgia_DiD.do: graphs_dir = $graphs_dir"
-capture mkdir "$graphs_dir"
-
-* $tables_dir was never set by this script, only echoed and then used by the
-* three -export delimited- calls in Section 10.9.  A standalone run therefore
-* wrote results.csv, results_lasso.csv and results_combined.csv to "/results.csv"
-* relative to the working directory.  Derived here alongside the others.
-local cur "$tables_dir"
-global tables_dir "$out_root/tables"
-if "`cur'" != "" & "`cur'" != "$tables_dir" {
-    di as text "Georgia_DiD.do: replacing inherited tables_dir (`cur')"
-}
-di as text "Georgia_DiD.do: tables_dir = $tables_dir"
-capture mkdir "$tables_dir"
 
 set scheme s2mono
 clear all
 set more off
 version 19
-
-* -clear all- does not drop global macros (verified in the 12 Aug 2026 run,
-* where $graphs_dir set above survived and the exports landed correctly).
-* Re-asserting $out_root here costs nothing and removes the dependency on
-* that behaviour, since the log block below needs it.
-if "$out_root" == "" {
-    global out_root "Output"
-    if c(username) == "marvi" {
-        global out_root "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output"
-    }
-    capture mkdir "$out_root"
-}
-
-*-----------------------------------------------------
-* 2.  LOG FILE
-*-----------------------------------------------------
-* A NAMED log (ga_did) is used rather than the default one.  Stata allows
-* several named logs open at once, and a named log never collides with the
-* default log, so this works whether the script is run standalone or called
-* by Stata_code10.do -- and closing this one does not close the master's.
-*
-* Opened here, after -clear all-, so that the whole estimation sequence is
-* captured.  -clear all- does not close logs, but opening afterwards removes
-* any doubt.  Closed at the end of the script; see CLOSE-OUT below.
-* Derived from $out_root unconditionally, for the reason given in section 1.
-* NOTE the directory name is "logs", not "log" -- the singular form was the
-* stale value that misdirected RDD.log on 19 Aug 2026.
-local cur "$log_dir"
-global log_dir "$out_root/logs"
-if "`cur'" != "" & "`cur'" != "$log_dir" {
-    di as text "Georgia_DiD.do: replacing inherited log_dir (`cur')"
-}
-di as text "Georgia_DiD.do: log_dir = $log_dir"
-capture mkdir "$log_dir"
-
-* -capture- so an aborted earlier run that left ga_did open is harmless.
-capture log close ga_did
-log using "$log_dir/Georgia_DiD.log", replace text name(ga_did)
-
-di as text "Georgia_DiD.do: logging to $log_dir/Georgia_DiD.log"
-
-* ------------------------------------------------------------------------
-* VERSION STAMP -- printed INSIDE the log on purpose.
-* If a log does not show this line, an older copy of the script ran.  That
-* is the fastest way to settle "did my edit take effect?" without diffing
-* files.  Bump the date when the script changes.
-* ------------------------------------------------------------------------
-di as text "Georgia_DiD.do: version 2026-09-02b"
-di as text "Georgia_DiD.do: working directory = " c(pwd)
-di as text "Georgia_DiD.do: out_root   = $out_root"
-di as text "Georgia_DiD.do: graphs_dir = $graphs_dir"
-di as text "Georgia_DiD.do: tables_dir = $tables_dir"
-di as text "Georgia_DiD.do: log_dir    = $log_dir"
-
-* ------------------------------------------------------------------------
-* chkfig -- independent verification that a figure really reached disk.
-* Stata's "saved as PNG format" only means -graph export- returned; it is
-* not evidence that a file exists at the path we think it does.  chkfig
-* re-opens the file and reports its byte length via -checksum- r(filelen),
-* so the log carries proof rather than a claim.  Matches RDD.do.
-* Dropped and redefined unconditionally: a copy left in memory by an
-* earlier script in the same session is exactly the stale state that has
-* bitten this chapter before, so we never inherit one.
-* ------------------------------------------------------------------------
-capture program drop chkfig
-program define chkfig
-    args f
-    capture confirm file "`f'"
-    if _rc {
-        di as error "   chkfig: MISSING   `f'"
-        exit
-    }
-    quietly checksum "`f'"
-    di as text "   chkfig: OK  " %9.0fc r(filelen) " bytes   `f'"
-end
 
 *=====================================================================================================================
 * SECTION 10.3.1: DATA STRUCTURE AND VARIABLE CONSTRUCTION
@@ -439,9 +227,7 @@ xtset fips fy
 di as text "Panel declared: N = " c(N) ", G = 16 states, T = 2001-2021"
 
 * Save working dataset (referenced by later sections)
-* Working dataset goes to $out_root/data, not the current directory.
-capture mkdir "$out_root/data"
-save "$out_root/data/ga_did_work.dta", replace
+save "ga_did_work.dta", replace
 
 *=====================================================================================================================
 * SECTION 10.3.2: TWFE DiD ESTIMATION
@@ -531,13 +317,11 @@ preserve
         ytitle("Log Operating Expenses") xtitle("Fiscal Year")                ///
         title("Parallel Trends: Georgia vs. SREB Control States")             ///
         subtitle("Vertical dotted line = 2018 consolidation")                 ///
-        name(fig10_5, replace)
-    * MANUSCRIPT Fig. 10.5 - parallel trends, Georgia vs. SREB controls.
-    graph export "$graphs_dir/fig10_5_parallel_trends_Stata.png", replace width(1200)
-    chkfig "$graphs_dir/fig10_5_parallel_trends_Stata.png"
-    graph save   "$graphs_dir/fig10_5.gph", replace
+        name(fig10_3, replace)
+    graph export "$graphs_dir/fig10_3_parallel_trends_Stata.png", replace width(1200)
+    graph save   "$graphs_dir/fig10_3.gph", replace
 restore
-di as text "   fig10_5_parallel_trends_Stata.png exported"
+di as text "   fig10_3_parallel_trends_Stata.png exported"
 
 * ── Formal pre-trends test: continuous trend-by-treatment interaction ─
 * Preferred test: reghdfe with c.treat_state#c.fy absorbing unit × time FEs.
@@ -621,9 +405,6 @@ forvalues k = 0/`kpost' {
 }
 
 * Estimate (xtreg used for portability; reghdfe equivalent via absorb)
-* NOT quiet: Section 10.7.1 of the manuscript prints this table (the 19
-* F16_ga-L3_ga coefficients).  Restoring -qui- here would leave the page
-* showing output the script no longer produces.
 xtreg lngenop `evars' $controls i.fy, fe vce(cluster fips)
 estimates store es_twfe
 
@@ -670,13 +451,11 @@ preserve
         ytitle("Coefficient (log operating expenses)")                        ///
         title("Event Study: Georgia Higher Education Consolidation")          ///
         subtitle("Reference period: t = -1 (FY 2017). Shaded = 95% CI.")     ///
-        legend(off) name(fig10_8, replace)
-    * MANUSCRIPT Fig. 10.8 - event study, Georgia consolidation.
-    graph export "$graphs_dir/fig10_8_event_study_Stata.png", replace width(1200)
-    chkfig "$graphs_dir/fig10_8_event_study_Stata.png"
-    graph save   "$graphs_dir/fig10_8.gph", replace
+        legend(off) name(fig10_6, replace)
+    graph export "$graphs_dir/fig10_6_event_study_Stata.png", replace width(1200)
+    graph save   "$graphs_dir/fig10_6.gph", replace
 restore
-di as text "   fig10_8_event_study_Stata.png exported"
+di as text "   fig10_6_event_study_Stata.png exported"
 
 *=====================================================================================================================
 * SECTION 10.3.4: ROBUSTNESS CHECKS
@@ -773,7 +552,6 @@ preserve
         subtitle("Point estimates with 95% CIs — outcome: lngenop")        ///
         name(fig10_3_2, replace)
     graph export "$graphs_dir/fig10_3_2_robustness_Stata.png", replace width(1200)
-    chkfig "$graphs_dir/fig10_3_2_robustness_Stata.png"
     graph save   "$graphs_dir/fig10_3_2.gph", replace
 restore
 
@@ -879,7 +657,6 @@ preserve
         note("LASSO selected full control set; estimates are numerically identical.") ///
         name(fig10_4_1, replace)
     graph export "$graphs_dir/fig10_4_1_lasso_comparison_Stata.png", replace width(1200)
-    chkfig "$graphs_dir/fig10_4_1_lasso_comparison_Stata.png"
     graph save   "$graphs_dir/fig10_4_1.gph", replace
 restore
 di as text "   fig10_4_1_lasso_comparison_Stata.png exported"
@@ -931,11 +708,9 @@ if _rc == 0 {
             ytitle("Log Operating Expenses") xtitle("Fiscal Year")           ///
             title("SCM: Georgia vs. Synthetic Control")                      ///
             subtitle("Dashed = synthetic Georgia; dotted = 2018 consolidation") ///
-            name(fig10_6, replace)
-        * MANUSCRIPT Fig. 10.6 - synthetic control, Georgia vs. synthetic Georgia.
-        graph export "$graphs_dir/fig10_6_scm_trends_Stata.png", replace width(1200)
-        chkfig "$graphs_dir/fig10_6_scm_trends_Stata.png"
-        graph save   "$graphs_dir/fig10_6.gph", replace
+            name(fig10_4, replace)
+        graph export "$graphs_dir/fig10_4_scm_trends_Stata.png", replace width(1200)
+        graph save   "$graphs_dir/fig10_4.gph", replace
 
         * ── Plot 2: Gap plot (actual − synthetic) ────────────────
         gen gap = Y_ga - Y_synth
@@ -948,7 +723,6 @@ if _rc == 0 {
             subtitle("Above zero = Georgia > synthetic counterfactual")   ///
             name(fig10_5_1, replace)
         graph export "$graphs_dir/fig10_5_1_scm_gap_Stata.png", replace width(1200)
-        chkfig "$graphs_dir/fig10_5_1_scm_gap_Stata.png"
     graph save   "$graphs_dir/fig10_5_1.gph", replace
 
         * Average post-treatment gap
@@ -957,7 +731,7 @@ if _rc == 0 {
         di as text "   SCM average post-treatment gap: " %7.4f `scm_att'
     restore
 
-    di as text "   fig10_5_1_scm_gap + fig10_6_scm_trends exported"
+    di as text "   fig10_5_1_scm_gap + fig10_4_scm_trends exported"
 }
 else {
     di as text "   synth failed (r(" _rc ")). Check synth installation."
@@ -974,45 +748,20 @@ di as text    "============================================================"
 *
 * Clarke, Pailañir, Athey & Imbens (2023). sdid package.
 * Combines SCM-style unit weights with DiD-style time weights.
-* Estimate: ATT with placebo SEs (50 reps, seed 123), covariates projected.
+* Estimate: ATT with placebo SEs (200 reps, seed fixed).
 * NOTE: vce(bootstrap) requires ≥2 treated units and returns r(451) here.
 * vce(placebo) uses donor states as placebo units — correct for N_treated=1.
 
-di as text "   Running sdid (placebo SE, 50 reps, covariate-adjusted)..."
+di as text "   Running sdid (placebo SE, 200 reps)..."
 
 * discard flushes any stale in-memory ado version that can cause r(198)
 capture discard
 
-* ── Estimation and graph in ONE call ────────────────────────────────────────
-* MANUSCRIPT Fig. 10.7 - synthetic DiD, Georgia vs. synthetic control.
-*
-* The earlier r(198) was NOT a rendering failure.  -graph_export()- takes a
-* FILENAME PREFIX and a file type as two arguments, not a full path with an
-* extension; passing a complete filename returns r(198), which was
-* misdiagnosed for several revisions as sdid being unable to draw in do-file
-* context.  Verified interactively 15 Aug 2026: the call below produces
-* fig10_7_sdid_trends2018.png.
-*
-* sdid appends its own suffix to the prefix, so the exported file is
-* <prefix>trends<treatment year>.png -- here fig10_7_sdid_trends2018.png.
-* Estimation and graph are now a single call; -capture noisily- keeps the
-* export confirmation in the log.
-* SPECIFICATION (aligned with Section 10.6 of the manuscript, 15 Aug 2026).
-* This script previously ran sdid WITHOUT covariates, which returned
-* ATT = +0.0338 -- opposite in sign to the covariate-adjusted -0.01959 the
-* chapter reports and to the TWFE baseline.  Every other estimator in the
-* chapter conditions on $controls, so the unadjusted call was the outlier.
-* The call below matches the manuscript exactly: treat_sdid as the treatment
-* variable, seed(123), 50 placebo replications, and the four baseline
-* controls projected out.
-capture drop treat_sdid
-gen byte treat_sdid = did
-label var treat_sdid "Georgia x Post-2018 (SDID treatment indicator)"
-
-capture noisily {
-    sdid lngenop fips fy treat_sdid, vce(placebo) seed(123) ///
-        covariates($controls, projected) ///
-        graph graph_export("$graphs_dir/fig10_7_sdid_", .png)
+* ── Estimation call ─────────────────────────────────────────────────────────
+* Separated from the graph call so a rendering failure does not
+* overwrite sdid_att/sdid_se with missing values.
+capture {
+    sdid lngenop fips fy did, vce(placebo) reps(200) seed(20260511)
     local sdid_att  = e(ATT)
     local sdid_se   = e(se)
     local sdid_p    = 2 * normal(-abs(`sdid_att'/`sdid_se'))
@@ -1021,18 +770,17 @@ capture noisily {
                "   p  = " %6.4f `sdid_p'
 }
 if _rc != 0 {
-    di as text "   sdid failed (r(" _rc ")). Verify: ssc install sdid, replace"
+    di as text "   sdid (estimates) failed (r(" _rc ")). Verify: ssc install sdid, replace"
     local sdid_att = .
     local sdid_se  = .
 }
 else {
-    capture confirm file "$graphs_dir/fig10_7_sdid_trends2018.png"
-    if _rc {
-        di as error "   fig10_7_sdid_trends2018.png was NOT created in $graphs_dir"
-    }
-    else {
-        di as text "   fig10_7_sdid_trends2018.png exported (MANUSCRIPT Fig. 10.7)"
-    }
+    * ── Graph call ───────────────────────────────────────────────────────────
+    * sdid's internal graph option (g1on, g2on, or both) fails with r(198)
+    * in do-file context across all tested configurations.  The ATT estimate
+    * is captured above; fig10_9_1 (§10.9 summary) provides the visual
+    * comparison.  No separate SDID figure is produced here.
+    di as text "   fig10_5: sdid graph unavailable in this environment — see fig10_9_1."
 }
 
 *=====================================================================================================================
@@ -1071,11 +819,7 @@ capture noisily {
     * estimates store overwrites the internal csdid result objects that
     * csdid_plot reads; calling it after store gives r(693) "matrix has
     * no columns" because those objects are gone.
-    * -capture noisily-, not plain -capture-: a plain capture block suppresses
-    * the echo AND the output of everything inside it, including the
-    * "file ... saved as PNG format" confirmation, so the log gives no
-    * evidence that the figure was drawn.  noisily keeps the record.
-    capture noisily {
+    capture {
         * FIX v7: csdid_plot reads the event-time aggregation, which does not
         * exist until estat event has run.  Calling it directly after csdid
         * gives r(693) "matrix has no columns".
@@ -1085,7 +829,6 @@ capture noisily {
             xtitle("Fiscal Year")                                      ///
             name(fig10_7_2, replace)
         graph export "$graphs_dir/fig10_7_2_csdid_Stata.png", replace width(1200)
-        chkfig "$graphs_dir/fig10_7_2_csdid_Stata.png"
         di as text "   fig10_7_2_csdid_Stata.png exported"
     }
     if _rc != 0 di as text "   csdid_plot failed (r(" _rc ")) — check csdid version."
@@ -1282,19 +1025,15 @@ if c(N) > 0 {
             method(reg) notyet
 
         * FIX v6: csdid_plot before estimates store (same root cause as §10.7)
-        * -capture noisily- so the log records whether Fig. 10.9 was exported
-        * (see the note on the matching block in Section 10.7).
-        capture noisily {
+        capture {
             * FIX v7: estat event must precede csdid_plot (see Section 10.7)
             estat event
-            csdid_plot, name(fig10_9, replace) ///
-                title("Staggered Adoption: Three Simulated Groups") ///
-                subtitle("Groups treated in 2014, 2016, and 2018") ///
+            csdid_plot, name(fig10_7, replace) ///
+                title("CS-DiD Event Study: Staggered Consolidation") ///
+                subtitle("Three staggered treatment cohorts") ///
                 ytitle("ATT(g,t)") xtitle("Year")
-            * MANUSCRIPT Fig. 10.9 - staggered adoption across three cohorts.
-            graph export "$graphs_dir/fig10_9_staggered_es_Stata.png", replace width(1200)
-            chkfig "$graphs_dir/fig10_9_staggered_es_Stata.png"
-            di as text "   fig10_9_staggered_es_Stata.png exported"
+            graph export "$graphs_dir/fig10_7_staggered_es_Stata.png", replace width(1200)
+            di as text "   fig10_7_staggered_es_Stata.png exported"
         }
         if _rc != 0 di as text "   csdid_plot (staggered) failed (r(" _rc "))."
 
@@ -1314,7 +1053,7 @@ if c(N) > 0 {
 }
 
 * Restore main dataset
-use "$out_root/data/ga_did_work.dta", clear
+use "ga_did_work.dta", clear
 xtset fips fy
 
 *=====================================================================================================================
@@ -1400,7 +1139,6 @@ preserve
         note("Permutation p = `perm_p_str'")                         ///
         name(fig10_8_1, replace)
     graph export "$graphs_dir/fig10_8_1_permutation_Stata.png", replace width(1200)
-    chkfig "$graphs_dir/fig10_8_1_permutation_Stata.png"
     graph save   "$graphs_dir/fig10_8_1.gph", replace
 restore
 di as text "   fig10_8_1_permutation_Stata.png exported"
@@ -1464,7 +1202,6 @@ preserve
         note("Diamonds = point estimate. Spikes = 95% CI.")               ///
         legend(off) name(fig10_8_2, replace)
     graph export "$graphs_dir/fig10_8_2_loo_Stata.png", replace width(1200)
-    chkfig "$graphs_dir/fig10_8_2_loo_Stata.png"
     graph save   "$graphs_dir/fig10_8_2.gph", replace
 restore
 di as text "   fig10_8_2_loo_Stata.png exported"
@@ -1536,8 +1273,8 @@ preserve
 
     replace b = `scm_att'  in 7
 
-    export delimited "$tables_dir/results.csv", replace
-    di as text "   results.csv saved to $tables_dir"
+    export delimited "results.csv", replace
+    di as text "   results.csv saved"
 restore
 
 * ── LASSO comparison CSV ─────────────────────────────────────────
@@ -1556,8 +1293,8 @@ preserve
     replace b  = `lasso_b'  in 2
     replace se = `lasso_se' in 2
     replace p  = `lasso_p'  in 2
-    export delimited "$tables_dir/results_lasso.csv", replace
-    di as text "   results_lasso.csv saved to $tables_dir"
+    export delimited "results_lasso.csv", replace
+    di as text "   results_lasso.csv saved"
 restore
 
 * ── Combined results CSV ─────────────────────────────────────────
@@ -1583,8 +1320,8 @@ preserve
         replace estimate = `cs_att' in 4
         replace se_val   = `cs_se'  in 4
     }
-    export delimited "$tables_dir/results_combined.csv", replace
-    di as text "   results_combined.csv saved to $tables_dir"
+    export delimited "results_combined.csv", replace
+    di as text "   results_combined.csv saved"
 restore
 
 * ── Comparison figure ────────────────────────────────────────────
@@ -1636,7 +1373,6 @@ preserve
         subtitle("Point estimates with 95% CIs")                  ///
         legend(off) name(fig10_9_1, replace)
     graph export "$graphs_dir/fig10_9_1_summary_Stata.png", replace width(1200)
-    chkfig "$graphs_dir/fig10_9_1_summary_Stata.png"
     graph save   "$graphs_dir/fig10_9_1.gph", replace
 restore
 di as text "   fig10_9_1_summary_Stata.png exported"
@@ -1675,26 +1411,6 @@ di as text    ""
 di as text    "  NOTE: SCM and CS-DiD diverge from TWFE in magnitude and direction."
 di as text    "  Chapter prose should address this tension directly (see §10.9)."
 di as text    "============================================================"
-
-di as text _n "  FIGURE ROLL CALL (independent re-check of every export)"
-chkfig "$graphs_dir/fig10_5_parallel_trends_Stata.png"
-chkfig "$graphs_dir/fig10_8_event_study_Stata.png"
-chkfig "$graphs_dir/fig10_3_2_robustness_Stata.png"
-chkfig "$graphs_dir/fig10_4_1_lasso_comparison_Stata.png"
-chkfig "$graphs_dir/fig10_6_scm_trends_Stata.png"
-chkfig "$graphs_dir/fig10_5_1_scm_gap_Stata.png"
-chkfig "$graphs_dir/fig10_7_2_csdid_Stata.png"
-chkfig "$graphs_dir/fig10_9_staggered_es_Stata.png"
-chkfig "$graphs_dir/fig10_8_1_permutation_Stata.png"
-chkfig "$graphs_dir/fig10_8_2_loo_Stata.png"
-chkfig "$graphs_dir/fig10_9_1_summary_Stata.png"
-di as text ""
-dir "$graphs_dir/fig10_*.png"
-di as text "============================================================"
-
-* Close the named log opened at the top.  -capture- so that re-running the
-* script, or a master driver that has already closed it, is harmless.
-capture log close ga_did
 
 *=====================================================================================================================
 * END OF Georgia_DiD.do

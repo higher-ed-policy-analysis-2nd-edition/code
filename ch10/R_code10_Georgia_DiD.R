@@ -39,6 +39,14 @@
 #
 # REVISION
 # --------
+# Sep 2026 — Fig. 10.9 title and subtitle rewritten to match the manuscript
+#            caption and to drop "cohorts" in favour of "groups": title now
+#            "Staggered Adoption: Three Simulated Groups", subtitle "Groups
+#            treated in 2014, 2016, and 2018".  The identical strings are set
+#            in Georgia_DiD.do v17, so the two languages now label this figure
+#            the same way.  Explanatory comments and the "Cohort-specific ATTs"
+#            console output keep "cohort", which is the ATT(g,t) literature's
+#            term.  No estimation or sample changed.  Stamp 2026-09-02a.
 # Aug 2026 — Comments only (no code change): equation cross-references added to
 #            Sections 10.3.2-10.3.3; column-name note in Section 10.3.1;
 #            corrected the misleading rationale comments on robustness specs
@@ -57,9 +65,12 @@
 #            name the cause, drop the smallest thing that fixes it, and pass
 #            dataprep an unnamed integer unit id plus a real unit-names column.
 #
-# NOTE on sdid: The R package "sdid" (Clarke et al. 2023) mirrors the Stata
-#   version.  Install via: install.packages("sdid")
-#   If unavailable, the SDID block sets sdid_att = NA and continues.
+# NOTE on SDID: there is NO CRAN package called "sdid" -- that is the Stata
+#   command name (Clarke et al. 2023).  The R implementation is "synthdid"
+#   (Arkhangelsky et al. 2021), which R_code10.R already installs.  Until
+#   20 Aug 2026 this script tested for "sdid", never found it, and told the
+#   reader to run install.packages("sdid"), which fails.  If synthdid is
+#   missing the block sets sdid_att = NA and continues.
 # =====================================================================================================================
 
 # -----------------------------------------------------------------------
@@ -74,27 +85,106 @@ suppressPackageStartupMessages({
 })
 
 # Optional packages — loaded with graceful fallback
-sdid_available   <- requireNamespace("sdid",  quietly = TRUE)
+# synthdid is GitHub-only, so a standalone run of this script cannot rely on
+# R_code10.R having installed it.  Offer to fetch it once, then re-test.
+if (!requireNamespace("synthdid", quietly = TRUE)) {
+  cat("   synthdid not found; attempting GitHub install (one time)...\n")
+  try({
+    if (!requireNamespace("remotes", quietly = TRUE)) {
+      install.packages("remotes", repos = "https://cloud.r-project.org")
+    }
+    remotes::install_github("synth-inference/synthdid", upgrade = "never")
+  }, silent = TRUE)
+}
+sdid_available   <- requireNamespace("synthdid", quietly = TRUE)
 synth_available  <- requireNamespace("Synth", quietly = TRUE)
 hdm_available    <- requireNamespace("hdm",   quietly = TRUE)
 
-if (sdid_available)  library(sdid)
+if (sdid_available)  library(synthdid)
 if (synth_available) library(Synth)
 if (hdm_available)   library(hdm)
 
 # -----------------------------------------------------------------------
-# Fallback output paths (overridden when sourced from R_code10.R)
+# Output paths
+#
+# Everything is DERIVED from out_root.  R objects persist in the global
+# environment across sourced scripts exactly as Stata globals persist across
+# do-files, so an "if it does not exist, set it" test lets a stale value from
+# an earlier run through.  Deriving removes that: to redirect output, change
+# out_root, never the individual directories.
 # -----------------------------------------------------------------------
-if (!exists("graphs_dir")) {
-  if (Sys.info()[["user"]] == "marvi") {
-    graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output/graphs"
+if (!exists("out_root")) {
+  out_root <- if (Sys.info()[["user"]] == "marvi") {
+    "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output"
   } else {
-    graphs_dir <- "Output/graphs"
+    "Output"
   }
-  dir.create(file.path(dirname(graphs_dir)), showWarnings = FALSE, recursive = TRUE)
-  dir.create(graphs_dir,                    showWarnings = FALSE, recursive = TRUE)
-  message("Georgia_DiD.R (standalone): graphs_dir set to ", graphs_dir)
+  message("Georgia_DiD.R (standalone): out_root set to ", out_root)
 }
+graphs_dir <- file.path(out_root, "graphs")
+tables_dir <- file.path(out_root, "tables")
+data_dir   <- file.path(out_root, "data")
+for (d in c(graphs_dir, tables_dir, data_dir)) {
+  dir.create(d, showWarnings = FALSE, recursive = TRUE)
+}
+# -----------------------------------------------------------------------
+# Standalone logging.  When this script is sourced by R_code10.R a log is
+# already open and these helpers do nothing.  Run on its own, it opens
+# <out_root>/logs/R_code10_Georgia_DiD.log and unwinds the sink on exit, so a failure
+# cannot leave the console muted.
+# -----------------------------------------------------------------------
+if (!exists("ch10_start_log")) {
+  ch10_start_log <- function(basename) {
+    if (isTRUE(getOption("ch10_logging"))) return(invisible(NULL))
+    dir.create(file.path(out_root, "logs"), showWarnings = FALSE,
+               recursive = TRUE)
+    path <- file.path(out_root, "logs", basename)
+    con  <- file(path, open = "wt")
+    options(ch10_logging = TRUE, ch10_log_con = con, ch10_log_path = path)
+    # Strip ANSI colour codes: RStudio colourises message() output, and the
+    # escape sequences land in the file as garbage ("G3;", "gG3;") around
+    # every warning.  Plain text only while a log is open.
+    options(crayon.enabled = FALSE, cli.num_colors = 1)
+    sink(con, split = TRUE)
+    sink(con, type = "message")
+    cat("Log:", path, "\n")
+    cat("Opened:", format(Sys.time()), "\n\n")
+    invisible(path)
+  }
+  ch10_stop_log <- function() {
+    # sink.number(type = "message") returns a CONNECTION NUMBER, not a count,
+    # and stderr is connection 2 -- so "while (... > 0)" never terminates.
+    # Message sinks do not nest, so one reset is all that is needed.
+    if (sink.number(type = "message") != 2) sink(type = "message")
+    while (sink.number() > 0) sink()
+    con <- getOption("ch10_log_con")
+    if (!is.null(con)) try(close(con), silent = TRUE)
+    options(ch10_logging = NULL, ch10_log_con = NULL, ch10_log_path = NULL)
+    invisible(NULL)
+  }
+}
+
+# NOTE: diagnostics in this script use cat(), not message().  While a log is
+# open the message stream is sinked, and RStudio wraps message() output in
+# ANSI colour escapes that land in the file as garbage ("G3;", "gG3;").
+# cat() goes to the output stream, which stays clean.
+# Own the log only if none is currently OPEN.  The guard must test the open
+# state, not whether the helper exists: sourcing R_code10.R earlier in the
+# same R session leaves ch10_start_log() defined in the global environment
+# long after its log was closed, and an exists() test would then skip logging
+# entirely and silently.  Same stale-state trap as the path globals.
+ch10_own_log <- !isTRUE(getOption("ch10_logging"))
+ch10_start_log("R_code10_Georgia_DiD.log")
+
+cat("R_code10_Georgia_DiD.R: version 2026-09-02a\n")
+cat("  out_root  =", out_root, "\n")
+cat("  graphs_dir=", graphs_dir, "\n")
+
+
+
+# NOTE: tables_dir was previously never defined in this script, and the three
+# results CSVs in Section 10.9 were written to the WORKING DIRECTORY.  Same
+# defect as Georgia_DiD.do carried until Aug 2026, and fixed the same way.
 
 # Springer B&W ggplot2 theme (mirrors Stata s2mono)
 theme_springer <- function(base_size = 11) {
@@ -201,7 +291,7 @@ cat(sprintf("Panel: N = %d, G = 16 states, T = %d–%d\n",
             nrow(df), min(df$fy), max(df$fy)))
 
 # Save working dataset
-saveRDS(df, "ga_did_work.rds")
+saveRDS(df, file.path(data_dir, "ga_did_work.rds"))
 
 # =====================================================================================================================
 # SECTION 10.3.2: TWFE DiD ESTIMATION
@@ -315,10 +405,10 @@ p_pt <- ggplot(pt_df, aes(x = fy, y = lngenop,
        y        = "Log Operating Expenses") +
   theme_springer()
 
-ggsave(file.path(graphs_dir, "fig10_3_parallel_trends_R.png"),
+ggsave(file.path(graphs_dir, "fig10_5_parallel_trends_R.png"),
        p_pt, width = 7, height = 5, dpi = 200)
 print(p_pt)
-cat("   fig10_3_parallel_trends_R.png exported\n")
+cat("   fig10_5_parallel_trends_R.png exported\n")
 
 # -- Formal pre-trends test: treat × linear time trend -----------------
 # fixest equivalent of reghdfe c.treat_state#c.fy absorb(fips fy)
@@ -422,10 +512,10 @@ p_es <- ggplot(es_df, aes(x = t, y = b)) +
        y        = "Coefficient (log operating expenses)") +
   theme_springer()
 
-ggsave(file.path(graphs_dir, "fig10_6_event_study_R.png"),
+ggsave(file.path(graphs_dir, "fig10_8_event_study_R.png"),
        p_es, width = 7, height = 5, dpi = 200)
 print(p_es)
-cat("   fig10_6_event_study_R.png exported\n")
+cat("   fig10_8_event_study_R.png exported\n")
 
 # =====================================================================================================================
 # SECTION 10.3.4: ROBUSTNESS CHECKS
@@ -565,13 +655,26 @@ if (hdm_available) {
   lasso_p   <- 2 * pt(-abs(lasso_b / lasso_se),
                       df = cl_df)
 } else {
-  message("   hdm not available — using full controls as LASSO fallback.")
+  cat("   hdm not available - using full controls as LASSO fallback.\n")
   fit_lasso <- fit_twfe
   lasso_b   <- twfe_b
   lasso_se  <- twfe_se
   lasso_p   <- twfe_p
 }
 
+# DIVERGENCE FROM THE BOOK'S STATA RESULT -- GENUINE, AND WORTH NOTICING.
+# Stata's dsregress and hdm::rlasso implement the same double-selection idea
+# but compute penalty loadings differently, so they select different control
+# sets from identical data: Stata retains all four controls and reports
+# +0.017 (SE 0.020, p 0.403); rlasso here retains three (lntotsup, lnfinaid,
+# lnfte) and reports about -0.021.  Both are statistically indistinguishable
+# from zero, but they carry opposite signs.
+#
+# This is not a bug in either implementation.  It is a reminder that "the
+# LASSO selected the controls" does not pin down a specification: the choice
+# of implementation, and of penalty loading within it, is a researcher degree
+# of freedom like any other, and in a panel this small it can flip a sign.
+# Section 10.4.3 of the manuscript discusses the comparison.
 cat(sprintf("\n--- LASSO-residualized DiD ---\n"))
 cat(sprintf("   DiD coef = %8.4f   SE = %7.4f   p = %6.4f\n",
             lasso_b, lasso_se, lasso_p))
@@ -753,7 +856,7 @@ if (synth_available) {
            y        = "Log Operating Expenses") +
       theme_springer()
 
-    ggsave(file.path(graphs_dir, "fig10_4_scm_trends_R.png"),
+    ggsave(file.path(graphs_dir, "fig10_6_scm_trends_R.png"),
            p_scm, width = 7, height = 5, dpi = 200)
     print(p_scm)
 
@@ -773,14 +876,14 @@ if (synth_available) {
     ggsave(file.path(graphs_dir, "fig10_5_1_scm_gap_R.png"),
            p_gap, width = 7, height = 5, dpi = 200)
     print(p_gap)
-    cat("   fig10_5_1_scm_gap + fig10_4_scm_trends_R.png exported\n")
+    cat("   fig10_5_1_scm_gap + fig10_6_scm_trends_R.png exported\n")
 
   }, error = function(e) {
-    message("   synth failed: ", conditionMessage(e))
-    message("   Proceeding with remaining sections.")
+    cat("   synth failed: ", conditionMessage(e), "\n", sep = "")
+    cat("   Proceeding with remaining sections.\n")
   })
 } else {
-  message("   Synth package not available — skipping SCM.")
+  cat("   Synth package not available - skipping SCM.\n")
 }
 
 # =====================================================================================================================
@@ -793,40 +896,67 @@ cat("============================================================\n")
 sdid_att <- NA_real_; sdid_se <- NA_real_; sdid_p <- NA_real_
 
 if (sdid_available) {
-  cat("   Running sdid (placebo SE, 200 reps)...\n")
+  # DIVERGENCE FROM THE BOOK'S STATA RESULT -- SPECIFICATION, NOT SOFTWARE.
+  # Stata's Section 10.6 call is
+  #     sdid lngenop fips fy treat_sdid, vce(placebo) reps(50) ///
+  #          covariates($controls, projected)
+  # which RESIDUALIZES the outcome on lntotsup, lnfinaid, lntuifee and lnfte
+  # before computing the weights.  The call below does NOT: synthdid has no
+  # direct equivalent of covariates(, projected), so this is the unadjusted
+  # estimator.  The two therefore target different estimands and land on
+  # opposite sides of zero -- about -0.020 in the book, about +0.034 here.
+  # Read that as a specification difference, not as instability in SDID.
+  #
+  # To approximate the Stata call, residualize first and pass the residuals:
+  #     res <- resid(fixest::feols(lngenop ~ lntotsup + lnfinaid + lntuifee +
+  #                                lnfte | fips + fy, data = df))
+  # then build the panel matrix from res rather than lngenop.  That is left
+  # as an exercise rather than run here, because the book reports the Stata
+  # figure and this script exists to demonstrate the R workflow.
+  cat("   Running synthdid (placebo SE)...\n")
   tryCatch({
-    # sdid::sdid expects a matrix: rows = units, cols = time periods
-    df_wide <- df %>%
-      select(fips, fy, lngenop) %>%
-      pivot_wider(names_from = fy, values_from = lngenop) %>%
-      arrange(fips)
-
-    unit_names <- df_wide$fips
-    Y_mat      <- as.matrix(df_wide[, -1])
-    rownames(Y_mat) <- unit_names
-
-    # Treated unit rows = Georgia (fips 13)
-    N1  <- 1L
-    T0  <- sum(as.integer(colnames(Y_mat)) < 2018)
+    # panel.matrices() is synthdid's own reshaper: give it a long data frame
+    # of unit, time, outcome, treatment (in that column order) and it returns
+    # $Y ordered with CONTROLS FIRST and the treated unit last, plus $N0 (the
+    # number of control rows) and $T0 (the number of pre-treatment columns).
+    # Letting it do the ordering removes the hand-rolled pivot and the chance
+    # of mis-stating N0/T0.  It requires a balanced panel and block treatment
+    # -- one treated unit, Georgia (fips 13), from 2018 -- which is this case.
+    sdid_panel <- as.data.frame(
+      df[, c("fips", "fy", "lngenop", "did")])
+    setup <- synthdid::panel.matrices(sdid_panel)
 
     set.seed(20260511)
-    sdid_fit <- sdid(Y_mat, N0 = nrow(Y_mat) - N1, T0 = T0,
-                     se.method = "placebo", replications = 200)
+    sdid_fit <- synthdid::synthdid_estimate(setup$Y, setup$N0, setup$T0)
 
-    sdid_att <- sdid_fit$att
-    sdid_se  <- sdid_fit$se
+    sdid_att <- as.numeric(sdid_fit)
+    # "placebo" is the ONLY variance method valid with a single treated unit;
+    # bootstrap and jackknife return NA here.  Needs N0 > N1: 15 controls, 1
+    # treated, so it is available.
+    sdid_se  <- sqrt(as.numeric(
+      vcov(sdid_fit, method = "placebo", replications = 200)))
     sdid_p   <- 2 * pnorm(-abs(sdid_att / sdid_se))
     cat(sprintf("   SDID ATT = %7.4f   SE = %7.4f   p = %6.4f\n",
                 sdid_att, sdid_se, sdid_p))
+
+    # Section 10.6 figure, the R counterpart of fig10_7_sdid_trends2018.png.
+    # se.method must be passed to the plot too, or the band is drawn from the
+    # default jackknife SE, which is NA with one treated unit.
+    p_sdid <- synthdid::synthdid_plot(sdid_fit, se.method = "placebo") +
+      theme_springer()
+    fig_sdid <- file.path(graphs_dir, "fig10_7_sdid_trends_R.png")
+    ggsave(fig_sdid, p_sdid, width = 7, height = 5, dpi = 200)
+    cat("   fig10_7_sdid_trends_R.png exported\n")
   }, error = function(e) {
-    message("   sdid failed: ", conditionMessage(e),
-            "\n   Verify: install.packages('sdid')")
+    cat("   synthdid failed: ", conditionMessage(e), "\n",
+        "   Verify the GitHub install below.\n", sep = "")
   })
 } else {
-  message("   sdid package not available — skipping SDID.")
-  message("   Install via: install.packages('sdid')")
-  message("   Until it is installed, Section 10.6 has no R figure and sdid_att")
-  message("   stays NA, so the estimator-comparison plot (fig10_9_1) omits SDID.")
+  cat("   synthdid package not available - skipping SDID.\n")
+  cat("   synthdid is NOT on CRAN.  Install from GitHub:\n")
+  cat("     remotes::install_github(\'synth-inference/synthdid\')\n")
+  cat("   Until it is installed, Section 10.6 has no R figure and sdid_att\n")
+  cat("   stays NA, so the estimator-comparison plot (fig10_9_1) omits SDID.\n")
 }
 
 # =====================================================================================================================
@@ -843,6 +973,14 @@ df <- df %>% mutate(gvar = ifelse(treat_state == 1, 2018L, 0L))
 
 cat("   Running did::att_gt (CS-DiD, single cohort 2018)...\n")
 tryCatch({
+  # SEED REQUIRED FOR REPRODUCIBILITY.  did::att_gt draws a multiplier
+  # bootstrap for its standard errors, so an unseeded call gives a different
+  # SE on every run.  This surfaced on 21 Aug 2026: the CS-DiD SE moved from
+  # 0.0358 to 0.0328 between two runs whose data were identical.  The only
+  # thing that changed was that Section 10.6 finally executed and consumed
+  # RNG draws ahead of this call.  Seed immediately before each att_gt().
+  set.seed(20260511)
+
   # did::att_gt — method "reg" is regression-based (numerically close to TWFE
   # for a single treated cohort with parallel trends)
   cs_out <- att_gt(
@@ -859,6 +997,10 @@ tryCatch({
   )
 
   # CS event-study plot (fig10_7_2)
+  # aggte() runs its OWN multiplier bootstrap, so it needs its own seed --
+  # seeding att_gt() alone leaves this hostage to however many draws att_gt
+  # consumed.  Each aggregation is seeded identically and independently.
+  set.seed(20260511)
   cs_agg_dyn <- aggte(cs_out, type = "dynamic", na.rm = TRUE)
   cs_es_df   <- data.frame(
     t  = cs_agg_dyn$egt,
@@ -883,6 +1025,7 @@ tryCatch({
   cat("   fig10_7_2_csdid_R.png exported\n")
 
   # Simple aggregated ATT
+  set.seed(20260511)
   cs_agg_simple <- aggte(cs_out, type = "simple", na.rm = TRUE)
   cs_att <- cs_agg_simple$overall.att
   cs_se  <- cs_agg_simple$overall.se
@@ -891,7 +1034,7 @@ tryCatch({
               cs_att, cs_se, cs_p))
 
 }, error = function(e) {
-  message("   csdid failed: ", conditionMessage(e))
+  cat("   csdid failed: ", conditionMessage(e), "\n", sep = "")
 })
 
 # =====================================================================================================================
@@ -975,8 +1118,9 @@ tryCatch({
               stag_twfe_b, stag_twfe_p))
 }, error = function(e) message("   Naive TWFE failed: ", conditionMessage(e)))
 
-# CS-DiD on staggered panel (fig10_7)
+# CS-DiD on staggered panel (fig10_9)
 tryCatch({
+  set.seed(20260511)          # see the note above the single-cohort att_gt()
   cs_stag <- att_gt(
     yname         = s_y,
     tname         = s_year,
@@ -989,6 +1133,7 @@ tryCatch({
     panel         = TRUE
   )
 
+  set.seed(20260511)
   cs_stag_dyn <- aggte(cs_stag, type = "dynamic", na.rm = TRUE)
   cs_stag_df  <- data.frame(
     t  = cs_stag_dyn$egt,
@@ -1002,17 +1147,18 @@ tryCatch({
     geom_ribbon(aes(ymin = lo, ymax = hi), fill = "grey80", alpha = 0.6) +
     geom_line(colour = "black", linewidth = 0.7) +
     geom_point(shape = 18, size = 3, colour = "black") +
-    labs(title    = "CS-DiD Event Study: Staggered Consolidation",
-         subtitle = "Three cohorts: 2014, 2016, 2018",
+    labs(title    = "Staggered Adoption: Three Simulated Groups",
+         subtitle = "Groups treated in 2014, 2016, and 2018",
          x        = "Year",
          y        = "ATT(g,t)") +
     theme_springer()
 
-  ggsave(file.path(graphs_dir, "fig10_7_staggered_es_R.png"),
+  ggsave(file.path(graphs_dir, "fig10_9_staggered_es_R.png"),
          p_stag, width = 7, height = 5, dpi = 200)
   print(p_stag)
-  cat("   fig10_7_staggered_es_R.png exported\n")
+  cat("   fig10_9_staggered_es_R.png exported\n")
 
+  set.seed(20260511)
   cs_stag_simple <- aggte(cs_stag, type = "simple",  na.rm = TRUE)
   stag_cs_att    <- cs_stag_simple$overall.att
   stag_cs_se     <- cs_stag_simple$overall.se
@@ -1020,6 +1166,7 @@ tryCatch({
               stag_cs_att, stag_cs_se))
 
   # Cohort-specific ATTs
+  set.seed(20260511)
   cs_stag_grp <- aggte(cs_stag, type = "group", na.rm = TRUE)
   cat("   Cohort-specific ATTs:\n")
   for (i in seq_along(cs_stag_grp$egt)) {
@@ -1029,7 +1176,7 @@ tryCatch({
                 cs_stag_grp$se.egt[i]))
   }
 }, error = function(e) {
-  message("   Staggered CS-DiD failed: ", conditionMessage(e))
+  cat("   Staggered CS-DiD failed: ", conditionMessage(e), "\n", sep = "")
 })
 
 # Reload main dataset
@@ -1200,7 +1347,7 @@ results_df <- data.frame(
   se = c(twfe_se,   placebo_se, NA,   NA,   NA,  lasso_se,  NA),
   p  = c(twfe_p,    placebo_p,  NA,   NA,   NA,  lasso_p,   NA)
 )
-write.csv(results_df, "results.csv", row.names = FALSE)
+write.csv(results_df, file.path(tables_dir, "results.csv"), row.names = FALSE)
 cat("   results.csv saved\n")
 
 results_lasso_df <- data.frame(
@@ -1209,7 +1356,7 @@ results_lasso_df <- data.frame(
   se = c(twfe_se, lasso_se),
   p  = c(twfe_p,  lasso_p)
 )
-write.csv(results_lasso_df, "results_lasso.csv", row.names = FALSE)
+write.csv(results_lasso_df, file.path(tables_dir, "results_lasso.csv"), row.names = FALSE)
 cat("   results_lasso.csv saved\n")
 
 results_combined_df <- data.frame(
@@ -1217,7 +1364,7 @@ results_combined_df <- data.frame(
   estimate = c(twfe_b,  lasso_b,  sdid_att, cs_att),
   se_val   = c(twfe_se, lasso_se, sdid_se,  cs_se)
 )
-write.csv(results_combined_df, "results_combined.csv", row.names = FALSE)
+write.csv(results_combined_df, file.path(tables_dir, "results_combined.csv"), row.names = FALSE)
 cat("   results_combined.csv saved\n")
 
 # ── Estimator comparison figure: fig10_9_1 ───────────────────────────────
@@ -1285,6 +1432,9 @@ cat(sprintf("  LOO range [%.4f, %.4f] — all same sign, no single control drive
 cat("\n  NOTE: SCM and CS-DiD diverge from TWFE in magnitude and direction.\n")
 cat("  Chapter prose should address this tension directly (see §10.9).\n")
 cat("============================================================\n")
+
+# Close the log only if this script opened it (standalone run).
+if (isTRUE(ch10_own_log)) ch10_stop_log()
 
 # =====================================================================================================================
 # END OF R_code10_Georgia_DiD.R
