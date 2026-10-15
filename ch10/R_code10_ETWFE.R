@@ -84,17 +84,87 @@ suppressPackageStartupMessages({
 })
 
 # -----------------------------------------------------------------------
-# Fallback output paths (overridden when sourced from R_code10.R)
+# Output paths
+#
+# Everything is DERIVED from out_root.  R objects persist in the global
+# environment across sourced scripts exactly as Stata globals persist across
+# do-files, so an "if it does not exist, set it" test lets a stale value from
+# an earlier run through.  Deriving removes that: to redirect output, change
+# out_root, never the individual directories.
 # -----------------------------------------------------------------------
-if (!exists("graphs_dir")) {
-  graphs_dir <- "Output/graphs"
-  dir.create("Output",         showWarnings = FALSE, recursive = TRUE)
-  dir.create("Output/graphs",  showWarnings = FALSE, recursive = TRUE)
+if (!exists("out_root")) {
+  out_root <- if (Sys.info()[["user"]] == "marvi") {
+    "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output"
+  } else {
+    "Output"
+  }
+  message("ETWFE.R (standalone): out_root set to ", out_root)
 }
-if (!exists("tables_dir")) {
-  tables_dir <- "Output/tables"
-  dir.create("Output/tables",  showWarnings = FALSE, recursive = TRUE)
+graphs_dir <- file.path(out_root, "graphs")
+tables_dir <- file.path(out_root, "tables")
+data_dir   <- file.path(out_root, "data")
+for (d in c(graphs_dir, tables_dir, data_dir)) {
+  dir.create(d, showWarnings = FALSE, recursive = TRUE)
 }
+# -----------------------------------------------------------------------
+# Standalone logging.  When this script is sourced by R_code10.R a log is
+# already open and these helpers do nothing.  Run on its own, it opens
+# <out_root>/logs/R_code10_ETWFE.log and unwinds the sink on exit, so a
+# failure cannot leave the console muted.
+# -----------------------------------------------------------------------
+if (!exists("ch10_start_log")) {
+  ch10_start_log <- function(basename) {
+    if (isTRUE(getOption("ch10_logging"))) return(invisible(NULL))
+    dir.create(file.path(out_root, "logs"), showWarnings = FALSE,
+               recursive = TRUE)
+    path <- file.path(out_root, "logs", basename)
+    con  <- file(path, open = "wt")
+    options(ch10_logging = TRUE, ch10_log_con = con, ch10_log_path = path)
+    # Strip ANSI colour codes: RStudio colourises message() output, and the
+    # escape sequences land in the file as garbage ("G3;", "gG3;") around
+    # every warning.  Plain text only while a log is open.
+    options(crayon.enabled = FALSE, cli.num_colors = 1)
+    sink(con, split = TRUE)
+    sink(con, type = "message")
+    cat("Log:", path, "\n")
+    cat("Opened:", format(Sys.time()), "\n\n")
+    invisible(path)
+  }
+  ch10_stop_log <- function() {
+    # sink.number(type = "message") returns a CONNECTION NUMBER, not a count,
+    # and stderr is connection 2 -- so "while (... > 0)" never terminates.
+    # Message sinks do not nest, so one reset is all that is needed.
+    if (sink.number(type = "message") != 2) sink(type = "message")
+    while (sink.number() > 0) sink()
+    con <- getOption("ch10_log_con")
+    if (!is.null(con)) try(close(con), silent = TRUE)
+    options(ch10_logging = NULL, ch10_log_con = NULL, ch10_log_path = NULL)
+    invisible(NULL)
+  }
+}
+
+# NOTE: diagnostics in this script use cat(), not message().  While a log is
+# open the message stream is sinked, and RStudio wraps message() output in
+# ANSI colour escapes that land in the file as garbage ("G3;", "gG3;").
+# cat() goes to the output stream, which stays clean.
+# Own the log only if none is currently OPEN.  The guard must test the open
+# state, not whether the helper exists: sourcing R_code10.R earlier in the
+# same R session leaves ch10_start_log() defined in the global environment
+# long after its log was closed, and an exists() test would then skip logging
+# entirely and silently.  Same stale-state trap as the path globals.
+ch10_own_log <- !isTRUE(getOption("ch10_logging"))
+ch10_start_log("R_code10_ETWFE.log")
+
+cat("R_code10_ETWFE.R: version 2026-09-23a\n")
+cat("  out_root  =", out_root, "\n")
+cat("  graphs_dir=", graphs_dir, "\n")
+
+
+
+# NOTE: the previous fallback hardcoded a RELATIVE "Output/graphs" with no
+# username branch, so a standalone run wrote beside the working directory
+# instead of under the Chapter 10 Output tree -- the R counterpart of the
+# stale-path bug that misplaced tab10_7_etwfe.rtf on the Stata side.
 
 # Springer B&W ggplot2 theme (mirrors Stata s2mono)
 theme_springer <- function(base_size = 11) {
@@ -318,7 +388,7 @@ b_group_b   <- agg_4b_group$estimate
 b_group_se  <- agg_4b_group$std.error
 
 # ========================================================================
-# 6. EVENT-STUDY PLOT (fig10_7)
+# 6. EVENT-STUDY PLOT (fig10_7_4)
 #   Built on the Model 4b (covariate-adjusted) event-study aggregation.
 #   Reference period (event time = -1) is the row where estimate = 0 or
 #   std.error = NA; all remaining rows are shifted accordingly.
@@ -362,10 +432,10 @@ p_es <- ggplot(es_df, aes(x = event, y = b)) +
   ) +
   theme_springer()
 
-ggsave(file.path(graphs_dir, "fig10_7_R.png"),
+ggsave(file.path(graphs_dir, "fig10_7_4_etwfe_event_study_R.png"),
        p_es, width = 7, height = 5, dpi = 200)
 print(p_es)   # render to the RStudio Plots pane (ggsave only writes to disk)
-cat(sprintf("\nfig10_7_R.png exported to %s\n", graphs_dir))
+cat(sprintf("\nfig10_7_4_etwfe_event_study_R.png exported to %s\n", graphs_dir))
 
 # ========================================================================
 # 6b. COMPARISON TABLE: ETWFE WITHOUT vs WITH COVARIATES
@@ -425,7 +495,7 @@ write.csv(tab_df, file.path(tables_dir, "tab10_7_etwfe.csv"),
 cat(sprintf("\ntab10_7_etwfe.csv exported to %s\n", tables_dir))
 
 cat("\nETWFE / etwfe section complete.\n")
-cat(sprintf("Figure: %s/fig10_7_R.png\n", graphs_dir))
+cat(sprintf("Figure: %s/fig10_7_4_etwfe_event_study_R.png\n", graphs_dir))
 cat(sprintf("Table:  %s/tab10_7_etwfe.csv\n", tables_dir))
 
 # ========================================================================
@@ -470,6 +540,9 @@ cat(sprintf("Table:  %s/tab10_7_etwfe.csv\n", tables_dir))
 #   -- and note that the R package's only covariate mode inherits this
 #   same caution, even in the "adjusted" specification meant to avoid it.
 # ========================================================================
+
+# Close the log only if this script opened it (standalone run).
+if (isTRUE(ch10_own_log)) ch10_stop_log()
 
 # ============================================================================
 # END OF R_code10_ETWFE.R

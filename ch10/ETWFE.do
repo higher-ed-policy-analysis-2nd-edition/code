@@ -12,8 +12,11 @@
 *========================================================================
 * Called by Stata_code10.do AFTER Georgia_DiD.do.
 * Inherits from the master script: $graphs_dir, $tables_dir, $syntax_dir,
-* the open log, version 19, and set scheme s2mono. Does NOT clear/reset
-* those settings. Loads its own dataset (Example_10_7_3.csv).
+* version 19, and set scheme s2mono. Does NOT clear/reset those settings.
+* Loads its own dataset (Example_10_7_3.csv).
+* Logging: opens its OWN named log (etwfe_log) rather than relying on the
+* master's, so a standalone run is recorded too. Named logs coexist with
+* the master's log and closing this one does not close it.
 *
 * PURPOSE
 *   Estimate ETWFE for the three-state staggered adoption design
@@ -42,21 +45,121 @@
 *         so covariates enter as additive Mundlak-style corrections rather
 *         than fully interacting; the model is identified and SEs estimable.
 *   A bare (no-covariate) specification is run first as a design check.
+*
+* REVISION (Aug 2026, after the 13 Aug run)
+*   - Aug 2026 (19th): $graphs_dir, $tables_dir and $log_dir are now DERIVED
+*     from $out_root unconditionally rather than accepted when absolute.  A
+*     stale ABSOLUTE global survives an "is it absolute" guard -- that is how
+*     a standalone RDD.do run wrote its log to .../Output/log.  An inherited
+*     value that differs is announced before being replaced.  No estimation,
+*     sample, or figure changed.  Version stamp: 2026-08-19a.
+*   - $graphs_dir and $tables_dir now derive from a single username-branched
+*     $out_root, and a stale RELATIVE value inherited from an earlier run in
+*     the same Stata session is discarded rather than trusted.  That stale
+*     global is what kept sending tab10_7_etwfe.rtf to the working directory.
+*   - The log is now opened BEFORE the directories are resolved, so the
+*     resolution is recorded; previously those diagnostics ran unlogged.
+*   - -capture- dropped from the two graph export/save lines so the log
+*     records whether the figure was written.
+*   - Named log etwfe_log added (see below).
+*
+* FIGURE NAMING (Aug 2026)
+*   Chapter 10 gained Figs. 10.2 and 10.3 in Section 10.2, so manuscript
+*   figure numbers now run 10.1-10.9 and end with Fig. 10.9 (staggered
+*   adoption, Section 10.7.3). Section 10.7.4 has NO numbered manuscript
+*   figure: the event study exported here is a diagnostic. Under the
+*   convention shared with RDD.do and Georgia_DiD.do,
+*     fig10_<N>_<name>      = MANUSCRIPT FIGURE number
+*     fig10_<N>_<M>_<name>  = SECTION number, diagnostic only
+*   this graph was renamed fig10_7_3 -> fig10_7_4_etwfe_event_study_Stata:
+*   it belongs to Section 10.7.4, not 10.7.3, and the _Stata suffix matches
+*   the sibling scripts so the R export never overwrites it.
+*   tab10_7_etwfe.rtf is likewise a diagnostic; Chapter 10 has one numbered
+*   table (Table 10.1, the Section 10.3.4 robustness table).
 *========================================================================
 
 *------------------------------------------------------------------------
-* Defensive fallbacks so the script also runs standalone.
-* When called by the master these globals already exist and are unchanged.
+* Output root, log, then output directories -- IN THAT ORDER
 *------------------------------------------------------------------------
-if "$graphs_dir" == "" {
-    global graphs_dir "Output/graphs"
-    capture mkdir "Output"
-    capture mkdir "Output/graphs"
+* ORDERING MATTERS.  In the 14 Aug 2026 run the directory diagnostics ran
+* BEFORE the log was opened, so nothing about $graphs_dir / $tables_dir was
+* recorded and the run looked silent.  The log is now opened first and the
+* directory resolution is echoed into it.
+*
+* One out_root branching on username feeds every output directory.  It is a
+* GLOBAL, not a local: locals do not survive across the -log using- call in
+* some execution contexts, and the value is needed further down.
+global out_root "Output"
+if c(username) == "marvi" {
+    global out_root "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output"
 }
-if "$tables_dir" == "" {
-    global tables_dir "Output/tables"
-    capture mkdir "Output/tables"
+capture mkdir "$out_root"
+
+* DERIVED from $out_root unconditionally, not merely set when empty.  Stata
+* globals persist across do-files within a session, so an "is it empty" test
+* lets a stale value through -- and so does an "is it absolute" test, which
+* is how a standalone RDD.do run wrote its log to .../Output/log on
+* 19 Aug 2026.  Derivation is the only rule nothing stale survives.
+local cur "$log_dir"
+global log_dir "$out_root/logs"
+if "`cur'" != "" & "`cur'" != "$log_dir" {
+    di as text "ETWFE.do: replacing inherited log_dir (`cur')"
 }
+capture mkdir "$log_dir"
+
+* -capture- so an aborted earlier run that left etwfe_log open is harmless.
+* A NAMED log coexists with any log the master driver already has open, and
+* closing this one does not close the master's.  Opened before the jwdid check
+* so a missing-package exit is still recorded.
+capture log close etwfe_log
+log using "$log_dir/ETWFE.log", replace text name(etwfe_log)
+
+di as text "ETWFE.do: logging to $log_dir/ETWFE.log"
+
+* ------------------------------------------------------------------------
+* VERSION STAMP -- printed INSIDE the log on purpose.
+* If a log does not show this line, an older copy of the script ran.  That
+* is the fastest way to settle "did my edit take effect?" without diffing
+* files.  Bump the date when the script changes.
+* ------------------------------------------------------------------------
+di as text "ETWFE.do: version 2026-08-19a"
+di as text "ETWFE.do: working directory = " c(pwd)
+di as text "ETWFE.do: out_root   = $out_root"
+di as text "ETWFE.do: graphs_dir = $graphs_dir"
+di as text "ETWFE.do: tables_dir = $tables_dir"
+di as text "ETWFE.do: log_dir    = $log_dir"
+
+*------------------------------------------------------------------------
+* Graph and table directories (resolved INSIDE the log)
+*------------------------------------------------------------------------
+* Stata globals persist across do-files within a session, so a value set by
+* an earlier run survives into this one.  Both earlier rules leaked:
+*   "set it if it is empty"       -- a stale RELATIVE $tables_dir survived,
+*                                    which is why tab10_7_etwfe.rtf kept
+*                                    landing in "Output/tables" relative to
+*                                    the working directory.
+*   "accept it if it is ABSOLUTE" -- a stale ABSOLUTE value survives too.  A
+*                                    standalone RDD.do run on 19 Aug 2026
+*                                    inherited $log_dir = .../Output/log and
+*                                    wrote its log there, because the value
+*                                    passed the absolute test.
+*
+* Both directories are therefore DERIVED from $out_root unconditionally.
+* Nothing inherited survives, so the paths cannot drift.  This costs nothing
+* under the master, which derives the same directories from the same
+* $out_root.  To redirect output, change $out_root, not these globals.
+foreach D in graphs tables {
+    local cur "${`D'_dir}"
+    global `D'_dir "$out_root/`D'"
+    if "`cur'" != "" & "`cur'" != "${`D'_dir}" {
+        di as text "ETWFE.do: replacing inherited `D'_dir (`cur')"
+    }
+    capture mkdir "${`D'_dir}"
+}
+
+di as text "ETWFE.do: out_root    = $out_root"
+di as text "ETWFE.do: graphs_dir  = $graphs_dir"
+di as text "ETWFE.do: tables_dir  = $tables_dir"
 
 * Confirm jwdid is available (the master installs it; this is a safety net).
 capture which jwdid
@@ -227,10 +330,15 @@ preserve
         subtitle("Covariate-adjusted, never-treated controls")            ///
         ytitle("ATT on log operations")                                   ///
         xtitle("Years relative to treatment")                             ///
-        legend(off) name(fig10_7_3, replace) scheme(s2mono)
+        legend(off) name(fig10_7_4, replace) scheme(s2mono)
 
-    capture graph export "$graphs_dir/fig10_7_3.png", replace width(2000)
-    capture graph save   "$graphs_dir/fig10_7_3.gph", replace
+    * Diagnostic figure - Section 10.7.4 has no numbered manuscript figure.
+    * NOT -capture-: capture suppresses the "file ... saved as PNG format"
+    * confirmation, leaving the log with no evidence the figure was written.
+    graph export "$graphs_dir/fig10_7_4_etwfe_event_study_Stata.png", ///
+        replace width(2000)
+    graph save   "$graphs_dir/fig10_7_4_etwfe_event_study_Stata.gph", ///
+        replace
 restore
 
 *========================================================================
@@ -260,16 +368,31 @@ di as text "{hline 72}"
 matlist T, format(%9.4f)
 
 * Export to a Springer-style RTF table (requires estout; master installs it).
+* NOT -capture- on the esttab call itself: a captured failure produced a run
+* that echoed a Table: path while writing no file. A real failure should stop
+* the script. The -which- guard is kept but now reports when it fires.
 capture which esttab
-if !_rc {
-    capture esttab matrix(T, fmt(%9.4f)) using "$tables_dir/tab10_7_etwfe.rtf", ///
+if _rc {
+    di as error "esttab not found -- table NOT written. Run: ssc install estout, replace"
+}
+else {
+    esttab matrix(T, fmt(%9.4f)) using "$tables_dir/tab10_7_etwfe.rtf", ///
         replace title("ETWFE ATT: Unconditional (4a) vs Covariate-Adjusted (4b)") ///
         addnotes("Never-treated controls; SEs clustered by state (fips)." ///
                  "Cols 1-2: no covariates. Cols 3-4: hettype(cohort) adjusted.")
+
+    * Confirm the file exists rather than trusting the command's silence.
+    capture confirm file "$tables_dir/tab10_7_etwfe.rtf"
+    if _rc {
+        di as error "tab10_7_etwfe.rtf was NOT created in $tables_dir"
+    }
+    else {
+        di as text "   tab10_7_etwfe.rtf written to $tables_dir"
+    }
 }
 
 di as text _n "ETWFE / jwdid section complete."
-di as text "Figure: $graphs_dir/fig10_7_3.(png|gph)"
+di as text "Figure: $graphs_dir/fig10_7_4_etwfe_event_study_Stata.(png|gph)"
 di as text "Table:  $tables_dir/tab10_7_etwfe.rtf"
 
 *========================================================================
@@ -288,6 +411,10 @@ di as text "Table:  $tables_dir/tab10_7_etwfe.rtf"
 *   treated cohorts and four time-varying covariates it is rank-deficient.
 *   Note this as a practical caution on ETWFE in small-T, few-cohort panels.
 *========================================================================
+
+* Close the named log opened at the top. -capture- so that re-running the
+* script, or a master driver that has already closed it, is harmless.
+capture log close etwfe_log
 
 * END OF ETWFE.do
 *========================================================================

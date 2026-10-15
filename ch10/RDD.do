@@ -9,12 +9,17 @@
 * NOTE: Code development was assisted by Claude (Anthropic). The author
 * provided specifications and reviewed, tested, and validated all code.
 *========================================================================
-* Called by: Stata_code10.do  (inherits $graphs_dir, log, set scheme)
+* Called by: Stata_code10.do  (inherits $graphs_dir, set scheme)
+* Logging:   opens its OWN named log (rdd_log), so it records a complete
+*            run either way and never collides with the master's log.
 * Standalone: can also be run directly; uses fallback paths if needed.
 *
 * Required packages: rdrobust, rddensity, lpdensity, cmogram
 *   ssc install rdrobust,  replace
-*   ssc install rddensity, replace
+*   net install rddensity, ///
+*       from(https://raw.githubusercontent.com/rdpackages/rddensity/master/stata) replace
+*       (NOT ssc install -- the SSC copy can omit the ancillary
+*        rddensity_fun.do, which rddensity runs internally)
 *   ssc install cmogram,   replace
 *   net install lpdensity, ///
 *       from(https://raw.githubusercontent.com/nppackages/lpdensity/master/stata) replace
@@ -33,7 +38,75 @@
 *   10.2.8   Validity checks: placebo cutoffs, donut RD, augmented, subgroup
 *   10.2.9   Publication-quality RD plots (rdplot); persist_fuzzy rdplot +
 *            fuzzy LATE comparison figure
-*   10.2.10  Summary table; save ch10_rdd_hsls09_synthetic.dta
+*   10.2.10  Summary table; save Example_10_2_1.dta
+*
+* NOTE ON NUMBERING: the section numbers above are INTERNAL to this
+* script and do NOT correspond to the manuscript's subsection numbers.
+* The manuscript's Section 10.2 has three subsections: 10.2.1 sharp RDD,
+* 10.2.2 fuzzy RDD, 10.2.3 covariate adjustment.
+*
+* MANUSCRIPT CROSS-REFERENCES (Chapter 10, Section 10.2)
+* ------------------------------------------------------
+* Four graphs from this script appear as numbered figures in the
+* manuscript. They carry fig10_<manuscript figure number>_ prefixes.
+* Every other graph exported here is a script-only diagnostic and keeps
+* its fig10_2_<n>_ prefix, which encodes this script's section number,
+* not a manuscript figure number.
+*
+*   Manuscript      Script export                        Script section
+*   ----------      -------------                        --------------
+*   Fig. 10.1       fig10_1_rdd_plot_credits.png         10.2.9
+*   Fig. 10.2       fig10_2_rdd_density_test.png         10.2.2
+*   Fig. 10.3       fig10_3_rdd_plot_firststage.png      10.2.9
+*   Fig. 10.4       fig10_4_fuzzy_late_credits.png       10.2.9
+*
+* Manuscript results reported from this script:
+*   Sharp LATE (credits_y1), unadjusted   3.2999, h* = 0.224   (10.2.4)
+*   Sharp LATE (credits_y1), covs         3.3710, h* = 0.225   (10.2.4)
+*   Density test (robust)                 T = -0.8925, p = 0.37 (10.2.2)
+*   First stage jump                      0.5051, h* = 0.229   (10.2.7)
+*   Fuzzy LATE (credits_y1), rdrobust     6.4145, h* = 0.213   (10.2.7)
+*   Fuzzy LATE (credits_y1), 2SLS h=0.50  6.2978, N = 2,343    (10.2.7)
+*   Fuzzy LATE (credits_y1), covs         6.4624, h* = 0.213   (10.2.7)
+*
+* CAVEAT carried into the manuscript text: credits_y1 and cgpa_y1 are
+* generated from D_sharp, so their fuzzy LATE is a demonstration of the
+* Wald mechanics, not a distinct complier effect. Only persist_fuzzy has
+* a genuinely fuzzy DGP. Section 10.2.3 of the manuscript now says so.
+*
+* EQUATION CROSS-REFERENCES (manuscript Section 10.2)
+* ---------------------------------------------------
+*   Eq. 10.1   Sharp RD estimand (ATE at the cutoff)
+*                -> rdrobust <outcome> x, c(0) kernel(triangular)
+*                   bwselect(mserd) all                        (10.2.4)
+*   Eq. 10.2   Sharp estimand written as an expectation        (no command)
+*   Eq. 10.3   Assignment rule D_i = 1(X_i >= c)
+*                -> gen byte D_sharp = (x >= 0)                (10.2.1)
+*   Eq. 10.4   Two-regression-line / interacted OLS form; printed in the
+*              manuscript to make the logic visible, NOT the estimator
+*              used for any reported number                    (10.2.4)
+*   Eq. 10.5   Fuzzy RD (Wald) estimand
+*                -> rdrobust <outcome> x, c(0) fuzzy(D_fuzzy)  (10.2.7)
+*                -> manual 2SLS with in_bw2 / tri_wt2 / x_Ds2  (10.2.7)
+*
+* FIGURE FORMAT: Springer requires GRAYSCALE figures.  -set scheme s2mono-
+* covers every graph drawn by twoway, rdplot and cmogram.  It does NOT
+* cover rddensity, which hardcodes red (left of cutoff) and blue (right)
+* for its fitted lines, confidence regions and histogram bars.  Fig. 10.2
+* therefore sets those explicitly through rddensity's own plot options;
+* see Section 10.2.2.
+*
+* KNOWN DIVERGENCES from the printed chapter listings (deliberate)
+* ---------------------------------------------------------------
+*   1. The chapter prints -rddensity x, c(0) plot- bare.  This script
+*      adds graph_opt() and the grayscale plot options above.  The
+*      simplification is intentional: the listing shows the command, the
+*      script produces the publication figure.
+*   2. The chapter's install listing prints -ssc install rddensity,
+*      replace-.  That is a CHAPTER DEFECT, not a script one: the SSC
+*      copy can omit the ancillary rddensity_fun.do and aborts with
+*      r(601).  Use the net install line below.  The chapter listing
+*      needs correcting; the script is already right.
 *
 * CHANGE LOG
 * ----------
@@ -49,6 +122,98 @@
 *                rdrobust with covs(female firstgen urm act_score income_cat)
 *                added to Section 10.2.4 (sharp) and Section 10.2.7
 *                (fuzzy LATE); both loop over all three outcomes.
+* v4  Aug 2026 — Figure filenames synchronised with the manuscript after
+*                Fig. 10.2 (density test) and Fig. 10.3 (first stage)
+*                were added to Section 10.2 and everything downstream
+*                was renumbered:
+*                  fig10_2_1_rdd_density_test    -> fig10_2_rdd_density_test
+*                  fig10_2_7_rdd_plot_firststage -> fig10_3_rdd_plot_firststage
+*                  fig10_2_fuzzy_late_credits    -> fig10_4_fuzzy_late_credits
+*                  name(fig10_2)                 -> name(fig10_4)
+*                Manuscript cross-reference block added above. Script-only
+*                diagnostic figures are unchanged. No executable logic
+*                changed — only export filenames, one graph name, and
+*                comments.
+* v5  Aug 2026 - Added a log file, matching Georgia_DiD.do v13.  A NAMED
+*                log (rdd_log) is opened after -set scheme- and closed at
+*                the end of the script, with $log_dir resolved by the same
+*                standalone-fallback pattern already used for $graphs_dir.
+*                Named logs coexist with the master driver's log, so
+*                running through Stata_code10.do and running standalone
+*                both produce a complete RDD.log.  No estimation, sample,
+*                or figure changed.
+* v6  Aug 2026 - $graphs_dir and $log_dir now resolve through a shared
+*                $out_root and are accepted from the environment only if
+*                ABSOLUTE.  A stale relative global left by an earlier run in
+*                the same session used to survive the "is it empty" test and
+*                redirect output to the working directory.  Directories are
+*                created unconditionally.  No estimation or figure changed.
+* v7  Aug 2026 - Synchronised with Chapter10_version_48.docx:
+*                (a) Fig. 10.2 (rddensity) now drawn in GRAYSCALE.
+*                    rddensity ignores -set scheme s2mono- for its own
+*                    plot elements, so esll_opt/eslr_opt, cirl_opt/
+*                    cirr_opt and histl_opt/histr_opt now set gray levels
+*                    explicitly, and legend(off) suppresses rddensity's
+*                    internal series names (__00000G, __000004, ...),
+*                    which are unreadable and were printed in the figure.
+*                (b) Density-test and covariate-balance comments rewritten
+*                    to match the hedged language adopted in the chapter:
+*                    the data were generated without sorting, so the test
+*                    demonstrates the procedure rather than certifying the
+*                    design, and the balance checks are local and not
+*                    highly powered.  The "c = 3.25 is non-salient"
+*                    rationalization was dropped from the chapter and is
+*                    dropped here too.
+*                (c) The four instrument-validity assumptions the chapter
+*                    now states in Section 10.2.2 added as a comment block
+*                    above the fuzzy estimation.
+*                (d) "Equation 10.x" placeholders resolved to Eq. 10.5.
+*                (e) Equation cross-reference block added to this header.
+*                (f) Saved dataset renamed ch10_rdd_hsls09_synthetic.dta
+*                    -> Example_10_2_1.dta, the filename the chapter's
+*                    data-availability section gives readers.
+*                (h) $graphs_dir and $log_dir are now DERIVED from
+*                    $out_root unconditionally rather than inherited when
+*                    absolute.  A stale ABSOLUTE global survives an
+*                    "is it absolute" guard, which is how a 19 Aug 2026
+*                    standalone run still wrote to .../Output/log after
+*                    (g) below was applied.  An inherited value that
+*                    differs is announced before being replaced.
+*                (g) Standalone fallback for $log_dir corrected from
+*                    "$out_root/log" to "$out_root/logs".  The master
+*                    passes an absolute .../Output/logs, so the wrong
+*                    value only surfaced when RDD.do was run on its own,
+*                    where it silently created a second directory beside
+*                    the real one.  Georgia_DiD.do and ETWFE.do already
+*                    used "logs".
+*                (i) Fig. 10.4 rebuilt.  Three defects: (1) the x axis
+*                    ran from ~3.6 to ~9.2, so ZERO WAS NOT ON THE PLOT
+*                    even though the chapter's prose says the interval
+*                    does not cross zero, and the -xline(0)- drew nothing
+*                    because -rcap ..., horizontal- swaps the axes; the
+*                    axis is now forced to start at 0 and the reference
+*                    line is drawn with -pci-.  (2) The interval was
+*                    b +/- 1.96*SE(conventional) while every p-value in
+*                    Section 10.2 is e(pv_rb); a -ci_type- switch now
+*                    selects the robust bias-corrected bounds (default)
+*                    or the conventional ones, and the subtitle names
+*                    which is shown.  (3) The note read "Complier LATE =
+*                    RF / FS", contradicting the Section 10.2.3 caveat
+*                    that credits_y1 comes from the sharp DGP; rewritten.
+*                    e(ci_l_rb) / e(ci_r_rb) are now stored in the fuzzy
+*                    loop, which is -qui- and previously discarded them.
+*                (j) Added -chkfig-, which re-opens each manuscript figure
+*                    after export and reports its size, plus an end-of-run
+*                    roll call and a -dir- listing of $graphs_dir.  Stata's
+*                    own "saved as PNG format" only means the command
+*                    returned cleanly; it is not evidence the file is
+*                    readable at that path afterwards.
+*                (k) Fig. 10.2's note() collapsed to a SINGLE string.  A
+*                    two-string note passed through rddensity's graph_opt()
+*                    was tokenised one word per line in the export.
+*                Version stamp: 2026-08-19f.
+*                No estimation, sample, bandwidth or reported number
+*                changed.
 *========================================================================
 
 *------------------------------------------------------------------------
@@ -57,25 +222,105 @@
 * If $graphs_dir is already defined by the parent script, these lines
 * have no effect. If running RDD.do directly, they set sensible defaults.
 
-capture confirm global graphs_dir
-if _rc != 0 {
-    if c(username) == "marvi" {
-        global graphs_dir ///
-            "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output/graphs"
-        capture mkdir ///
-            "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output"
-        capture mkdir ///
-            "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output/graphs"
+* Resolve $out_root once, then DERIVE every output directory from it.
+*
+* Two earlier rules both failed, for the same underlying reason -- Stata
+* globals persist across do-files within a session, so a value set by an
+* earlier run survives into this one:
+*   "set it if it is empty"    -- a stale RELATIVE value survived and sent
+*                                 output to the working directory (the bug
+*                                 that misplaced tab10_7_etwfe.rtf on
+*                                 14 Aug 2026).
+*   "accept it if it is ABSOLUTE" -- a stale ABSOLUTE value survived too.
+*                                 On 19 Aug 2026 a standalone run inherited
+*                                 $log_dir = .../Output/log, left by an
+*                                 earlier run of RDD.do v6 whose fallback
+*                                 used the singular name.  It was absolute,
+*                                 so the guard accepted it, and RDD.log was
+*                                 written to .../Output/log even though the
+*                                 v7 fallback said "logs".
+*
+* Derivation removes the failure mode entirely: nothing inherited can
+* survive, so the paths cannot drift from $out_root.  This costs nothing
+* when the master calls the script, because Stata_code10.do derives the
+* same directories from the same $out_root -- the values are identical.
+* To redirect output, change $out_root, not the individual directories.
+global out_root "Output"
+if c(username) == "marvi" {
+    global out_root "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 10/Output"
+}
+capture mkdir "$out_root"
+
+* $graphs_dir and $log_dir are DERIVED FROM $out_root unconditionally.
+* An inherited value is announced and then replaced; see the note above
+* on why "accept it if it is absolute" was not enough.
+local cur "$graphs_dir"
+global graphs_dir "$out_root/graphs"
+if "`cur'" != "" & "`cur'" != "$graphs_dir" {
+    di as text "RDD.do: replacing inherited graphs_dir (`cur')"
+}
+di as text "RDD.do: graphs_dir = $graphs_dir"
+capture mkdir "$graphs_dir"
+
+* ------------------------------------------------------------------------
+* -chkfig- : confirm a manuscript figure actually landed on disk.
+* Stata's "saved as PNG format" message means the export command returned
+* without error, which is not the same as the file being readable at that
+* path afterwards (sync clients, permissions, and antivirus can all move
+* or quarantine it).  This re-opens the file and reports its size, so the
+* log carries independent evidence rather than the exporter's own word.
+* ------------------------------------------------------------------------
+capture program drop chkfig
+program define chkfig
+    args f
+    capture confirm file "`f'"
+    if _rc {
+        di as error "   MISSING: `f'  (confirm returned " _rc ")"
     }
     else {
-        global graphs_dir "Output/graphs"
-        capture mkdir "Output"
-        capture mkdir "Output/graphs"
+        qui checksum "`f'"
+        di as text "   OK: `f'  (" r(filelen) " bytes)"
     }
-    di as text "RDD.do (standalone): graphs_dir set to $graphs_dir"
-}
+end
 
 set scheme s2mono    // Springer B&W print (harmless if already set)
+
+*------------------------------------------------------------------------
+* Log file
+*------------------------------------------------------------------------
+* A NAMED log (rdd_log) is used rather than the default one.  Stata allows
+* several named logs open at once, and a named log never collides with the
+* default log, so this works whether the script is run standalone or called
+* by Stata_code10.do -- and closing this one does not close the master's.
+* Closed at the end of the script; see the close-out below.
+
+* Derived from $out_root unconditionally, for the reason given above.
+local cur "$log_dir"
+global log_dir "$out_root/logs"
+if "`cur'" != "" & "`cur'" != "$log_dir" {
+    di as text "RDD.do: replacing inherited log_dir (`cur')"
+}
+di as text "RDD.do: log_dir = $log_dir"
+capture mkdir "$log_dir"
+
+* -capture- so an aborted earlier run that left rdd_log open is harmless.
+capture log close rdd_log
+log using "$log_dir/RDD.log", replace text name(rdd_log)
+
+di as text "RDD.do: logging to $log_dir/RDD.log"
+
+* ------------------------------------------------------------------------
+* VERSION STAMP -- printed INSIDE the log on purpose.
+* If a log does not show this line, an older copy of the script ran.  That
+* is the fastest way to settle "did my edit take effect?" without diffing
+* files.  Bump the date when the script changes.
+* ------------------------------------------------------------------------
+di as text "RDD.do: version 2026-08-19f"
+di as text "RDD.do: working directory = " c(pwd)
+di as text "RDD.do: out_root   = $out_root"
+di as text "RDD.do: graphs_dir = $graphs_dir"
+di as text "RDD.do: tables_dir = $tables_dir"
+di as text "RDD.do: log_dir    = $log_dir"
 
 di as text _n "========================================================"
 di as text    "SECTION 10.2: REGRESSION DISCONTINUITY DESIGN"
@@ -238,19 +483,57 @@ di as text _n "--- 10.2.2  Density Continuity Test (Cattaneo, Jansson & Ma 2020)
 * does not contaminate the test.
 *
 * Interpretation: look at the Robust row.
-*   p > 0.05  → no evidence of density manipulation.
-*   p ≤ 0.05  → investigate; note that c = 3.25 is non-salient.
+*   p > 0.05  → no statistical evidence of a discontinuity in the density
+*               of the running variable at the cutoff.  That is CONSISTENT
+*               WITH, but does not establish, the absence of precise
+*               manipulation.  Here the data were generated without
+*               sorting, so the test demonstrates the procedure rather
+*               than certifying the design (chapter Section 10.2.1).
+*   p ≤ 0.05  → evidence of sorting; investigate before proceeding.
+
+* GRAYSCALE (Springer).  rddensity does NOT inherit -set scheme s2mono-
+* for its own plot elements: it hardcodes red below the cutoff and blue
+* above it for the fitted density, the confidence region and the
+* histogram bars.  Those are set explicitly here through rddensity's own
+* plot options, and the two sides are distinguished by LINE PATTERN
+* (solid below, dashed above) rather than by color, so the figure still
+* reads correctly in print.  legend(off) suppresses rddensity's internal
+* series names (__00000G, __000005/__000006, __000004), which carry no
+* information for the reader.
+*
+* NOTE() MUST BE A SINGLE STRING HERE.  A multi-line note -- note("line
+* one" "line two") -- renders correctly in an ordinary twoway call, but
+* rddensity passes graph_opt() through its own parser, which breaks every
+* argument after the first into separate tokens: the 19 Aug 2026 export
+* printed "Shaded / bands / are / 95% / confidence / regions." one word
+* per line.  Keep it to one quoted string.
+*
+* Option names follow rddensity's help file:
+*   esll_opt / eslr_opt  twoway line  options for the point estimates
+*   cirl_opt / cirr_opt  twoway rarea options for the confidence regions
+*   histl_opt / histr_opt  twoway bar options for the background histogram
+* The l / r in each name is left / right of the cutoff.
 
 rddensity x, c(0) plot                                                   ///
+    esll_opt(lcolor(gs0) lpattern(solid) lwidth(medthick))               ///
+    eslr_opt(lcolor(gs0) lpattern(dash)  lwidth(medthick))               ///
+    cirl_opt(color(gs12))                                                ///
+    cirr_opt(color(gs9))                                                 ///
+    histl_opt(color(gs14) lcolor(gs8) lwidth(vthin))                     ///
+    histr_opt(color(gs11) lcolor(gs8) lwidth(vthin))                     ///
     graph_opt(                                                            ///
         scheme(s2mono)                                                    ///
         title("Density Continuity Test (rddensity)")                     ///
         subtitle("Running variable: HS GPA centered at c = 3.25")        ///
         xtitle("HS GPA (centered at cutoff)") ytitle("Density")          ///
-        xline(0, lcolor(gs0) lpattern(dash) lwidth(medthin)))
+        xline(0, lcolor(gs0) lpattern(dash) lwidth(medthin))             ///
+        legend(off)                                                       ///
+        note("Solid line: below the cutoff; dashed line: above. Shaded bands are 95% confidence regions."))
 
-graph export "$graphs_dir/fig10_2_1_rdd_density_test.png", replace width(1400)
-di as text "   Density test exported -> fig10_2_1_rdd_density_test.png"
+* MANUSCRIPT Fig. 10.2 — density continuity test.
+graph export "$graphs_dir/fig10_2_rdd_density_test.png", replace width(1400)
+chkfig "$graphs_dir/fig10_2_rdd_density_test.png"
+di as text "   Density test exported -> fig10_2_rdd_density_test.png"
 di as text "   See the Robust row above for the preferred test statistic."
 
 * -- Covariate balance via rdrobust ----------------------------------
@@ -268,6 +551,9 @@ foreach v in female firstgen urm act_score income_cat {
 
 di as text    "   {hline 52}"
 di as text    "   None should be statistically significant under a valid RD."
+di as text    "   Failing to detect a jump is not the same as establishing that"
+di as text    "   these characteristics are identical across the threshold: the"
+di as text    "   tests are local and therefore not highly powered."
 
 *--------------------------------------------------------------------
 * 10.2.3  Binned Scatterplots (cmogram)
@@ -450,7 +736,8 @@ di as text    "   p = 1 (local linear) is the default and typically preferred."
 *   credits_y1      Year-1 credits earned   (continuous, ~28–32 cr)
 *   cgpa_y1         Year-1 college GPA      (continuous, 0–4 scale)
 *
-* Manual 2SLS variable names match Equation 10.x in text:
+* Manual 2SLS variable names operationalise Eq. 10.5 (fuzzy Wald
+* estimand) in the manuscript:
 *   in_bw2  = bandwidth indicator  (|x| ≤ 0.50)
 *   tri_wt2 = triangular kernel weight
 *   x_Ds2   = slope interaction     (x × D_sharp)
@@ -460,6 +747,18 @@ di as text    "   p = 1 (local linear) is the default and typically preferred."
 
 di as text _n "=== 10.2.7: Fuzzy RD (Imperfect Compliance) ==="
 
+* INSTRUMENT-VALIDITY ASSUMPTIONS (manuscript Section 10.2.2 states these
+* four; reading the cutoff as an instrument requires all of them)
+*   1. Continuity of potential outcomes in x at c, and no precise sorting
+*      across c.  Probed by the density test in Section 10.2.2 above.
+*   2. A discontinuous first stage: Pr(D = 1) must jump at c.  Estimated
+*      immediately below; it is the denominator of Eq. 10.5.
+*   3. Exclusion: crossing c affects the outcome ONLY through take-up.
+*      VIOLATED BY CONSTRUCTION here for credits_y1 and cgpa_y1, which
+*      are generated from D_sharp — see the caveat in the header.
+*   4. Monotonicity: crossing c moves students into treatment, never out
+*      of it (no defiers).  The complier reading of the LATE rests on it.
+*
 * ── First stage: jump in scholarship take-up at cutoff ───────────
 * D_sharp (eligibility) is a strong, binary predictor of D_fuzzy
 * (actual take-up). One first stage serves all three outcomes since
@@ -520,6 +819,10 @@ foreach outcome in persist_fuzzy credits_y1 cgpa_y1 {
     local fl_`outcome'_se = e(se_tau_cl)
     local fl_`outcome'_p  = e(pv_rb)
     local fl_`outcome'_h  = e(h_l)
+    * Robust bias-corrected CI bounds.  Stored because Fig. 10.4 plots them;
+    * the loop is -qui-, so they are otherwise unrecoverable from the log.
+    local fl_`outcome'_lo = e(ci_l_rb)
+    local fl_`outcome'_hi = e(ci_r_rb)
     di as text "   `outcome'" _col(23) %7.4f e(tau_cl)   ///
                _col(32) %8.4f e(se_tau_cl)               ///
                _col(43) %9.4f e(pv_rb)                   ///
@@ -528,6 +831,10 @@ foreach outcome in persist_fuzzy credits_y1 cgpa_y1 {
 
 di as text    "   {hline 60}"
 di as text    "   LATE: causal effect for compliers at the cutoff."
+di as text    "   Compliers are a LATENT group: the first stage identifies their"
+di as text    "   share at the margin, not which students belong to it."
+di as text    "   For credits_y1 / cgpa_y1 the exclusion restriction fails by"
+di as text    "   construction; read those as Wald arithmetic, not a complier effect."
 di as text    "   Robust CIs: Calonico, Cattaneo & Titiunik (2014, Econometrica)."
 di as text    "   h* selected by CCT MSERD criterion separately for each outcome."
 
@@ -562,7 +869,7 @@ di as text    "   Point estimates stable relative to unadjusted fuzzy LATE above
 
 * ── Manual 2SLS (h = 0.50, triangular kernel) ────────────────────
 * Pedagogical bridge from IV/2SLS (Chapters 6–7) to rdrobust fuzzy.
-* Variable names match Equation 10.x in text:
+* Variable names operationalise Eq. 10.5 (fuzzy Wald estimand):
 *
 *   gen byte   in_bw2  = (abs(x) <= 0.50)
 *   gen double tri_wt2 = (1 - abs(x) / 0.50) * in_bw2
@@ -578,7 +885,7 @@ di as text    "   Point estimates stable relative to unadjusted fuzzy LATE above
 * the cutoff via the x_Ds2 interaction. Constant h = 0.50 GPA units.
 
 di as text _n "--- Manual 2SLS (h = 0.50, triangular kernel) ---"
-di as text    "   Variables: in_bw2  tri_wt2  x_Ds2  (as in text Eq. 10.x)"
+di as text    "   Variables: in_bw2  tri_wt2  x_Ds2  (as in text Eq. 10.5)"
 di as text    "   Outcome            LATE     SE       p-value"
 di as text    "   {hline 52}"
 
@@ -755,7 +1062,9 @@ rdplot credits_y1 x, c(0) nbins(30 30)                                 ///
         xline(0, lcolor(gs0) lpattern(dash) lwidth(medthin))          ///
         legend(off) scheme(s2mono))
 
+* MANUSCRIPT Fig. 10.1 — sharp RDD effect on credits earned.
 graph export "$graphs_dir/fig10_1_rdd_plot_credits.png", replace width(1400)
+chkfig "$graphs_dir/fig10_1_rdd_plot_credits.png"
 
 rdplot cgpa_y1 x, c(0) nbins(30 30)                                    ///
     graph_options(                                                      ///
@@ -778,7 +1087,9 @@ rdplot D_fuzzy x, c(0) nbins(30 30)                                    ///
         xline(0, lcolor(gs0) lpattern(dash) lwidth(medthin))          ///
         legend(off) scheme(s2mono))
 
-graph export "$graphs_dir/fig10_2_7_rdd_plot_firststage.png", replace width(1400)
+* MANUSCRIPT Fig. 10.3 — first stage, jump in take-up at the cutoff.
+graph export "$graphs_dir/fig10_3_rdd_plot_firststage.png", replace width(1400)
+chkfig "$graphs_dir/fig10_3_rdd_plot_firststage.png"
 
 * -- fig10_2_8: Fuzzy outcome (persist_fuzzy) rdplot ---------------
 * Shows the discontinuity in the fuzzy persistence outcome; compare
@@ -798,9 +1109,33 @@ rdplot persist_fuzzy x, c(0) nbins(30 30)                             ///
 
 graph export "$graphs_dir/fig10_2_8_rdd_plot_persist_fuzzy.png", replace width(1400)
 
-* -- fig10_2: Fuzzy LATE for credits_y1 (rdrobust) ------------------
-* Forest-plot style: point estimate and 95% CI for the fuzzy LATE
-* for credits earned in year 1.
+* -- fig10_4: Fuzzy LATE for credits_y1 (rdrobust) ------------------
+* MANUSCRIPT Fig. 10.4. Forest-plot style: point estimate and 95% CI
+* for the fuzzy LATE for credits earned in year 1. Plots the rdrobust
+* fuzzy estimate at the MSE-optimal bandwidth (6.4145, h* = 0.213),
+* NOT the fixed-bandwidth 2SLS estimate (6.2978, h = 0.50) that the
+* manuscript reports alongside it.
+*
+* WHICH INTERVAL: set -ci_type- to robust or conventional.
+*   robust        e(ci_l_rb), e(ci_r_rb) -- rdrobust's bias-corrected
+*                 interval.  This is what the chapter's inference rests
+*                 on (p-values throughout Section 10.2 are e(pv_rb)), and
+*                 what the Section 10.2.10 summary table prints.  It is
+*                 NOT centered on the conventional point estimate,
+*                 because it centers on the bias-corrected one -- so the
+*                 diamond will sit off-centre in the interval.  That is
+*                 correct, not a plotting error.
+*   conventional  b +/- 1.96*SE.  Symmetric and easier to read, but it is
+*                 not the interval any reported p-value comes from.
+local ci_type robust
+
+* ZERO ON THE AXIS: the chapter's prose for this figure says the interval
+* "does not cross zero", so zero must be visible.  Two things are needed.
+* -xscale(range(0 ...))- forces the axis to include it; and the reference
+* line is drawn with -pci-, NOT -xline()-.  With -rcap ..., horizontal-
+* the axes are swapped, and the -xline(0)- that used to sit here silently
+* drew nothing in every run through 19 Aug 2026.  -pci- takes explicit
+* (y1 x1 y2 x2) coordinates and is immune to the swap.
 
 preserve
     clear
@@ -810,25 +1145,49 @@ preserve
     gen lo      = .
     gen hi      = .
 
-    replace b  = `fl_credits_y1_b'                                  in 1
-    replace lo = `fl_credits_y1_b'  - 1.96 * `fl_credits_y1_se'   in 1
-    replace hi = `fl_credits_y1_b'  + 1.96 * `fl_credits_y1_se'   in 1
+    replace b  = `fl_credits_y1_b'                                    in 1
+    if "`ci_type'" == "robust" {
+        replace lo = `fl_credits_y1_lo'                               in 1
+        replace hi = `fl_credits_y1_hi'                               in 1
+        local ci_label "robust bias-corrected 95% CI"
+    }
+    else {
+        replace lo = `fl_credits_y1_b' - 1.96 * `fl_credits_y1_se'  in 1
+        replace hi = `fl_credits_y1_b' + 1.96 * `fl_credits_y1_se'  in 1
+        local ci_label "conventional 95% CI"
+    }
+
+    * Upper end of the x axis: round the interval's top up to the next
+    * whole unit, with a minimum of 10 so the figure keeps a stable shape.
+    * The lower end is -0.4 rather than 0 so the dashed zero line stands
+    * clear of the plot frame instead of sitting on top of it; the first
+    * x label is still 0.
+    local xmax = max(10, ceil(hi[1]) + 1)
 
     twoway ///
-        (rcap lo hi j, horizontal lcolor(gs0) lwidth(medium))         ///
-        (scatter j b,  mcolor(gs0) msymbol(D) msize(large)),          ///
-        xline(0, lpattern(dash) lcolor(gs8))                          ///
-        ylabel(1 "Credits Y1 (cr-hrs)",                               ///
-               angle(0) labsize(small))                               ///
-        xtitle("Fuzzy LATE (rdrobust, CCT MSE-optimal h*)")           ///
-        ytitle("") legend(off) scheme(s2mono)                         ///
-        title("Fuzzy RD: LATE for First-Year Credits")                ///
-        subtitle("Point estimate with 95% CI")                        ///
-        note("Complier LATE = RF / FS."                               ///
+        (pci 0.6 0 1.4 0, lpattern(dash) lcolor(gs8) lwidth(medthin))  ///
+        (rcap lo hi j, horizontal lcolor(gs0) lwidth(medium))          ///
+        (scatter j b,  mcolor(gs0) msymbol(D) msize(large)),           ///
+        xscale(range(-0.4 `xmax'))                                     ///
+        xlabel(0(2)`xmax')                                             ///
+        yscale(range(0.5 1.5))                                         ///
+        ylabel(1 "Credits Y1 (cr-hrs)",                                ///
+               angle(0) labsize(small))                                ///
+        xtitle("Fuzzy LATE (rdrobust, CCT MSE-optimal h*)")            ///
+        ytitle("") legend(off) scheme(s2mono)                          ///
+        title("Fuzzy RD: LATE for First-Year Credits")                 ///
+        subtitle("Point estimate with `ci_label'")                     ///
+        note("Wald ratio: reduced form / first stage."                 ///
+             "credits_y1 is generated from D_sharp, so this is Wald"   ///
+             "arithmetic rather than a complier effect (Sec. 10.2.3)." ///
              "rdrobust fuzzy option, kernel(triangular), bwselect(mserd).") ///
-        name(fig10_2, replace)
+        name(fig10_4, replace)
 
-    graph export "$graphs_dir/fig10_2_fuzzy_late_credits.png", replace width(1400)
+    graph export "$graphs_dir/fig10_4_fuzzy_late_credits.png", replace width(1400)
+    chkfig "$graphs_dir/fig10_4_fuzzy_late_credits.png"
+
+    di as text "   Fig. 10.4: LATE = " %6.3f b[1] ///
+               "   `ci_label' = [" %6.3f lo[1] ", " %6.3f hi[1] "]"
 restore
 
 di as text "All RD plots exported."
@@ -859,10 +1218,29 @@ di as text    "   True simulated LATE (latent scale) = `true_late'."
 di as text    "   Implied binary persistence effect approx. 0.13-0.16 pp."
 
 compress
-save "ch10_rdd_hsls09_synthetic.dta", replace
+* Synthetic dataset goes to $out_root/data, not the current directory.
+* Filename matches the chapter's data-availability section, which tells
+* readers the repository file for Section 10.2 is Example_10_2_1.dta.
+capture mkdir "$out_root/data"
+save "$out_root/data/Example_10_2_1.dta", replace
 
-di as text _n "=== RDD dataset saved  ->  ch10_rdd_hsls09_synthetic.dta ==="
+* Roll call: re-confirm the four manuscript figures at the end of the run,
+* so one block in the log answers "did Section 10.2 produce its figures?"
+di as text _n "=== Manuscript figures for Section 10.2 ==="
+foreach f in fig10_1_rdd_plot_credits fig10_2_rdd_density_test ///
+             fig10_3_rdd_plot_firststage fig10_4_fuzzy_late_credits {
+    chkfig "$graphs_dir/`f'.png"
+}
+di as text "   Directory listed below is the one they were written to:"
+di as text "   $graphs_dir"
+capture noisily dir "$graphs_dir/fig10_*.png"
+
+di as text _n "=== RDD dataset saved -> $out_root/data/Example_10_2_1.dta ==="
 di as text    "=== Section 10.2 complete.                                 ==="
+
+* Close the named log opened at the top.  -capture- so that re-running the
+* script, or a master driver that has already closed it, is harmless.
+capture log close rdd_log
 
 *========================================================================
 * END OF RDD.do

@@ -330,7 +330,7 @@ di as text "Georgia_DiD.do: logging to $log_dir/Georgia_DiD.log"
 * is the fastest way to settle "did my edit take effect?" without diffing
 * files.  Bump the date when the script changes.
 * ------------------------------------------------------------------------
-di as text "Georgia_DiD.do: version 2026-09-02b"
+di as text "Georgia_DiD.do: version 2026-09-23b"
 di as text "Georgia_DiD.do: working directory = " c(pwd)
 di as text "Georgia_DiD.do: out_root   = $out_root"
 di as text "Georgia_DiD.do: graphs_dir = $graphs_dir"
@@ -612,9 +612,18 @@ forvalues k = 0/`kpost' {
 }
 
 * Assemble regressor list (pre-periods descending, then post)
+* leads_all  = all `=`kpre'-1' lead terms, used for the boundary demonstration below
+* leads_ex   = leads WITHOUT the binned F{kpre} term, the usable joint test
 local evars ""
+local leads_all ""
 forvalues k = `kpre'(-1)2 {
-    local evars "`evars' F`k'_ga"
+    local evars     "`evars' F`k'_ga"
+    local leads_all "`leads_all' F`k'_ga"
+}
+local kpre_m1 = `kpre' - 1
+local leads_ex ""
+forvalues k = `kpre_m1'(-1)2 {
+    local leads_ex "`leads_ex' F`k'_ga"
 }
 forvalues k = 0/`kpost' {
     local evars "`evars' L`k'_ga"
@@ -626,6 +635,50 @@ forvalues k = 0/`kpost' {
 * showing output the script no longer produces.
 xtreg lngenop `evars' $controls i.fy, fe vce(cluster fips)
 estimates store es_twfe
+
+* ── Joint pre-trend (lead) tests — the CONTRAST is the point ────────────
+* With G = 16 clusters the cluster-robust VCE has rank at most G - 1 = 15.
+*
+* TEST 1 imposes all 15 lead restrictions, which sits EXACTLY at that rank
+* boundary.  Stata returns rc = 0 and a finite F, but the required inverse
+* is numerically unstable and the statistic is arbitrary: F ~ 5.97e+05,
+* four orders of magnitude above anything the individual lead t-statistics
+* (all between 0.4 and 4.0) could support.  DO NOT REPORT IT.  It is run
+* here only so the log documents the failure mode -- a reader who runs the
+* obvious test and sees p ~ 1e-40 needs to know why it is meaningless.
+*
+* TEST 2 drops the binned F{kpre} term, which collects all periods at or
+* before -{kpre} and is the least interpretable of the leads.  That brings
+* the test to 14 restrictions, inside the rank bound, and it returns a
+* usable F(14,15) = 90.77.  Dropping one further lead gives F(13,15) =
+* 97.50, so the instability is confined to the 15th restriction and the
+* 14-restriction test is on stable ground.  THIS is the number the
+* manuscript reports.
+*
+* Both are joint counterparts to the single-restriction trend-interaction
+* test above; all three reject the no-pre-trend null.
+* NOTE: this is also why the model F is missing from the table above --
+* there the test imposes MORE restrictions than the rank supports, and
+* Stata returns missing rather than an unstable number.
+di as text _n "--- Joint lead tests (rank bound: G - 1 = 15) ---"
+
+capture test `leads_all'
+if _rc == 0 {
+    di as text "   15 restrictions (AT the rank bound, NOT usable):" _n ///
+               "      F(15,15) = " %14.2f r(F) "   p = " %10.3e r(p)
+}
+else di as text "   15 restrictions: test failed, rc = " _rc
+
+capture test `leads_ex'
+if _rc == 0 {
+    local jl_F = r(F)
+    local jl_p = r(p)
+    di as text "   14 restrictions (binned F`kpre'_ga dropped) — REPORTED:" _n ///
+               "      F(14,15) = " %14.2f `jl_F' "   p = " %10.4f `jl_p'
+    if `jl_p' < 0.05 di as text "      RESULT: joint leads reject; pre-trend present."
+    else             di as text "      RESULT: joint leads do not reject."
+}
+else di as text "   14 restrictions: test failed, rc = " _rc
 
 * Extract coefficients into a temporary dataset for plotting
 preserve
@@ -915,6 +968,11 @@ capture {
 
 if _rc == 0 {
     di as text "   synth converged."
+
+    * Print the fit and the donor weights (synth's own output is hidden by
+    * -capture- above).  Section 10.5 of the manuscript quotes both.
+    di as text "   Pre-treatment RMSPE: " %7.4f el(e(RMSPE),1,1)
+    matrix list e(W_weights), format(%6.3f) title("Unit weights")
 
     * ── Plot 1: Actual vs. Synthetic Georgia trend ──────────────
     preserve
@@ -1650,30 +1708,44 @@ di as text    "============================================================"
 di as text    "  Figures exported to: $graphs_dir"
 di as text    "  Data files: results.csv  results_lasso.csv  results_combined.csv"
 di as text    ""
-di as text    "  PRIMARY FINDING"
-di as text    "  TWFE (baseline): lngenop DiD = " ///
-              %7.4f `twfe_b' " (SE = " %6.4f `twfe_se' ", p = " %5.3f `twfe_p' ")"
-di as text    "  LASSO-DiD: identical to TWFE (full control set selected by LASSO)."
+di as text    "  PRE-TREND EVIDENCE"
+if !missing(`pt_b') ///
+    di as text "  Pre-2018 trend interaction = " %7.4f `pt_b' ///
+               " per year (p = " %6.4f `pt_p' ")"
+di as text    "  Parallel trends is rejected: Georgia was already diverging"
+di as text    "  from the comparison states before consolidation."
 di as text    ""
-di as text    "  CROSS-ESTIMATOR COMPARISON"
-if !missing(`scm_att') ///
-    di as text "  SCM post-treatment gap = " %7.4f `scm_att' ///
-               " — OPPOSITE sign to TWFE; discuss in text."
-if !missing(`sdid_att') ///
-    di as text "  SDID ATT = " %7.4f `sdid_att'
-if !missing(`cs_att') ///
-    di as text "  CS-DiD ATT = " %7.4f `cs_att' ///
-               " — near zero; diverges substantially from TWFE."
+
+di as text    "  ESTIMATES THAT IMPOSE PARALLEL TRENDS"
+di as text    "  TWFE (baseline): DiD = " %7.4f `twfe_b' ///
+              " (SE = " %6.4f `twfe_se' ", p = " %5.3f `twfe_p' ")"
+di as text    "  LASSO-DiD: all four controls selected, so identical to TWFE;"
+di as text    "  it adds no independent evidence."
+di as text    "  These are the only specifications that reach significance."
 di as text    ""
-di as text    "  ROBUSTNESS"
-di as text    "  Pre-trend placebo (2012): p = " %5.3f `placebo_p' " — no false positive."
+
+di as text    "  ESTIMATES THAT RELAX PARALLEL TRENDS"
+if !missing(`scm_att')  di as text "  SCM post-treatment gap   = " %7.4f `scm_att'
+if !missing(`sdid_att') di as text "  SDID ATT                 = " %7.4f `sdid_att'
+if !missing(`cs_att')   di as text "  CS-DiD ATT               = " %7.4f `cs_att'
+if !missing(`b_tr')     di as text "  TWFE + state trends      = " %7.4f `b_tr' ///
+                                   "  (p = " %6.4f `p_tr' ")"
+di as text    "  All small and not significant, with differing signs --"
+di as text    "  the pattern expected if the true effect is near zero."
+di as text    ""
+
+di as text    "  POWER"
 di as text    "  Permutation p = " %5.3f `perm_p' ///
-              " (note: with G=15 donors, permutation test has low power)."
+              " (one treated state, 15 comparison states: low power)."
 di as text    "  LOO range [" %6.4f `loo_min' ", " %6.4f `loo_max' ///
-              "] — all same sign, estimate not driven by any single control."
+              "] -- stable, but dropping a state does not relax parallel trends."
+di as text    "  Placebo (2012): p = " %5.3f `placebo_p' ///
+              " -- tests for a break at one date, not a gradual pre-trend."
 di as text    ""
-di as text    "  NOTE: SCM and CS-DiD diverge from TWFE in magnitude and direction."
-di as text    "  Chapter prose should address this tension directly (see §10.9)."
+
+di as text    "  CONCLUSION"
+di as text    "  These data cannot detect an effect of consolidation on"
+di as text    "  operating expenditures. See Section 10.9.1."
 di as text    "============================================================"
 
 di as text _n "  FIGURE ROLL CALL (independent re-check of every export)"

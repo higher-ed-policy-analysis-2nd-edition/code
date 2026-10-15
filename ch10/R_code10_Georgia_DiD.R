@@ -39,6 +39,38 @@
 #
 # REVISION
 # --------
+# Oct 2026 — SYNC PASS against Georgia_DiD.do 2026-09-23b.  Four changes,
+#            three of them real defects on the R side:
+#            (a) BUG: the Section 10.8 reload read a bare "ga_did_work.rds"
+#                from the WORKING DIRECTORY while Section 10.3.1 writes it to
+#                data_dir.  It only ever worked when a stale copy sat beside
+#                the script.  Now file.path(data_dir, ...), matching the
+#                Stata  use "$out_root/data/ga_did_work.dta".
+#            (b) BUG: Section 10.7.3 validated the downloaded CSV against
+#                columns Example_10_7_3.csv does not have (state_id, year,
+#                lngenop, first_treat), so the synthetic fallback ran on
+#                EVERY run while printing "Download failed" -- the wrong
+#                cause.  This is the R counterpart of the v7 fix on the Stata
+#                side, carried for months after Stata closed it.  Validation
+#                now tests fips / fy / generalpublicoperations and builds the
+#                canonical variables after import.
+#            (c) Added the use_synthetic toggle (Georgia_DiD.do v8), default
+#                TRUE, so the chapter default is explicit rather than an
+#                accident of a failing download.
+#            (d) Section 10.5 now prints the pre-treatment RMSPE and the
+#                non-zero donor weights, matching the two lines added to
+#                Georgia_DiD.do at 2026-09-23b.  Synth has no e(RMSPE), so
+#                the RMSPE is computed from the fitted pre-treatment gaps --
+#                the same quantity by the definition in Eq. 10.22.
+#            Stamp 2026-10-15a.
+# Sep 2026 — ch10_chkfig() added: an independent re-check after each of the
+#            twelve ggsave() calls, plus an end-of-run roll call and a listing
+#            of every fig10_*.png in graphs_dir.  ggsave() returning without
+#            error is not evidence a file reached disk.  Mirrors Stata's
+#            chkfig (Georgia_DiD.do v18) and RDD.R.  Uses cat(), not
+#            message(), so the lines land in the log clean.  Diagnostic output
+#            only; no estimation, sample, or figure changed.  Stamp
+#            2026-09-02b.
 # Sep 2026 — Fig. 10.9 title and subtitle rewritten to match the manuscript
 #            caption and to drop "cohorts" in favour of "groups": title now
 #            "Staggered Adoption: Three Simulated Groups", subtitle "Groups
@@ -176,9 +208,29 @@ if (!exists("ch10_start_log")) {
 ch10_own_log <- !isTRUE(getOption("ch10_logging"))
 ch10_start_log("R_code10_Georgia_DiD.log")
 
-cat("R_code10_Georgia_DiD.R: version 2026-09-02a\n")
+cat("R_code10_Georgia_DiD.R: version 2026-10-15a\n")
 cat("  out_root  =", out_root, "\n")
 cat("  graphs_dir=", graphs_dir, "\n")
+
+# ---------------------------------------------------------------------
+# ch10_chkfig() -- independent verification that a figure reached disk.
+# ggsave() returning without error is not evidence that a file exists at
+# the path we think it does.  This re-stats the file and prints its byte
+# size, so the log carries proof rather than a claim.  Matches RDD.R and
+# Stata's chkfig.  Defined unconditionally: a copy left in the global
+# environment by an earlier script in the same session is the stale state
+# this chapter has been bitten by before.  cat(), not message(), so the
+# line lands in the log clean.
+# ---------------------------------------------------------------------
+ch10_chkfig <- function(path) {
+  if (file.exists(path)) {
+    cat(sprintf("   chkfig: OK  %9s bytes   %s\n",
+                format(file.size(path), big.mark = ","), basename(path)))
+  } else {
+    cat(sprintf("   chkfig: MISSING   %s\n", path))
+  }
+}
+ch10_figs <- character(0)   # roll-call register, appended by each export
 
 
 
@@ -407,6 +459,8 @@ p_pt <- ggplot(pt_df, aes(x = fy, y = lngenop,
 
 ggsave(file.path(graphs_dir, "fig10_5_parallel_trends_R.png"),
        p_pt, width = 7, height = 5, dpi = 200)
+ch10_chkfig(file.path(graphs_dir, "fig10_5_parallel_trends_R.png"))
+ch10_figs <- c(ch10_figs, "fig10_5_parallel_trends_R.png")
 print(p_pt)
 cat("   fig10_5_parallel_trends_R.png exported\n")
 
@@ -470,6 +524,46 @@ fml_es <- as.formula(paste(
 ))
 fit_es <- feols(fml_es, data = df, cluster = ~fips)
 
+# -- Joint pre-trend (lead) tests --------------------------------------
+# Counterpart to the joint tests in Georgia_DiD.do.  With G = 16 clusters
+# the cluster-robust VCE has rank at most G - 1 = 15, so a joint test of
+# all 15 leads sits EXACTLY at that rank boundary.  In Stata that returns
+# a finite but arbitrary statistic (F ~ 5.97e+05); the inverse exists
+# numerically but is unstable.  Dropping the binned F16 term -- which
+# collects all periods at or before -16 and is the least interpretable of
+# the leads -- brings the test to 14 restrictions, inside the bound, and
+# Stata returns a usable F(14,15) = 90.77 (p < 0.0001).
+#
+# Both tests are run here so the R log documents the same failure mode.
+# fixest's small-sample correction and degrees-of-freedom accounting are
+# not identical to xtreg's, so the F values will NOT match the book's even
+# though the data are the same real SHEEO panel.  Per the chapter's policy,
+# the manuscript reports the STATA figures; this block reproduces the
+# PROCEDURE.  See the technical appendix on reproducing the analyses in R.
+cat("\n--- Joint lead tests (rank bound: G - 1 = 15) ---\n")
+
+w15 <- try(wald(fit_es, keep = "^F(1[0-6]|[2-9])_ga$", print = FALSE),
+           silent = TRUE)
+if (!inherits(w15, "try-error")) {
+  cat(sprintf("   15 restrictions (AT the rank bound, NOT usable): F = %.2f, p = %.3e\n",
+              w15$stat, w15$p))
+} else {
+  cat("   15 restrictions: test failed —", conditionMessage(attr(w15, "condition")), "\n")
+}
+
+w14 <- try(wald(fit_es, keep = "^F(1[0-5]|[2-9])_ga$", print = FALSE),
+           silent = TRUE)
+if (!inherits(w14, "try-error")) {
+  cat(sprintf("   14 restrictions (binned F16_ga dropped): F = %.2f, p = %.4f\n",
+              w14$stat, w14$p))
+  cat(if (w14$p < 0.05)
+        "      RESULT: joint leads reject; pre-trend present.\n"
+      else
+        "      RESULT: joint leads do not reject.\n")
+} else {
+  cat("   14 restrictions: test failed —", conditionMessage(attr(w14, "condition")), "\n")
+}
+
 # Build plot data frame
 es_coefs <- coef(fit_es)
 es_ses   <- se(fit_es)
@@ -514,6 +608,8 @@ p_es <- ggplot(es_df, aes(x = t, y = b)) +
 
 ggsave(file.path(graphs_dir, "fig10_8_event_study_R.png"),
        p_es, width = 7, height = 5, dpi = 200)
+ch10_chkfig(file.path(graphs_dir, "fig10_8_event_study_R.png"))
+ch10_figs <- c(ch10_figs, "fig10_8_event_study_R.png")
 print(p_es)
 cat("   fig10_8_event_study_R.png exported\n")
 
@@ -592,6 +688,8 @@ p_rob <- ggplot(rob_df, aes(x = b, y = spec)) +
 
 ggsave(file.path(graphs_dir, "fig10_3_2_robustness_R.png"),
        p_rob, width = 7, height = 4, dpi = 200)
+ch10_chkfig(file.path(graphs_dir, "fig10_3_2_robustness_R.png"))
+ch10_figs <- c(ch10_figs, "fig10_3_2_robustness_R.png")
 print(p_rob)
 cat("   fig10_3_2_robustness_R.png exported\n")
 
@@ -718,6 +816,8 @@ p_lasso <- ggplot(lasso_comp_df, aes(x = b, y = spec)) +
 
 ggsave(file.path(graphs_dir, "fig10_4_1_lasso_comparison_R.png"),
        p_lasso, width = 7, height = 3.5, dpi = 200)
+ch10_chkfig(file.path(graphs_dir, "fig10_4_1_lasso_comparison_R.png"))
+ch10_figs <- c(ch10_figs, "fig10_4_1_lasso_comparison_R.png")
 print(p_lasso)
 cat("   fig10_4_1_lasso_comparison_R.png exported\n")
 
@@ -842,6 +942,54 @@ if (synth_available) {
     cat(sprintf("   synth converged. SCM average post-treatment gap: %7.4f\n",
                 scm_att))
 
+    # -- Pre-treatment fit and donor weights --------------------------------
+    # Mirrors Georgia_DiD.do (2026-09-23b), which prints e(RMSPE) and
+    # -matrix list e(W_weights)- after synth.  Neither was reported in either
+    # language before, so Section 10.5's statement about how closely the
+    # synthetic control tracks Georgia had no printed source, and the donor
+    # weights the method turns on were invisible.
+    #
+    # Synth has no e(RMSPE) equivalent, so the pre-treatment RMSPE is computed
+    # directly from the fitted gaps -- the same quantity, by its definition in
+    # Eq. 10.22: root mean squared pre-treatment prediction error.
+    scm_rmspe <- sqrt(mean(synth_df$gap[synth_df$fy <= 2017]^2, na.rm = TRUE))
+    cat(sprintf("   Pre-treatment RMSPE: %7.4f\n", scm_rmspe))
+
+    cat("   Donor weights (non-zero only):\n")
+    # solution.w is row-named by the DONOR UNIT ID (fips), not the state
+    # name, so the ids are mapped back through the SCM input frame.  Printing
+    # bare fips codes would make the weights unreadable next to Stata's
+    # e(W_weights), which carries unit labels.
+    fips_to_state <- df_synth %>%
+      distinct(fips, state) %>%
+      { setNames(.$state, as.character(.$fips)) }
+    w_vals <- as.numeric(synth_out$solution.w)
+    w_ids  <- rownames(synth_out$solution.w)
+    # solution.w is not guaranteed to carry rownames across Synth versions;
+    # fall back to the donor id order dataprep was given rather than letting a
+    # NULL make the data.frame below fail on mismatched lengths.
+    if (is.null(w_ids) || length(w_ids) != length(w_vals)) {
+      w_ids <- as.character(donor_fips)
+    }
+    w_lab <- unname(fips_to_state[w_ids])
+    w_df  <- data.frame(
+      state  = ifelse(is.na(w_lab), w_ids, w_lab),
+      weight = w_vals,
+      stringsAsFactors = FALSE
+    )
+    # synth returns a weight for every donor, most of them ~0.  Printing all
+    # fifteen buries the three or four that carry the synthetic control.
+    w_nz <- w_df[w_df$weight > 0.001, ]
+    w_nz <- w_nz[order(-w_nz$weight), ]
+    if (nrow(w_nz) == 0) {
+      cat("     (none above 0.001 -- inspect synth_out$solution.w directly)\n")
+    } else {
+      for (i in seq_len(nrow(w_nz))) {
+        cat(sprintf("     %-20s %6.3f\n", w_nz$state[i], w_nz$weight[i]))
+      }
+      cat(sprintf("     %-20s %6.3f\n", "(sum)", sum(w_df$weight)))
+    }
+
     # fig10_4: Actual vs. synthetic
     p_scm <- ggplot(synth_df, aes(x = fy)) +
       geom_vline(xintercept = 2018, linetype = "dotted",
@@ -858,6 +1006,8 @@ if (synth_available) {
 
     ggsave(file.path(graphs_dir, "fig10_6_scm_trends_R.png"),
            p_scm, width = 7, height = 5, dpi = 200)
+    ch10_chkfig(file.path(graphs_dir, "fig10_6_scm_trends_R.png"))
+    ch10_figs <- c(ch10_figs, "fig10_6_scm_trends_R.png")
     print(p_scm)
 
     # fig10_5_1: Gap plot
@@ -875,6 +1025,8 @@ if (synth_available) {
 
     ggsave(file.path(graphs_dir, "fig10_5_1_scm_gap_R.png"),
            p_gap, width = 7, height = 5, dpi = 200)
+    ch10_chkfig(file.path(graphs_dir, "fig10_5_1_scm_gap_R.png"))
+    ch10_figs <- c(ch10_figs, "fig10_5_1_scm_gap_R.png")
     print(p_gap)
     cat("   fig10_5_1_scm_gap + fig10_6_scm_trends_R.png exported\n")
 
@@ -946,6 +1098,8 @@ if (sdid_available) {
       theme_springer()
     fig_sdid <- file.path(graphs_dir, "fig10_7_sdid_trends_R.png")
     ggsave(fig_sdid, p_sdid, width = 7, height = 5, dpi = 200)
+    ch10_chkfig(fig_sdid)
+    ch10_figs <- c(ch10_figs, basename(fig_sdid))
     cat("   fig10_7_sdid_trends_R.png exported\n")
   }, error = function(e) {
     cat("   synthdid failed: ", conditionMessage(e), "\n",
@@ -1021,6 +1175,8 @@ tryCatch({
 
   ggsave(file.path(graphs_dir, "fig10_7_2_csdid_R.png"),
          p_cs, width = 7, height = 5, dpi = 200)
+  ch10_chkfig(file.path(graphs_dir, "fig10_7_2_csdid_R.png"))
+  ch10_figs <- c(ch10_figs, "fig10_7_2_csdid_R.png")
   print(p_cs)
   cat("   fig10_7_2_csdid_R.png exported\n")
 
@@ -1044,15 +1200,73 @@ cat("\n============================================================\n")
 cat("SECTION 10.7.3: MULTI-STATE STAGGERED ADOPTION\n")
 cat("============================================================\n")
 
-# Attempt download; validate; fall back to synthetic panel
+# TWO DATA PATHS, selected by the use_synthetic toggle below.  Mirrors
+# Georgia_DiD.do v8.
+#
+#   use_synthetic TRUE (default, used in the chapter)
+#     Simulated 16-unit panel, 20 years (2001-2020), cohorts 2014, 2016, 2018
+#     plus 4 never-treated units.  Cohort effects are hardcoded in the DGP at
+#     -0.06, -0.04 and -0.03, so the true cohort-weighted ATT is about -0.043.
+#     A KNOWN TARGET is what makes the TWFE-vs-CS comparison interpretable:
+#     the reader can check which estimator recovers it.
+#
+#   use_synthetic FALSE
+#     Example_10_7_3.csv from GitHub: real SHEEO data, 48 states, FY 2001-2024,
+#     with cohorts assigned by FIPS to Georgia (2013), Wisconsin (2018) and
+#     Pennsylvania (2022).  Realistic panel dimensions, but the cohort
+#     assignment is illustrative, so there is no true effect to compare the
+#     estimators against.
+use_synthetic <- TRUE
+
+# SCHEMA BUG FIXED (the R counterpart of Georgia_DiD.do's v7 fix).  This block
+# validated the downloaded CSV against c("state_id","year","lngenop",
+# "first_treat") -- columns Example_10_7_3.csv DOES NOT HAVE.  It carries the
+# raw SHEEO schema (fips, fy, GeneralPublicOperations, ...), so the stopifnot
+# always failed and every run silently took the synthetic fallback while
+# printing "Download failed", which named the wrong cause.  The log confirms
+# it: that line appears in every R run on record.  The validation now tests
+# the columns the file actually has, and the canonical panel variables are
+# built after import, exactly as the Stata script does.
 stag_df <- tryCatch({
+  if (use_synthetic) stop("use_synthetic = TRUE", call. = FALSE)
   d <- read.csv(paste0(gh_raw, "/Example_10_7_3.csv"))
-  stopifnot(all(c("state_id","year","lngenop","first_treat") %in% names(d)))
+
+  # Normalise headers the way the ETWFE script does: read.csv mangles spaces
+  # to dots, and the raw SHEEO names arrive without underscores.
+  names(d) <- tolower(gsub("[._]+", "_", trimws(names(d))))
+  names(d) <- gsub("^_|_$", "", names(d))
+  names(d)[1] <- gsub("^\\W+", "", names(d)[1])          # strip BOM
+
+  stopifnot(all(c("fips", "fy", "generalpublicoperations") %in% names(d)))
+
+  # Build the canonical variables the resolver below expects, so the rest of
+  # the section is identical on both data paths.
+  d <- d %>%
+    rename(state_id = fips, year = fy) %>%
+    mutate(
+      lngenop_s = log(generalpublicoperations),
+      # Staggered consolidation cohorts, assigned by state FIPS code.
+      # 0 = never treated.  Same assignment as ETWFE.do / R_code10_ETWFE.R.
+      gvar_s = case_when(
+        state_id == 13 ~ 2013L,   # Georgia
+        state_id == 55 ~ 2018L,   # Wisconsin
+        state_id == 42 ~ 2022L,   # Pennsylvania
+        TRUE           ~ 0L
+      )
+    ) %>%
+    filter(is.finite(lngenop_s))
+
   write.csv(d, "Example_10_7_3.csv", row.names = FALSE)
-  cat("   Example_10_7_3.csv loaded and validated from GitHub\n")
+  cat(sprintf("   Example_10_7_3.csv loaded and validated from GitHub (N = %d)\n",
+              nrow(d)))
   d
 }, error = function(e) {
-  cat("   Download failed — generating synthetic staggered panel\n")
+  if (use_synthetic) {
+    cat("   use_synthetic = TRUE — generating simulated staggered panel\n")
+  } else {
+    cat("   Download or validation failed (", conditionMessage(e),
+        ") — generating simulated staggered panel\n", sep = "")
+  }
   # 16 SREB states, 20 years (2001-2020)
   set.seed(20260511)
   expand.grid(state_id = 1:16, year = 2001:2020) %>%
@@ -1155,6 +1369,8 @@ tryCatch({
 
   ggsave(file.path(graphs_dir, "fig10_9_staggered_es_R.png"),
          p_stag, width = 7, height = 5, dpi = 200)
+  ch10_chkfig(file.path(graphs_dir, "fig10_9_staggered_es_R.png"))
+  ch10_figs <- c(ch10_figs, "fig10_9_staggered_es_R.png")
   print(p_stag)
   cat("   fig10_9_staggered_es_R.png exported\n")
 
@@ -1179,8 +1395,13 @@ tryCatch({
   cat("   Staggered CS-DiD failed: ", conditionMessage(e), "\n", sep = "")
 })
 
-# Reload main dataset
-df <- readRDS("ga_did_work.rds")
+# Reload main dataset.
+# PATH BUG FIXED: this read a bare "ga_did_work.rds" from the WORKING
+# DIRECTORY while Section 10.3.1 saves it to data_dir.  It only ever
+# succeeded when a stale copy happened to sit beside the script -- exactly
+# the working-directory drift the tables fix closed on the Stata side.
+# Mirrors Georgia_DiD.do's  use "$out_root/data/ga_did_work.dta", clear
+df <- readRDS(file.path(data_dir, "ga_did_work.rds"))
 df <- df %>%
   mutate(rel_year = fy - 2018, gvar = ifelse(treat_state == 1, 2018L, 0L))
 # Re-attach event-study dummies (needed for permutation section)
@@ -1254,6 +1475,8 @@ p_perm <- ggplot(perm_df, aes(x = b_placebo)) +
 
 ggsave(file.path(graphs_dir, "fig10_8_1_permutation_R.png"),
        p_perm, width = 7, height = 5, dpi = 200)
+ch10_chkfig(file.path(graphs_dir, "fig10_8_1_permutation_R.png"))
+ch10_figs <- c(ch10_figs, "fig10_8_1_permutation_R.png")
 print(p_perm)
 cat("   fig10_8_1_permutation_R.png exported\n")
 
@@ -1307,6 +1530,8 @@ p_loo <- ggplot(loo_df, aes(x = obs, y = b_loo)) +
 
 ggsave(file.path(graphs_dir, "fig10_8_2_loo_R.png"),
        p_loo, width = 7, height = 5, dpi = 200)
+ch10_chkfig(file.path(graphs_dir, "fig10_8_2_loo_R.png"))
+ch10_figs <- c(ch10_figs, "fig10_8_2_loo_R.png")
 print(p_loo)
 cat("   fig10_8_2_loo_R.png exported\n")
 
@@ -1392,6 +1617,8 @@ p_summ <- ggplot(summ_df, aes(x = b, y = label)) +
 
 ggsave(file.path(graphs_dir, "fig10_9_1_summary_R.png"),
        p_summ, width = 7, height = 4, dpi = 200)
+ch10_chkfig(file.path(graphs_dir, "fig10_9_1_summary_R.png"))
+ch10_figs <- c(ch10_figs, "fig10_9_1_summary_R.png")
 print(p_summ)
 cat("   fig10_9_1_summary_R.png exported\n")
 
@@ -1403,35 +1630,56 @@ cat("SECTIONS 10.3-10.9 COMPLETE\n")
 cat("============================================================\n")
 cat(sprintf("  Figures exported to: %s\n", graphs_dir))
 cat("  Data files: results.csv  results_lasso.csv  results_combined.csv\n\n")
-cat("  PRIMARY FINDING\n")
-cat(sprintf("  TWFE (baseline): lngenop DiD = %7.4f (SE = %6.4f, p = %5.3f)\n",
+cat("  PRE-TREND EVIDENCE\n")
+if (!is.na(pt_b))
+  cat(sprintf("  Pre-2018 trend interaction = %7.4f per year (p = %6.4f)\n",
+              pt_b, pt_p))
+cat("  Parallel trends is rejected: Georgia was already diverging\n")
+cat("  from the comparison states before consolidation.\n\n")
+
+cat("  ESTIMATES THAT IMPOSE PARALLEL TRENDS\n")
+cat(sprintf("  TWFE (baseline): DiD = %7.4f (SE = %6.4f, p = %5.3f)\n",
             twfe_b, twfe_se, twfe_p))
 if (n_dropped == 0) {
-  cat("  LASSO-DiD: identical to TWFE (full control set retained by LASSO).\n\n")
+  cat("  LASSO-DiD: all four controls selected, so identical to TWFE;\n")
+  cat("  it adds no independent evidence.\n")
 } else {
-  cat(sprintf("  LASSO-DiD: %7.4f — LASSO dropped %d of %d controls (retained: %s);\n",
-              lasso_b, n_dropped, length(controls), paste(S_union, collapse = ", ")))
-  cat(sprintf("  differs from TWFE by %7.4f. Note the divergence from Stata, whose\n",
-              lasso_b - twfe_b))
-  cat("  dsregress retains all four controls; penalty loadings differ.\n\n")
+  cat(sprintf("  LASSO-DiD: %7.4f (p = %5.3f) -- LASSO dropped %d of %d controls\n",
+              lasso_b, lasso_p, n_dropped, length(controls)))
+  cat(sprintf("  (retained: %s). Stata's lassopack rlasso retains all four,\n",
+              paste(S_union, collapse = ", ")))
+  cat("  so there the LASSO estimate is identical to TWFE (see Section 10.11.5).\n")
 }
-cat("  CROSS-ESTIMATOR COMPARISON\n")
-if (!is.na(scm_att))
-  cat(sprintf("  SCM post-treatment gap = %7.4f — OPPOSITE sign to TWFE; discuss in text.\n",
-              scm_att))
-if (!is.na(sdid_att))
-  cat(sprintf("  SDID ATT = %7.4f\n", sdid_att))
-if (!is.na(cs_att))
-  cat(sprintf("  CS-DiD ATT = %7.4f — near zero; diverges substantially from TWFE.\n",
-              cs_att))
-cat("\n  ROBUSTNESS\n")
-cat(sprintf("  Pre-trend placebo (2012): p = %5.3f — no false positive.\n", placebo_p))
-cat(sprintf("  Permutation p = %5.3f (note: with G=15 donors, low power).\n", perm_p))
-cat(sprintf("  LOO range [%.4f, %.4f] — all same sign, no single control drives result.\n",
+cat("  Specifications that reach significance all impose this assumption.\n\n")
+
+cat("  ESTIMATES THAT RELAX PARALLEL TRENDS\n")
+if (!is.na(scm_att))  cat(sprintf("  SCM post-treatment gap   = %7.4f\n", scm_att))
+if (!is.na(sdid_att)) cat(sprintf("  SDID ATT                 = %7.4f\n", sdid_att))
+if (!is.na(cs_att))   cat(sprintf("  CS-DiD ATT               = %7.4f\n", cs_att))
+if (!is.na(b_tr))     cat(sprintf("  TWFE + state trends      = %7.4f  (p = %6.4f)\n",
+                                  b_tr, p_tr))
+cat("  All small and not significant, with differing signs --\n")
+cat("  the pattern expected if the true effect is near zero.\n\n")
+
+cat("  POWER\n")
+cat(sprintf("  Permutation p = %5.3f (one treated state, 15 comparison states: low power).\n",
+            perm_p))
+cat(sprintf("  LOO range [%.4f, %.4f] -- stable, but dropping a state does not relax parallel trends.\n",
             loo_min, loo_max))
-cat("\n  NOTE: SCM and CS-DiD diverge from TWFE in magnitude and direction.\n")
-cat("  Chapter prose should address this tension directly (see §10.9).\n")
+cat(sprintf("  Placebo (2012): p = %5.3f -- tests for a break at one date, not a gradual pre-trend.\n\n",
+            placebo_p))
+
+cat("  CONCLUSION\n")
+cat("  These data cannot detect an effect of consolidation on\n")
+cat("  operating expenditures. See Section 10.9.1.\n")
 cat("============================================================\n")
+
+cat("\n  FIGURE ROLL CALL (independent re-check of every export)\n")
+for (f in ch10_figs) ch10_chkfig(file.path(graphs_dir, f))
+cat("\n  All PNGs currently in graphs_dir:\n")
+cat(paste0("   ", list.files(graphs_dir, pattern = "^fig10_.*\\.png$")),
+    sep = "\n")
+cat("\n============================================================\n\n")
 
 # Close the log only if this script opened it (standalone run).
 if (isTRUE(ch10_own_log)) ch10_stop_log()
