@@ -61,7 +61,7 @@
 *   Example_7_5_3_updated.dta  (primary; contains pre-generated ma_* vars)
 *   Example_7_5_3.dta          (fallback; ma_* generated in Section 1b)
 *
-* Required packages: mtefe, moremata, fwildclusterboot
+* Required packages: mtefe, moremata, boottest
 *
 * Sections (Chapter 11 numbering):
 *   1     Load dataset (Example_7_5_3_updated.dta / Example_7_5_3.dta)        [11.1]
@@ -910,8 +910,8 @@ if `run_areas' == 1 {
 
 * -----------------------------------------------------------------------
 * Wild cluster bootstrap for OLS and IV stages
-*   Webb weights, 9999 reps: runs in seconds, valid for G=50.
-*   Requires: ssc install fwildclusterboot
+*   Rademacher weights, 9999 reps: runs in seconds, valid for G=50.
+*   Requires: ssc install boottest
 * -----------------------------------------------------------------------
 
 di _n "--- Wild Cluster Bootstrap: OLS ---"

@@ -103,7 +103,7 @@ set graphics on          // Ensure graph window is active throughout
 * MTE / IV packages
 capture ssc install mtefe,   replace
 capture ssc install moremata, replace
-capture ssc install fwildclusterboot, replace
+capture ssc install boottest, replace   // wild cluster bootstrap (boottest), used by MTE_MPRTE.do
 capture ssc install estout, replace   // esttab — used by CATE.do for RTF tables
 di as text "MTE/IV packages confirmed."
 
