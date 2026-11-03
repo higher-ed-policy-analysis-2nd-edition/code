@@ -6,39 +6,22 @@
 # (2nd Edition)
 # Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch11
 # Author: Marvin A. Titus
-# Date: June 2026
+# Date: November 2026 (R translation of Stata_code11.do)
 # NOTE: Code development was assisted by Claude (Anthropic). The author
 # provided specifications and reviewed, tested, and validated all code.
 #=========================================================================
-# R translation of Stata_code11.do (tested in Stata 19.5).
-# CATE_R.R and MTE_MPRTE_R.R have each been run end-to-end against real data
-# and debugged through several rounds of fixes (see each sub-script's own
-# header for specifics). This driver script (R_code11.R) itself --
-# which only sets up shared paths/log and calls source() on each
-# sub-script in turn -- has not yet been run as a single top-to-bottom
-# call; if something goes wrong here specifically (as opposed to inside
-# CATE_R.R or MTE_MPRTE_R.R), the most likely causes are path/environment
-# setup (graphs_dir/tables_dir/logdir/syntax_dir) or the rm() call at the
-# top of this file, not the underlying statistical code. Cross-validate
-# numeric output against Stata (Chapter11_Stata_output.log) regardless,
-# since some differences will be expected (see CATE_output.log /
-# MTE_MPRTE_R_output.log discussion of HC1-vs-Stata SE conventions, and
-# the mtefe note below) rather than translation errors.
-# See the per-section NOTES below for places where R has no exact
-# package equivalent of a Stata command (`mtefe`, `boottest`) and a
-# substitute or omission strategy was used instead.
+# R translation of Stata_code11.do (Stata 19.5). Requires R 4.4 or later.
 #
-# Required packages (install once):
-#   install.packages(c("haven", "dplyr", "tidyr", "ivreg", "sandwich",
-#                       "lmtest", "car", "ggplot2", "stringr"))
-#   # Optional, for full feature parity:
-#   install.packages(c("sampleSelection", "fwildclusterboot"))
+# This driver only sets up shared paths and the master log, then calls
+# the two sub-scripts with source(). It contains no estimation code.
 #
-# Sub-scripts (sourced from syntax_dir, default "Syntax/R/"):
-#   CATE_R.R         Section 11.1.3     -- Conditional Average Treatment Effects
-#   MTE_MPRTE_R.R    Sections 11.2-11.3 -- MTE/MPRTE, CBA
+# Sub-scripts (all in syntax_dir = Syntax/R/):
+#   CATE_R.R                Section 11.1.3 -- Conditional Average Treatment
+#                           Effects (translation of CATE.do)
+#   MTE_MPRTE.R             Section 11.2   -- MTE, PRTE/MPRTE, CBA
+#                           (translation of MTE_MPRTE.do)
 #
-#   Section 11.1: Instrumental Variables and the LATE  ->  CATE_R.R
+#   Section 11.1: Instrumental Variables and the LATE
 #     OLS -> IV/2SLS (LATE) -- returns to master's degree.
 #     Instrument: state-funded graduate assistantship (GA) amount.
 #     Data: synthetic B&B panel (Example_7_5_3_updated.dta)
@@ -46,33 +29,47 @@
 #   Section 11.1.3: Conditional Average Treatment Effects  ->  CATE_R.R
 #     Heterogeneous IV returns to master's degree by observed subgroups
 #     (field, income quintile, first-generation status).
-#     Data: Example_7_5_3_updated.dta (CATE_R.R now runs first, so this
-#     is the script's first data load for the chapter run)
 #
-#   Section 11.2: Marginal Treatment Effects (MTE)  ->  MTE_MPRTE_R.R
-#     Pooled and area-specific MTE via polynomial control function;
-#     cluster bootstrap SEs; treatment effect comparison (ATE/ATT/ATU).
+#   Section 11.2.1: Polynomial Control Function Approach
+#                                         ->  MTE_MPRTE.R
+#     Pooled MTE (quadratic) and area-specific MTE (linear) estimated with
+#     mte_poly(), an R re-implementation of Stata's mtefe; state-clustered
+#     bootstrap SEs.
 #
-#   Section 11.2.3: MTE Visualization  ->  MTE_MPRTE_R.R
-#     MTE curve, propensity-score distribution, by-area curves,
-#     policy-relevant margins.
+#   Section 11.2.2: MTE Results  ->  MTE_MPRTE.R
+#     ATE/ATT/ATU/LATE/MPRTE (Tables 11.2-11.3); PRTE for eight GA
+#     funding scenarios (Tables 11.4-11.5); benefit-cost ratios
+#     (Table 11.6); MTE, policy-weight, and PRTE-intensity figures.
 #
-#   Section 11.3: Cost-Benefit Analysis  ->  MTE_MPRTE_R.R
-#     PRTE and MPRTE policy simulations (Scenarios 1-8); benefit-cost
-#     ratios translating MPRTE estimates into policy-relevant terms.
+# RUN TIME: about 5 minutes for the whole chapter (CATE_R.R takes a few
+# seconds; MTE_MPRTE.R about 4 minutes including its own
+# 500-replication bootstrap). Unlike the Stata version, the R script
+# runs its bootstrap by default because it is fast. See the RUN TIME
+# note at the top of MTE_MPRTE.R.
+#
+# R vs. STATA: point estimates match the Stata log. Anything that depends
+# on random draws (bootstrap standard errors and bands) differs between
+# the two languages, because R and Stata use different random-number
+# generators. The book reports the Stata standard errors.
+#
+# Required packages (installed below if missing):
+#   haven, dplyr, tidyr, ivreg, sandwich, lmtest, car, ggplot2, stringr,
+#   AER
 #
 # NOTE: This chapter continues from Chapter 10, which demonstrated
 # causal inference methods for state- and institution-level policies
 # (RDD, DiD, SCM, SDID, ETWFE). This script covers only the IV/CATE/MTE/
-# MPRTE/CBA content described above (Sections 11.1-11.3); see Chapter
-# 10's master script (Stata_code10.R) for the earlier material.
+# PRTE/CBA content described above (Sections 11.1-11.2); see Chapter
+# 10's master script (R_code10.R) for the earlier material.
 #=========================================================================
 
 #=========================================================================
 # IMPORTANT: Set working directory (customize this for your system)
+# Readers: the data are downloaded from GitHub into the working directory
+# if they are not already there.
 #=========================================================================
 
-# setwd("C:/Users/YourName/Documents/book-materials/ch11/data")
+# setwd("C:/Users/YourName/Documents/book-materials/ch11")
 
 #=========================================================================
 # OUTPUT DIRECTORIES AND LOG FILE
@@ -83,79 +80,61 @@
 
 # Close any stale log sink silently, then open a fresh one
 while (sink.number() > 0) sink()
-# NOTE: sink.number(type = "message") does NOT return a count of active
-# message diversions the way sink.number() does for output. Per R's own
-# documentation, it returns the CONNECTION NUMBER currently used for
-# messages, which defaults to 2 (stderr) when no diversion is active.
-# A `while (sink.number(type = "message") > 0) ...` loop therefore never
-# terminates when nothing is diverted, since 2 > 0 is always TRUE -- this
-# is an infinite loop, not a slow operation. The correct check is whether
-# the message connection differs from the default (2); only then is
-# there an actual diversion to close. Wrapped in tryCatch defensively
-# since calling sink(type="message") with nothing to undo can itself
-# raise an error on some R versions.
-if (sink.number(type = "message") != 2) {
-  tryCatch(sink(type = "message"), error = function(e) NULL)
-}
 
 if (Sys.info()[["user"]] == "marvi") {
-  graphs_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output/graphs"
-  tables_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output/tables"
-  logdir     <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output/logs"
+  out_root   <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output"
   syntax_dir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Syntax/R"
-  dir.create("C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output",
-             recursive = TRUE, showWarnings = FALSE)
-  dir.create(graphs_dir, recursive = TRUE, showWarnings = FALSE)
-  dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
-  dir.create(logdir, recursive = TRUE, showWarnings = FALSE)
-  master_log_path <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output/logs/Chapter11_R_output.log"
 } else {
-  graphs_dir <- "Output/graphs"
-  tables_dir <- "Output/tables"
-  logdir     <- "Output/logs"
+  out_root   <- "Output"
   syntax_dir <- "Syntax/R"
-  dir.create("Output", showWarnings = FALSE)
-  dir.create(graphs_dir, recursive = TRUE, showWarnings = FALSE)
-  dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
-  dir.create(logdir, recursive = TRUE, showWarnings = FALSE)
-  master_log_path <- "Output/logs/Chapter11_R_output.log"
+}
+graphs_dir <- file.path(out_root, "graphs")
+tables_dir <- file.path(out_root, "tables")
+log_dir    <- file.path(out_root, "logs")
+logdir     <- log_dir     # CATE_R.R uses this name; MTE_MPRTE.R uses log_dir
+for (p in c(out_root, graphs_dir, tables_dir, log_dir)) {
+  dir.create(p, recursive = TRUE, showWarnings = FALSE)
 }
 
-master_log_con <- file(master_log_path, open = "wt")
+# Absolute paths, so later setwd() calls in the sub-scripts cannot break them
+out_root   <- normalizePath(out_root,   winslash = "/")
+graphs_dir <- normalizePath(graphs_dir, winslash = "/")
+tables_dir <- normalizePath(tables_dir, winslash = "/")
+log_dir    <- normalizePath(log_dir,    winslash = "/")
+logdir     <- log_dir
+syntax_dir <- normalizePath(syntax_dir, winslash = "/", mustWork = FALSE)
+
+# Master log. Only ordinary output is logged; the message stream is not
+# diverted, so errors still reach the console if a sub-script stops.
+master_log_path <- file.path(log_dir, "Chapter11_R_output.log")
+master_log_con  <- file(master_log_path, open = "wt")
 sink(master_log_con, split = TRUE)
-sink(master_log_con, type = "message", append = TRUE)
 
 cat("Chapter 11 log opened:", format(Sys.time()), "\n")
 cat("Graphs directory:", graphs_dir, "\n")
 
-rm(list = setdiff(ls(), c("graphs_dir", "tables_dir", "logdir", "syntax_dir",
-                           "master_log_con", "master_log_path")))
+rm(list = setdiff(ls(), c("out_root", "graphs_dir", "tables_dir", "log_dir",
+                          "logdir", "syntax_dir",
+                          "master_log_con", "master_log_path")))
 
 #=========================================================================
-# PACKAGE INSTALLATIONS (run once; comment out thereafter)
+# PACKAGE INSTALLATIONS (installs only what is missing)
 #=========================================================================
 
 required_pkgs <- c("haven", "dplyr", "tidyr", "ivreg", "sandwich", "lmtest",
-                    "car", "ggplot2", "stringr")
-optional_pkgs <- c("sampleSelection", "fwildclusterboot")
-
+                   "car", "ggplot2", "stringr", "AER")
 missing_required <- setdiff(required_pkgs, rownames(installed.packages()))
-if (length(missing_required) > 0) {
-  install.packages(missing_required)
-}
-missing_optional <- setdiff(optional_pkgs, rownames(installed.packages()))
-if (length(missing_optional) > 0) {
-  cat("NOTE: optional packages not installed:", paste(missing_optional, collapse = ", "), "\n")
-  cat("      Install for full feature parity (Heckman ML, wild cluster bootstrap):\n")
-  cat("      install.packages(c(", paste0('"', missing_optional, '"', collapse = ", "), "))\n")
-}
-cat("MTE/IV package check complete.\n")
+if (length(missing_required) > 0) install.packages(missing_required)
+cat("MTE/IV packages confirmed.\n")
+# The Heckman models and wild cluster bootstraps are coded directly in
+# MTE_MPRTE.R, so sampleSelection and fwildclusterboot are not
+# needed.
 
 #=========================================================================
 #=========================================================================
 #
 #    INSTRUMENTAL VARIABLES AND MARGINAL TREATMENT EFFECTS
-#    (Sections 11.1 - 11.3)
+#    (Sections 11.1 - 11.2)
 #
 #=========================================================================
 #=========================================================================
@@ -169,25 +148,26 @@ cat("MTE/IV package check complete.\n")
 #         status; collect point estimates and SEs for a forest plot.
 #     (b) Interaction IV -- include field x treatment and
 #         income_q1 x treatment interactions in the full-sample IV model
-#         to test whether subgroup CATEs differ significantly.
-#     (c) Forest-plot visualization (Fig. 11.7) and interaction-margins
-#         plot (Fig. 11.8), both from the interaction IV model in (b);
-#         these are also the source of the CATE values reported in the
-#         chapter's Table 11.1.
-#     (d) Comparison table (Table 11.2): OLS vs. full-sample IV/LATE vs.
-#         separately-estimated subgroup IV models from (a). This is a
-#         distinct table from Table 11.1 -- it compares estimators rather
-#         than reporting interaction-model subgroup CATEs.
+#         to test whether subgroup CATEs differ significantly; source of
+#         the CATE values reported in the chapter's Table 11.1.
+#     (c) Forest plot (Fig. 11.1) and interaction plot (Fig. 11.2).
+#     (d) Supplementary comparison table: OLS vs. full-sample IV/LATE
+#         vs. separately-estimated subgroup IV models from (a). It is
+#         NOT reproduced in the chapter (Tables 11.2-11.6 in the book
+#         are the MTE tables); the file keeps its original name,
+#         tab11_2_cate_subgroup.rtf.
 #
-#   Script: file.path(syntax_dir, "CATE_R.R")
-#   Inherits: graphs_dir, tables_dir, log, theme_springer()
-#   Data:     Example_7_5_3_updated.dta (CATE_R.R now runs first, so this
-#             is the script's first data load; falls back to
-#             Example_7_5_3.dta if the updated file is unavailable, per
-#             CATE_R.R's own logic).
-#   Produces: fig11_7_cate_forest.png (CATE forest plot, by subgroup)
-#             fig11_8_cate_interact.png (CATE interaction plot, STEM x income)
-#             tab11_2_cate_subgroup.rtf (Table 11.2)
+#   Script:   file.path(syntax_dir, "CATE_R.R")
+#             (opens its own log, log_dir/CATE_output.log)
+#   Inherits: graphs_dir, tables_dir, logdir
+#   Data:     Example_7_5_3_updated.dta (CATE_R.R runs first, so this is
+#             the chapter run's first data load; downloaded from GitHub
+#             if not found locally)
+#   Produces: fig11_1_cate_forest_R.png   (CATE forest plot, by subgroup)
+#             fig11_2_cate_interact_R.png (CATE interaction plot,
+#                                          STEM x income)
+#             tab11_2_cate_subgroup.rtf   (supplementary; not a numbered
+#                                          table in the chapter)
 #
 #   Placement in chapter: Section 11.1.3, immediately after the
 #   OLS/IV/LATE comparison in Section 11.1.2 and before MTE (11.2).
@@ -199,61 +179,81 @@ cat("MTE/IV package check complete.\n")
 source(file.path(syntax_dir, "CATE_R.R"))
 
 #-------------------------------------------------------------------------
-# Display CATE figures
-# (CATE_R.R already prints fig11_7 / fig11_8 at its own end via print();
-#  re-displaying here mirrors Stata's `capture graph display` recall.)
+# Display CATE figures (mirrors Stata's `capture graph display`)
 #-------------------------------------------------------------------------
-tryCatch(print(fig11_7), error = function(e) NULL)
-tryCatch(print(fig11_8), error = function(e) NULL)
+if (exists("fig11_1")) print(fig11_1)    # forest plot: CATE by subgroup
+if (exists("fig11_2")) print(fig11_2)    # interaction-term CATE plot
 
 #=========================================================================
-# SECTIONS 11.2-11.3: MARGINAL TREATMENT EFFECTS (external script)
-#   OLS -> IV/2SLS -> MTE/MPRTE -> CBA -- returns to master's degree
-#   Script: file.path(syntax_dir, "MTE_MPRTE_R.R")
-#   Inherits: graphs_dir, log, theme_springer()
-#   Data:     Example_7_5_3_updated.dta (or Example_7_5_3.dta fallback)
+# SECTION 11.2: MARGINAL TREATMENT EFFECTS (external script)
+#   OLS -> IV/2SLS -> MTE -> PRTE/MPRTE -> CBA -- returns to master's degree
+#   Script:   file.path(syntax_dir, "MTE_MPRTE.R")
+#             (opens its own log, log_dir/MTE_MPRTE_R.log; the R
+#             counterpart of MTE_MPRTE_output.log)
+#   Inherits: graphs_dir, log_dir
+#   Data:     Example_7_5_3_updated.dta
 #
-#   Key sections:
-#     Sec 6    Pooled cubic polynomial MTE (ATE, ATT, ATU); Heckman; mtefe (local-IV) not replicated -- see Stata output
-#     Sec 6b   Area-specific MTE by graduate program area (fully interacted)
-#     Sec 6b-ATU  Prospective program area assignment for untreated obs;
-#                  area-specific ATU via counterfactual assignment
-#                  (seed 20260102; mirrors treated assignment in Sec 1b)
-#     Sec 6c   Cluster bootstrap (G=50, R=500): SEs for ATE, ATT, ATU
-#                  -- pooled and area-specific, with 95% CIs
-#     Sec 9-11 PRTE and MPRTE policy simulations (Scenarios 1-8)
-#     Sec 14   Cost-benefit analysis (B/C ratios)
+#   Key sections (same numbering as MTE_MPRTE.do):
+#     Sec 1-5    Data, summary statistics, first stage, OLS, IV/2SLS
+#     Sec 6a     Probit propensity score P(Z,X)
+#     Sec 6b     Manual polynomial MTE (teaching illustration only)
+#     Sec 6c     Pooled MTE via mte_poly(), quadratic: ATE, ATT, ATU,
+#                  LATE, MPRTE1-3; Heckman comparison     -> Table 11.2
+#     Sec 6d     Area-specific MTE via mte_poly(), linear, one model per
+#                  program area; non-completers assigned a prospective
+#                  area (read from Example_7_5_3_updated.dta) -> Table 11.3
+#     Sec 6e     State-clustered bootstrap (G=50, R=500) for pooled and
+#                  area-specific SEs; wild cluster bootstrap (WCR/WRE,
+#                  Webb weights) for the OLS and IV estimates
+#     Sec 9-10b  PRTE for Scenarios 1-8                   -> Tables 11.4-11.5
+#     Sec 11     PRTE by policy intensity
+#     Sec 13     Policy weights and propensity-score support
+#     Sec 14     Cost-benefit analysis (B/C ratios)     -> Table 11.6
 #
-#   Produces: bb_mte_analysis.dta, mte_summary_by_field.csv
-#             mte_summary_by_program_area.csv
-#             fig11_3 (pooled MTE curve)
-#             fig11_4 (MTE by propensity score)
-#             fig11_5 (MTE curves by graduate program area)
-#             fig11_6 (MTE curve with policy-relevant margins)
-#             fig11_7 (MTE by propensity score decile)
-#             fig11_8 (MPRTE by policy intensity)
+#   Produces: bb_mte_analysis_R.dta, mte_summary_by_field_R.csv,
+#             mte_summary_by_program_area_R.csv, mte_bootstrap_draws_R.rds
+#             fig11_3_mte_curve_R.png         (pooled MTE curve with
+#                                              bootstrap band)
+#             fig11_4_mte_by_propensity_R.png (propensity-score histogram
+#                                              with the MTE curve)
+#             fig11_5_mte_byarea_curve_R.png  (MTE curves by graduate
+#                                              program area)
+#             fig11_6_mte_policy_regions_R.png (MTE curve with PRTE
+#                                              weights: uniform +$1k vs.
+#                                              low-income +$2k)
+#             fig11_8_mprte_by_intensity_R.png (PRTE by policy intensity)
+#   (Fig. 11.7, MTE by propensity-score decile, is no longer produced.)
 #=========================================================================
 
-source(file.path(syntax_dir, "MTE_MPRTE_R.R"))
+mte_script <- file.path(syntax_dir, "MTE_MPRTE.R")
+if (!file.exists(mte_script)) stop("MTE_MPRTE.R not found in ", syntax_dir)
+
+# MTE_MPRTE.R closes every open sink before opening its own log,
+# so pause the master log here and resume it (appending) afterwards.
+cat("\nMaster log paused while", basename(mte_script), "runs;",
+    "see MTE_MPRTE_R.log for its output.\n")
+sink()
+source(mte_script)
+while (sink.number() > 0) sink()
+sink(master_log_con, split = TRUE)
+cat("\nMaster log resumed:", format(Sys.time()), "\n")
 
 #-------------------------------------------------------------------------
 # Display MTE/MPRTE figures
-# MTE_MPRTE_R.R already calls print() for fig11_3 - fig11_8 at its own end.
-# The block below provides a single consolidated recall.
+# MTE_MPRTE.R saves each figure as a PNG (with the _R suffix).
+# The block below provides a single consolidated recall of the plot
+# objects (g3 = Fig. 11.3, g4 = Fig. 11.4, ...).
 #-------------------------------------------------------------------------
-tryCatch(print(fig11_3), error = function(e) NULL)
-tryCatch(print(fig11_4), error = function(e) NULL)
-tryCatch(print(fig11_5), error = function(e) NULL)
-tryCatch(print(fig11_6), error = function(e) NULL)
-tryCatch(print(fig11_7), error = function(e) NULL)
-tryCatch(print(fig11_8), error = function(e) NULL)
+for (g in c("g3", "g4", "g5", "g6", "g8")) {
+  if (exists(g)) print(get(g))
+}
 
 #=========================================================================
 # Close log and exit
+# (Each sub-script saves its figures as PNG files in graphs_dir.)
 #=========================================================================
 
 cat("\nChapter 11 log closed:", format(Sys.time()), "\n")
-sink(type = "message")
 sink()
 close(master_log_con)
 
@@ -264,145 +264,82 @@ close(master_log_con)
 # Chapter 11 Section Map
 # ======================================================================
 #
+#   11.0  Introduction
+#
 #   11.1  Instrumental Variables and the LATE
-#     Sections 1-4: Data loading, summary statistics, first-stage, OLS
-#     Section 5: IV/2SLS (LATE)
+#     11.1.1  First Stage and Instrument Relevance
+#     11.1.2  OLS and IV/LATE Estimation
+#             (MTE_MPRTE.R Sections 1-5: data, summary
+#              statistics, first stage, OLS, IV/2SLS)
+#     11.1.3  Conditional Average Treatment Effects (CATE)  -> CATE_R.R
+#             Subgroup IV, interaction IV, and forest-plot visualization
+#                 -> Table 11.1, Fig. 11.1 (forest plot),
+#                    Fig. 11.2 (interaction plot)
 #
-#   11.1.3  Conditional Average Treatment Effects (CATE)
-#     Section 5b: Subgroup CATEs via IV/2SLS with interaction terms
-#     Section 5d: Forest-plot visualization of CATEs by field, income, and generation
-#                  -> Fig. 11.7 (forest plot), Fig. 11.8 (interaction plot)
-#     Section 5e: CATE comparison table (OLS vs. LATE vs. separate-model
-#                 subgroup IV) -> Table 11.2
+#   11.2  Marginal Treatment Effects (MTE)         -> MTE_MPRTE.R
+#     11.2.1  Polynomial Control Function Approach
+#             Section 6a: probit propensity score
+#             Section 6b: manual polynomial MTE (teaching illustration)
+#             Section 6c: pooled mte_poly(), quadratic; Heckman comparison
+#             Section 6d: area-specific mte_poly(), linear
+#             Section 6e: state-clustered bootstrap; wild cluster bootstrap
+#     11.2.2  MTE Results
+#             Sections 6c, 6e, 7  -> Table 11.2 (pooled parameters)
+#             Sections 6d, 6e     -> Table 11.3 (parameters by area)
+#             Sections 9-10b      -> Tables 11.4-11.5 (PRTE, Scenarios 1-8)
+#             Section 14          -> Table 11.6 (cost-benefit analysis)
+#             Section 8           -> Fig. 11.3, Fig. 11.5
+#             Section 11          -> Fig. 11.8
+#             Section 13          -> Fig. 11.4, Fig. 11.6
+#             Sections 15-16: save results, final summary
 #
-#   11.2  Marginal Treatment Effects
-#     Section 6: Manual polynomial MTE (quadratic and cubic), Heckman.
-#                mtefe (local-IV) not replicated in R -- see Stata output.
-#     Section 6b: Area-specific MTE by graduate program field
-#     Section 6c: Cluster bootstrap SEs, wild cluster bootstrap (if
-#                 fwildclusterboot is installed)
-#     Section 7: Treatment effect comparison (ATE/ATT/ATU/LATE/CATE)
+#   11.3  Summary
 #
-#   11.2.3  Marginal Treatment Effects: Visualization
-#     Section 8: MTE curve, decile plot, by-area curves, policy margins
-#                 -> Fig. 11.3 (pooled MTE curve)
-#                 -> Fig. 11.4 (MTE by propensity score)
-#                 -> Fig. 11.5 (MTE curves by graduate program area;
-#                    each curve truncated to its area's empirical
-#                    propensity-score support)
-#                 -> Fig. 11.6 (MTE curve with policy-relevant margins)
-#                 -> Fig. 11.7 (MTE by propensity score decile)
-#                 -> Fig. 11.8 (MPRTE by policy intensity; produced in
-#                    Section 11 of MTE_MPRTE_R.R, listed here for the
-#                    complete figure inventory)
-#
-#   11.3  Cost-Benefit Analysis
-#     Sections 9-11: PRTE and MPRTE policy simulations (Scenarios 1-8)
-#     Sections 12-13: Parameter comparison table, MPRTE visualization
-#     Section 14: Cost-benefit analysis (B/C ratios)
-#
-#   11.4  Summary
-#     Sections 15-16: Save results, final summary
-#
-#   11.5  Appendix
-#     11.5.1  Data
-#     11.5.2  Code, log files, and figures
+#   11.4  Appendix
+#     11.4.1  Data
+#     11.4.2  Code, log files, and figures
 #
 #   NOTE: This chapter continues from Chapter 10 (state- and institution-
 #   level causal inference: RDD, DiD, SCM, SDID, ETWFE). See Chapter 10's
 #   own master script and section map for that earlier material.
 #
-#   NOTE ON FIG. 11.7 / FIG. 11.8: these two figures (MTE by propensity
-#   score decile; MPRTE by policy intensity) are produced by the script
-#   but are not currently discussed by name in the chapter's prose. They
-#   are numbered here for consistency with everything else this chapter
-#   produces, not because the text references them yet.
-#
-#   Figure inventory (in order produced):
-#     Fig. 11.7  CATE Forest Plot by Subgroup           (from CATE_R.R)
-#     Fig. 11.8  CATE Interaction Plot (STEM x Income)  (from CATE_R.R)
-#     Fig. 11.3  Estimated MTE Curve (pooled, cubic polynomial)
-#     Fig. 11.4  MTE by Propensity Score (diamond markers + frequency bars)
-#     Fig. 11.5  MTE Curves by Graduate Program Area (support-truncated)
-#     Fig. 11.6  MTE Curve with Policy-Relevant Margins
-#     Fig. 11.7  MTE by Propensity Score Decile          (from MTE_MPRTE_R.R --
-#                NOTE: this duplicates the fig11_7 object name used by
-#                CATE_R.R's forest plot. In the Stata original, fig11_7 is
-#                reused by name within Stata's graph manager across two
-#                different sub-scripts; in R, the two objects are kept
-#                separate as `fig11_7` (CATE_R.R, forest plot) and a second
-#                MTE_MPRTE_R.R `fig11_7` (decile plot), since each script's
-#                source() call creates objects in the same global
-#                environment and the second will overwrite the first by
-#                the time the whole driver finishes. If you need both
-#                simultaneously, rename one before sourcing the next
-#                script, or save each to disk immediately after creation
-#                (already done via ggsave() in both sub-scripts) and
-#                reload from file rather than relying on the in-memory
-#                object.
-#     Fig. 11.8  MPRTE by Policy Intensity                (from MTE_MPRTE_R.R --
-#                same in-memory name collision note as fig11_7 above;
-#                CATE_R.R's interaction plot and MTE_MPRTE_R.R's intensity
-#                plot are both named fig11_8 as ggplot objects in this
-#                session. Both are saved to distinct PNG files on disk,
-#                so no output is lost -- only the LAST in-memory `fig11_8`
-#                survives if you inspect the R environment after the
-#                full driver has run.)
+#   Figure inventory (script names; final numbering set in the chapter):
+#     Fig. 11.1  CATE Forest Plot by Subgroup                  (CATE_R.R)
+#     Fig. 11.2  CATE Interaction Plot (STEM x Income)         (CATE_R.R)
+#     Fig. 11.3  Estimated MTE Curve, pooled (quadratic), with
+#                state-clustered bootstrap band
+#     Fig. 11.4  Propensity-Score Distribution with the MTE Curve
+#     Fig. 11.5  MTE Curves by Graduate Program Area (linear)
+#     Fig. 11.6  MTE Curve with PRTE Weights (uniform +$1k vs.
+#                low-income +$2k)
+#     Fig. 11.8  PRTE by Policy Intensity
+#     (Fig. 11.7, MTE by propensity-score decile, is no longer produced.)
+#     All R figure files end in _R.png so they never overwrite the
+#     Stata exports (_Stata.png) in the same folder.
 #
 #   Table inventory:
 #     Table 11.1  CATE of Master's Degree Completion on Log Annual Salary
-#                  (interaction-model subgroup CATEs, reported in the
-#                  chapter text; values come from the interaction IV
-#                  model in CATE_R.R Strategy (b) -- not directly exported
-#                  as a standalone .rtf by this script)
-#     Table 11.2  OLS, LATE, and Conditional Average Treatment Effects
-#                  (separate-model subgroup IV comparison, produced by
-#                  CATE_R.R; tab11_2_cate_subgroup.rtf)
+#                  (interaction IV model, CATE_R.R Strategy (b); reported
+#                  in the chapter text, not exported as a standalone .rtf)
+#     Table 11.2  MTE-Based Treatment Parameters for Master's Degree
+#                  Completion (MTE_MPRTE.R Sections 6c, 6e, 7)
+#     Table 11.3  MTE-Based Treatment Parameters by Graduate Program Area
+#                  (Sections 6d, 6e)
+#     Table 11.4  PRTE for Four GA Funding Targeting Scenarios
+#                  (Sections 9-10b)
+#     Table 11.5  PRTE for Four Graduate Program Area Scenarios
+#                  (Sections 9-10b)
+#     Table 11.6  Cost-Benefit Analysis for Eight GA Funding Scenarios
+#                  (Section 14)
+#     The book's Tables 11.2-11.6 are assembled from the Stata log
+#     (MTE_MPRTE_output.log); MTE_MPRTE_R.log holds the R counterparts.
+#     Supplementary (not in the chapter): tab11_2_cate_subgroup.rtf,
+#                  OLS vs. LATE vs. separate-model subgroup IV (CATE_R.R).
+#                  The "tab11_2" prefix is a holdover from an earlier
+#                  draft and does not correspond to Table 11.2.
 #
-#   Data files saved:
-#     bb_mte_analysis.dta             (MTE analysis; includes ma_*_pro vars)
-#     mte_summary_by_field.csv
-#     mte_summary_by_program_area.csv
-
-#=========================================================================
-# SAVE ALL NAMED GRAPHS AS .RDS
-# Sub-scripts save .png files alongside each export; this block is a
-# final safety net, saving the ggplot OBJECTS themselves (not just their
-# rendered images) so they can be reloaded and further edited.
-# Reload after R closes:
-#   fig <- readRDS(file.path(graphs_dir, "fig11_x.rds"))
-#   print(fig)
-#=========================================================================
-
-cat("\nSaving all named graphs as .rds files...\n")
-
-graph_names <- c("fig11_3", "fig11_4", "fig11_5", "fig11_6", "fig11_7", "fig11_8")
-for (gname in graph_names) {
-  if (exists(gname)) {
-    tryCatch(
-      saveRDS(get(gname), file.path(graphs_dir, paste0(gname, ".rds"))),
-      error = function(e) NULL
-    )
-  }
-}
-
-cat("\n========================================================\n")
-cat("All graphs saved as .rds to:\n")
-cat(" ", graphs_dir, "\n")
-cat("\nReopen any graph after closing R with:\n")
-cat('  fig <- readRDS(file.path(graphs_dir, "graphname.rds")); print(fig)\n')
-cat("\nAll graph names:\n")
-cat("  CATE:        fig11_7 (forest plot) fig11_8 (interaction plot)\n")
-cat("  MTE/MPRTE:  fig11_3 (MTE curve) fig11_4 (by propensity score)\n")
-cat("               fig11_5 (by program area) fig11_6 (policy margins)\n")
-cat("               fig11_7 (by decile) fig11_8 (by policy intensity)\n")
-cat("  NOTE: fig11_7 and fig11_8 are produced by BOTH CATE_R.R and\n")
-cat("        MTE_MPRTE_R.R under the same R object names; only the PNG\n")
-cat("        files on disk (distinct filenames) preserve both versions.\n")
-cat("  (ATU):      area-specific ATU via prospective assignment (Sec 6b-ATU)\n")
-cat("  Table:       tab11_2_cate_subgroup.rtf\n")
-cat("========================================================\n")
-
-#=========================================================================
-# END OF R_code11.R (TRANSLATED FROM Stata_code11.do)
-#=========================================================================
+#   Data files saved (by MTE_MPRTE.R, in the data directory):
+#     bb_mte_analysis_R.dta           (MTE analysis; includes ma_*_pro vars)
+#     mte_summary_by_field_R.csv
+#     mte_summary_by_program_area_R.csv
+#     mte_bootstrap_draws_R.rds       (bootstrap draws)

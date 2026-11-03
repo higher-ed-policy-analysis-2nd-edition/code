@@ -15,7 +15,7 @@
 *
 * Sub-scripts (all in $syntax_dir = Syntax/Stata/):
 *   CATE.do         Section 11.1.3     — Conditional Average Treatment Effects
-*   MTE_MPRTE.do    Sections 11.2-11.3 — MTE/MPRTE, CBA
+*   MTE_MPRTE.do    Section 11.2       — MTE, PRTE/MPRTE, CBA
 *
 *   Section 11.1: Instrumental Variables and the LATE  →  CATE.do
 *     OLS → IV/2SLS (LATE) — returns to master's degree.
@@ -28,22 +28,19 @@
 *     Data: Example_7_5_3_updated.dta (CATE.do now runs first, so this
 *     is the script's first data load for the chapter run)
 *
-*   Section 11.2: Marginal Treatment Effects (MTE)  →  MTE_MPRTE.do
-*     Pooled and area-specific MTE via polynomial control function;
-*     cluster bootstrap SEs; treatment effect comparison (ATE/ATT/ATU).
+*   Section 11.2.1: Polynomial Control Function Approach  →  MTE_MPRTE.do
+*     Pooled MTE (mtefe, quadratic) and area-specific MTE (mtefe,
+*     linear); state-clustered bootstrap SEs.
 *
-*   Section 11.2.3: MTE Visualization  →  MTE_MPRTE.do
-*     MTE curve, propensity-score distribution, by-area curves,
-*     policy-relevant margins.
-*
-*   Section 11.3: Cost-Benefit Analysis  →  MTE_MPRTE.do
-*     PRTE and MPRTE policy simulations (Scenarios 1-8); benefit-cost
-*     ratios translating MPRTE estimates into policy-relevant terms.
+*   Section 11.2.2: MTE Results  →  MTE_MPRTE.do
+*     ATE/ATT/ATU/LATE/MPRTE (Tables 11.2-11.3); PRTE for eight GA
+*     funding scenarios (Tables 11.4-11.5); benefit-cost ratios
+*     (Table 11.6); MTE, policy-weight, and PRTE-intensity figures.
 *
 * NOTE: This chapter continues from Chapter 10, which demonstrated
 * causal inference methods for state- and institution-level policies
 * (RDD, DiD, SCM, SDID, ETWFE). This script covers only the IV/CATE/MTE/
-* MPRTE/CBA content described above (Sections 11.1-11.3); see Chapter
+* PRTE/CBA content described above (Sections 11.1-11.2); see Chapter
 * 10's master script (Stata_code10.do) for the earlier material.
 *========================================================================
 
@@ -114,7 +111,7 @@ di as text "MTE/IV packages confirmed."
 *========================================================================
 *
 *    INSTRUMENTAL VARIABLES AND MARGINAL TREATMENT EFFECTS
-*    (Sections 11.1 – 11.3)
+*    (Sections 11.1 – 11.2)
 *
 *========================================================================
 *========================================================================
@@ -133,10 +130,11 @@ di as text "MTE/IV packages confirmed."
 *         plot (Fig. 11.2), both from the interaction IV model in (b);
 *         these are also the source of the CATE values reported in the
 *         chapter's Table 11.1.
-*     (d) Comparison table (Table 11.2): OLS vs. full-sample IV/LATE vs.
-*         separately-estimated subgroup IV models from (a). This is a
-*         distinct table from Table 11.1 — it compares estimators rather
-*         than reporting interaction-model subgroup CATEs.
+*     (d) Supplementary comparison table: OLS vs. full-sample IV/LATE
+*         vs. separately-estimated subgroup IV models from (a). It is
+*         NOT reproduced in the chapter (Tables 11.2-11.6 in the book
+*         are the MTE tables); the file keeps its original name,
+*         tab11_2_cate_subgroup.rtf, so CATE.do need not change.
 *
 *   Script: $syntax_dir/CATE.do
 *   Inherits: $graphs_dir, $tables_dir, log, set scheme s2mono
@@ -144,10 +142,11 @@ di as text "MTE/IV packages confirmed."
 *             is the script's first data load; falls back to
 *             Example_7_5_3.dta if the updated file is unavailable, per
 *             CATE.do's own logic). Globals defined below remain in
-*             scope for Sections 11.2-11.3.
+*             scope for Section 11.2.
 *   Produces: fig11_1 (CATE forest plot, by subgroup)
 *             fig11_2 (CATE interaction plot, STEM × income)
-*             tab11_2_cate_subgroup.rtf (Table 11.2)
+*             tab11_2_cate_subgroup.rtf (supplementary; not a
+*               numbered table in the chapter — see (d) above)
 *
 *   Placement in chapter: Section 11.1.3, immediately after the
 *   OLS/IV/LATE comparison in Section 11.1.2 and before MTE (11.2).
@@ -165,49 +164,69 @@ capture graph display fig11_1    // forest plot: CATE by subgroup
 capture graph display fig11_2    // interaction-term CATE margins
 
 *========================================================================
-* SECTIONS 11.2–11.3: MARGINAL TREATMENT EFFECTS (external script)
-*   OLS → IV/2SLS → MTE/MPRTE → CBA — returns to master's degree
-*   Script: $syntax_dir/MTE_MPRTE.do
-*   Inherits: $graphs_dir, log, set scheme s2mono
-*   Data:     Example_7_5_3_updated.dta (or Example_7_5_3.dta fallback)
+* SECTION 11.2: MARGINAL TREATMENT EFFECTS (external script)
+*   OLS → IV/2SLS → MTE → PRTE/MPRTE → CBA — returns to master's degree
+*   Script: $syntax_dir/MTE_MPRTE.do (opens its own log,
+*           $logdir/MTE_MPRTE_output.log, which is the source of
+*           Tables 11.2-11.6)
+*   Inherits: $graphs_dir, $logdir, set scheme s2mono
+*   Data:     Example_7_5_3_updated.dta
 *
-*   Key sections:
-*     Sec 6    Pooled cubic polynomial MTE (ATE, ATT, ATU); mtefe; Heckman
-*     Sec 6b   Area-specific MTE by graduate program area (fully interacted)
-*     Sec 6b-ATU  Prospective program area assignment for untreated obs;
-*                  area-specific ATU via counterfactual assignment
-*                  (seed 20260102; mirrors treated assignment in Sec 1b)
-*     Sec 6c   Cluster bootstrap (G=50, R=500): SEs for ATE, ATT, ATU
-*                  — pooled and area-specific, with 95% CIs
-*     Sec 9-11 PRTE and MPRTE policy simulations (Scenarios 1-8)
-*     Sec 14   Cost-benefit analysis (B/C ratios)
+*   Key sections (of MTE_MPRTE.do):
+*     Sec 1-5    Data, summary statistics, first stage, OLS, IV/2SLS
+*     Sec 6a     Probit propensity score P(Z,X)
+*     Sec 6b     Manual polynomial MTE (teaching illustration only)
+*     Sec 6c     Pooled MTE via mtefe, pol(2): ATE, ATT, ATU, LATE,
+*                  MPRTE1-3; Heckman comparison           -> Table 11.2
+*     Sec 6d     Area-specific MTE via mtefe, pol(1), one model per
+*                  program area; non-completers assigned a prospective
+*                  area (seed 20260102)                     -> Table 11.3
+*     Sec 6e     State-clustered bootstrap (G=50, R=500, seed 20260101)
+*                  for pooled and area-specific SEs; wild cluster
+*                  bootstrap (boottest) for the IV estimate
+*     Sec 9-10b  PRTE for Scenarios 1-8 via mtefe prte() -> Tables 11.4-11.5
+*     Sec 11     PRTE by policy intensity
+*     Sec 13     Policy weights and propensity-score support
+*     Sec 14     Cost-benefit analysis (B/C ratios)     -> Table 11.6
+*
+*   RUN TIME: by default MTE_MPRTE.do reuses the published bootstrap
+*   draws (mte_bootstrap_draws.dta, downloaded from the book's data
+*   repository if not found locally): about 5-10 minutes on Stata MP,
+*   10-15 minutes on Stata SE. To rerun the bootstrap yourself, set
+*   use_saved_boot = 0 in Section 6e of MTE_MPRTE.do: about 7 hours
+*   (MP, 2 cores) to 9-12 hours (SE). The published draws are valid
+*   ONLY for the book's exact specification; if you change the data,
+*   controls, or models, you must set use_saved_boot = 0. See the
+*   RUN TIME and CAUTION notes at the top of MTE_MPRTE.do.
 *
 *   Produces: bb_mte_analysis.dta, mte_summary_by_field.csv
-*             mte_summary_by_program_area.csv
-*             fig11_3 (pooled MTE curve)
-*             fig11_4 (MTE by propensity score)
+*             mte_summary_by_program_area.csv, mte_bootstrap_draws.dta
+*             fig11_3 (pooled MTE curve with bootstrap band)
+*             fig11_4 (propensity-score histogram with the MTE curve)
 *             fig11_5 (MTE curves by graduate program area)
-*             fig11_6 (MTE curve with policy-relevant margins)
-*             fig11_7 (MTE by propensity score decile)
-*             fig11_8 (MPRTE by policy intensity)
+*             fig11_6 (MTE curve with PRTE weights: uniform +$1k vs.
+*                      low-income +$2k)
+*             fig11_8 (PRTE by policy intensity)
+*   (Fig. 11.7, MTE by propensity-score decile, is no longer produced.)
 *========================================================================
 
 do "$syntax_dir/MTE_MPRTE.do"
 
 *------------------------------------------------------------------------
 * Display MTE/MPRTE figures in the Stata graph window
-* MTE_MPRTE.do already calls graph display for fig11_3 – fig11_8
+* MTE_MPRTE.do already displays and saves (.gph and .png) each figure
 * at its own end. The block below provides a single consolidated recall.
 *------------------------------------------------------------------------
 capture graph display fig11_3
 capture graph display fig11_4
 capture graph display fig11_5
 capture graph display fig11_6
-capture graph display fig11_7
 capture graph display fig11_8
 
 *========================================================================
 * Close log and exit
+* (Each sub-script saves its figures as .gph and .png. Reload a figure
+*  after Stata closes with:  graph use "$graphs_dir/fig11_3.gph")
 *========================================================================
 
 clear all
@@ -221,108 +240,81 @@ log close
 /* Chapter 11 Section Map
    ======================================================================
 
+   11.0  Introduction
+
    11.1  Instrumental Variables and the LATE
-     Sections 1-4: Data loading, summary statistics, first-stage, OLS
-     Section 5: IV/2SLS (LATE)
+     11.1.1  First Stage and Instrument Relevance
+     11.1.2  OLS and IV/LATE Estimation
+             (MTE_MPRTE.do Sections 1-5: data, summary statistics,
+              first stage, OLS, IV/2SLS)
+     11.1.3  Conditional Average Treatment Effects (CATE)  -> CATE.do
+             Subgroup IV, interaction IV, and forest-plot visualization
+                 -> Table 11.1, Fig. 11.1 (forest plot),
+                    Fig. 11.2 (interaction plot)
 
-   11.1.3  Conditional Average Treatment Effects (CATE)
-     Section 5b: Subgroup CATEs via IV/2SLS with interaction terms
-     Section 5c: Lasso-based heterogeneous treatment effects (ivlasso / post-lasso)
-     Section 5d: Forest-plot visualization of CATEs by field, income, and generation
-                  -> Fig. 11.1 (forest plot), Fig. 11.2 (interaction plot)
-     Section 5e: CATE comparison table (OLS vs. LATE vs. separate-model
-                 subgroup IV) -> Table 11.2
+   11.2  Marginal Treatment Effects (MTE)                 -> MTE_MPRTE.do
+     11.2.1  Polynomial Control Function Approach
+             Section 6a: probit propensity score
+             Section 6b: manual polynomial MTE (teaching illustration)
+             Section 6c: pooled mtefe, pol(2); Heckman comparison
+             Section 6d: area-specific mtefe, pol(1)
+             Section 6e: state-clustered bootstrap; wild cluster bootstrap
+     11.2.2  MTE Results
+             Sections 6c, 6e, 7  -> Table 11.2 (pooled parameters)
+             Sections 6d, 6e     -> Table 11.3 (parameters by area)
+             Sections 9-10b      -> Tables 11.4-11.5 (PRTE, Scenarios 1-8)
+             Section 14          -> Table 11.6 (cost-benefit analysis)
+             Section 8           -> Fig. 11.3, Fig. 11.5
+             Section 11          -> Fig. 11.8
+             Section 13          -> Fig. 11.4, Fig. 11.6
+             Sections 15-16: save results, final summary
 
-   11.2  Marginal Treatment Effects
-     Section 6: Manual polynomial MTE (quadratic and cubic), mtefe, Heckman
-     Section 6b: Area-specific MTE by graduate program field
-     Section 6c: Cluster bootstrap SEs, wild cluster bootstrap
-     Section 7: Treatment effect comparison (ATE/ATT/ATU/LATE/CATE)
+   11.3  Summary
 
-   11.2.3  Marginal Treatment Effects: Visualization
-     Section 8: MTE curve, decile plot, by-area curves, policy margins
-                 -> Fig. 11.3 (pooled MTE curve)
-                 -> Fig. 11.4 (MTE by propensity score)
-                 -> Fig. 11.5 (MTE curves by graduate program area)
-                 -> Fig. 11.6 (MTE curve with policy-relevant margins)
-                 -> Fig. 11.7 (MTE by propensity score decile)
-                 -> Fig. 11.8 (MPRTE by policy intensity; produced in
-                    Section 11 of MTE_MPRTE.do, listed here for the
-                    complete figure inventory)
-
-   11.3  Cost-Benefit Analysis
-     Sections 9-11: PRTE and MPRTE policy simulations (Scenarios 1-8)
-     Sections 12-13: Parameter comparison table, MPRTE visualization
-     Section 14: Cost-benefit analysis (B/C ratios)
-
-   11.4  Summary
-     Sections 15-16: Save results, final summary
-
-   11.5  Appendix
-     11.5.1  Data
-     11.5.2  Code, log files, and figures
+   11.4  Appendix
+     11.4.1  Data
+     11.4.2  Code, log files, and figures
 
    NOTE: This chapter continues from Chapter 10 (state- and institution-
    level causal inference: RDD, DiD, SCM, SDID, ETWFE). See Chapter 10's
    own master script and section map for that earlier material.
 
-   NOTE ON FIG. 11.7 / FIG. 11.8: these two figures (MTE by propensity
-   score decile; MPRTE by policy intensity) are produced by the script
-   but are not currently discussed by name in the chapter's prose. They
-   are numbered here for consistency with everything else this chapter
-   produces, not because the text references them yet.
-
-   Figure inventory (in order produced):
-     Fig. 11.1  CATE Forest Plot by Subgroup
-     Fig. 11.2  CATE Interaction Plot (STEM x Income)
-     Fig. 11.3  Estimated MTE Curve (pooled, cubic polynomial)
-     Fig. 11.4  MTE by Propensity Score (diamond markers + frequency bars)
-     Fig. 11.5  MTE Curves by Graduate Program Area
-     Fig. 11.6  MTE Curve with Policy-Relevant Margins
-     Fig. 11.7  MTE by Propensity Score Decile
-     Fig. 11.8  MPRTE by Policy Intensity
+   Figure inventory (script names; final numbering set in the chapter):
+     Fig. 11.1  CATE Forest Plot by Subgroup                  (CATE.do)
+     Fig. 11.2  CATE Interaction Plot (STEM x Income)         (CATE.do)
+     Fig. 11.3  Estimated MTE Curve, pooled (mtefe, quadratic), with
+                state-clustered bootstrap band
+     Fig. 11.4  Propensity-Score Distribution with the MTE Curve
+     Fig. 11.5  MTE Curves by Graduate Program Area (mtefe, linear)
+     Fig. 11.6  MTE Curve with PRTE Weights (uniform +$1k vs.
+                low-income +$2k)
+     Fig. 11.8  PRTE by Policy Intensity
+     (Fig. 11.7, MTE by propensity-score decile, is no longer produced.)
 
    Table inventory:
      Table 11.1  CATE of Master's Degree Completion on Log Annual Salary
-                  (interaction-model subgroup CATEs, reported in the
-                  chapter text; values come from the interaction IV
-                  model in CATE.do Strategy (b) — not directly exported
-                  as a standalone .rtf by this script)
-     Table 11.2  OLS, LATE, and Conditional Average Treatment Effects
-                  (separate-model subgroup IV comparison, produced by
-                  CATE.do; tab11_2_cate_subgroup.rtf)
+                  (interaction IV model, CATE.do Strategy (b); reported
+                  in the chapter text, not exported as a standalone .rtf)
+     Table 11.2  MTE-Based Treatment Parameters for Master's Degree
+                  Completion (MTE_MPRTE.do Sections 6c, 6e, 7)
+     Table 11.3  MTE-Based Treatment Parameters by Graduate Program Area
+                  (Sections 6d, 6e)
+     Table 11.4  PRTE for Four GA Funding Targeting Scenarios
+                  (Sections 9-10b)
+     Table 11.5  PRTE for Four Graduate Program Area Scenarios
+                  (Sections 9-10b)
+     Table 11.6  Cost-Benefit Analysis for Eight GA Funding Scenarios
+                  (Section 14)
+     Tables 11.2-11.6 are assembled from MTE_MPRTE_output.log; the
+     script does not export them as .rtf files.
+     Supplementary (not in the chapter): tab11_2_cate_subgroup.rtf,
+                  OLS vs. LATE vs. separate-model subgroup IV (CATE.do).
+                  The "tab11_2" prefix is a holdover from an earlier
+                  draft and does not correspond to Table 11.2.
 
    Data files saved:
      bb_mte_analysis.dta             (MTE analysis; includes ma_*_pro vars)
      mte_summary_by_field.csv
      mte_summary_by_program_area.csv
+     mte_bootstrap_draws.dta         (bootstrap draws; reused by default)
 */
-
-
-*========================================================================
-* SAVE ALL NAMED GRAPHS AS .GPH
-* Sub-scripts save .gph files alongside each export; this block is a
-* final safety net. Reload after Stata closes:
-*   graph use "$graphs_dir/graphname.gph"
-*========================================================================
-di _n as text "Saving all named graphs as .gph files..."
-
-foreach gname in                                                        ///
-    fig11_1  fig11_2  fig11_3  fig11_4  fig11_5  fig11_6               ///
-    fig11_7  fig11_8 {
-    capture graph save "$graphs_dir/`gname'.gph", replace
-}
-
-di as text _n "========================================================"
-di as text "All graphs saved as .gph to:"
-di as text "  $graphs_dir"
-di as text _n "Reopen any graph after closing Stata with:"
-di as text `"  graph use "$graphs_dir/graphname.gph""'
-di as text _n "All graph names:"
-di as text "  CATE:        fig11_1 (forest plot) fig11_2 (interaction plot)"
-di as text "  MTE/MPRTE:  fig11_3 (MTE curve) fig11_4 (by propensity score)"
-di as text "               fig11_5 (by program area) fig11_6 (policy margins)"
-di as text "               fig11_7 (by decile) fig11_8 (by policy intensity)"
-di as text "  (ATU):      area-specific ATU via prospective assignment (Sec 6b-ATU)"
-di as text "  Table:       tab11_2_cate_subgroup.rtf"
-di as text "========================================================"

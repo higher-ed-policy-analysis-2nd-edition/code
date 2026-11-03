@@ -3,7 +3,8 @@
 # R translation of CATE.do
 # Higher Education Policy Analysis Using Quantitative Techniques (2nd ed.)
 # Author: Marvin A. Titus
-# Date: June 2026
+# Date: June 2026 (revised November 2026: figure names fig11_1/fig11_2,
+#       supplementary-table label, GitHub data download)
 # NOTE: Code development was assisted by Claude (Anthropic). The author
 # provided specifications and reviewed, tested, and validated all code.
 #=========================================================================
@@ -30,7 +31,7 @@
 #       in the full-sample model and test for differential effects.
 #   (c) Forest plot and comparison table.
 #
-# VARIABLE NAMES (match MTE_MPRTE.R exactly)
+# VARIABLE NAMES (match R_code11_MTE_MPRTE.R exactly)
 # -------
 #   Outcome:    ln_salary
 #   Treatment:  masters          (Completed Master's Degree, 1=Yes)
@@ -41,9 +42,12 @@
 #
 # OUTPUTS
 # -------
-#   fig11_7_cate_forest.png   -- forest plot of CATE by subgroup
-#   fig11_8_cate_interact.png -- interaction IV coefficient plot
-#   tab11_2_cate_subgroup.rtf -- comparison table (OLS / LATE / CATE)
+#   fig11_1_cate_forest_R.png   -- forest plot of CATE by subgroup
+#   fig11_2_cate_interact_R.png -- interaction IV coefficient plot
+#   tab11_2_cate_subgroup.rtf -- supplementary comparison table
+#                                (OLS / LATE / CATE); not a numbered table
+#                                in the chapter (the "tab11_2" prefix is a
+#                                holdover from an earlier draft)
 #
 # INHERITS (from R_code11.R / driver environment)
 #   graphs_dir, tables_dir, log connection, theme_springer()
@@ -79,6 +83,24 @@ suppressMessages({
 #    data load for the chapter run.)
 #-------------------------------------------------------------------------
 
+# Data location: the author's Dropbox data folder; readers use the
+# current working directory (the data are downloaded from GitHub if
+# absent), mirroring R_code11_MTE_MPRTE.R.
+if (Sys.info()[["user"]] == "marvi") {
+  setwd("C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Data/Stata")
+}
+cat("Data directory:", getwd(), "\n")
+if (!file.exists("Example_7_5_3_updated.dta")) {
+  cat("Attempting to download Example_7_5_3_updated.dta from GitHub...\n")
+  tryCatch(
+    download.file(paste0("https://raw.githubusercontent.com/",
+                         "higher-ed-policy-analysis-2nd-edition/data/main/ch11/",
+                         "Example_7_5_3_updated.dta"),
+                  "Example_7_5_3_updated.dta", mode = "wb", quiet = TRUE),
+    error = function(e) cat("Download failed.\n"),
+    warning = function(w) cat("Download failed.\n"))
+}
+
 df <- NULL
 if (file.exists("Example_7_5_3_updated.dta")) {
   df <- tryCatch(read_dta("Example_7_5_3_updated.dta"), error = function(e) NULL)
@@ -95,7 +117,7 @@ if (is.null(df)) {
 }
 
 #-------------------------------------------------------------------------
-# 1. Controls / instrument -- mirror MTE_MPRTE.R exactly
+# 1. Controls / instrument -- mirror R_code11_MTE_MPRTE.R exactly
 #-------------------------------------------------------------------------
 
 x_controls <- c("female", "black", "hispanic", "asian", "age_ba", "firstgen",
@@ -132,11 +154,12 @@ if (!exists("graphs_dir") || is.null(graphs_dir)) {
 #-------------------------------------------------------------------------
 # Dedicated log for this sub-script
 # Opens its own log file (sink), separate from the driver's master log
-# and from MTE_MPRTE.R's log, so that Section 11.1.3 (CATE) output can
+# and from R_code11_MTE_MPRTE.R's log, so that Section 11.1.3 (CATE) output can
 # be reviewed independently. Fallback logdir is defined here if not
 # already set by the caller.
 #-------------------------------------------------------------------------
 
+if (!exists("logdir") && exists("log_dir")) logdir <- log_dir
 if (!exists("logdir") || is.null(logdir)) {
   if (Sys.info()[["user"]] == "marvi") {
     logdir <- "C:/Users/marvi/Dropbox/Book/2nd Edition/Chapter 11/Output/logs"
@@ -346,7 +369,7 @@ theme_springer <- function(base_size = 11) {
 }
 
 #-------------------------------------------------------------------------
-# Fig 11.7: Forest plot of subgroup CATEs from Strategy (a)
+# Fig 11.1: Forest plot of subgroup CATEs from Strategy (a)
 #-------------------------------------------------------------------------
 
 cat("\n--- Producing CATE forest plot ---\n")
@@ -365,7 +388,7 @@ forest_df$label <- factor(forest_df$j2,
                            levels = 1:n_groups,
                            labels = rev(lbl))
 
-fig11_7 <- ggplot(forest_df, aes(x = b, y = label)) +
+fig11_1 <- ggplot(forest_df, aes(x = b, y = label)) +
   geom_errorbarh(
     data = subset(forest_df, is_late == 0),
     aes(xmin = lo, xmax = hi), height = 0, color = "grey40", linewidth = 0.5
@@ -396,13 +419,13 @@ fig11_7 <- ggplot(forest_df, aes(x = b, y = label)) +
   ) +
   theme_springer()
 
-ggsave(file.path(graphs_dir, "fig11_7_cate_forest.png"),
-       fig11_7, width = 14, height = 14 * 0.68, units = "in", dpi = 100)
+ggsave(file.path(graphs_dir, "fig11_1_cate_forest_R.png"),
+       fig11_1, width = 14, height = 14 * 0.68, units = "in", dpi = 100)
 
-cat("  fig11_7_cate_forest exported.\n")
+cat("  fig11_1_cate_forest_R exported.\n")
 
 #-------------------------------------------------------------------------
-# Fig 11.8: Interaction IV -- STEM x income 2x2 coefficient plot
+# Fig 11.2: Interaction IV -- STEM x income 2x2 coefficient plot
 #-------------------------------------------------------------------------
 
 cat("\n--- Producing CATE interaction coefficient plot ---\n")
@@ -434,7 +457,7 @@ interact_df$y_pos <- c(4, 3, 2, 1)   # row order: base, stem, lowinc, stem_lowin
 y_labels <- c("STEM, Low-income", "Non-STEM, Low-income",
               "STEM, Higher-income", "Non-STEM, Higher-income")
 
-fig11_8 <- ggplot(interact_df, aes(x = b_cell, y = y_pos)) +
+fig11_2 <- ggplot(interact_df, aes(x = b_cell, y = y_pos)) +
   geom_errorbarh(aes(xmin = lo95, xmax = hi95), height = 0,
                  color = "grey50", linewidth = 0.5) +
   geom_point(aes(shape = factor(is_stem)), size = 4, color = "black") +
@@ -456,10 +479,10 @@ fig11_8 <- ggplot(interact_df, aes(x = b_cell, y = y_pos)) +
   theme_springer() +
   theme(legend.position = "bottom")
 
-ggsave(file.path(graphs_dir, "fig11_8_cate_interact.png"),
-       fig11_8, width = 14, height = 14 * 0.68, units = "in", dpi = 100)
+ggsave(file.path(graphs_dir, "fig11_2_cate_interact_R.png"),
+       fig11_2, width = 14, height = 14 * 0.68, units = "in", dpi = 100)
 
-cat("  fig11_8_cate_interact exported.\n")
+cat("  fig11_2_cate_interact_R exported.\n")
 
 #=========================================================================
 # COMPARISON TABLE: OLS / LATE / Subgroup CATEs
@@ -527,7 +550,7 @@ r2_row   <- sprintf("%.3f", sapply(rows, `[[`, "r2"))
 
 rtf_lines <- c(
   "{\\rtf1\\ansi",
-  "\\b Table 11.2. OLS, LATE, and Conditional Average Treatment Effects \\b0\\par",
+  "\\b Supplementary table. OLS, LATE, and Conditional Average Treatment Effects \\b0\\par",
   "\\par",
   paste0("\\trowd ", paste(col_names, collapse = " \\cell "), " \\cell\\row"),
   paste0("masters \\tab ", paste(b_row, collapse = " \\tab "), " \\par"),
@@ -541,7 +564,7 @@ rtf_lines <- c(
 writeLines(rtf_lines, file.path(tables_dir, "tab11_2_cate_subgroup.rtf"))
 
 # Also print a console-friendly version of the same table
-cat("\nTable 11.2. OLS, LATE, and Conditional Average Treatment Effects\n")
+cat("\nSupplementary table. OLS, LATE, and Conditional Average Treatment Effects\n")
 tbl_print <- data.frame(
   Statistic = c("b", "se", "N", "R-squared"),
   rbind(b_row, se_row, n_row, r2_row)
@@ -555,14 +578,14 @@ cat("  tab11_2_cate_subgroup.rtf exported.\n")
 # Display figures
 #=========================================================================
 
-print(fig11_7)
-print(fig11_8)
+print(fig11_1)
+print(fig11_2)
 
 cat("\n==========================================================\n")
 cat(" Section 11.1.3 (CATE.R) complete.\n")
 cat(" Outputs:\n")
-cat("  ", file.path(graphs_dir, "fig11_7_cate_forest.png"), "\n")
-cat("  ", file.path(graphs_dir, "fig11_8_cate_interact.png"), "\n")
+cat("  ", file.path(graphs_dir, "fig11_1_cate_forest_R.png"), "\n")
+cat("  ", file.path(graphs_dir, "fig11_2_cate_interact_R.png"), "\n")
 cat("  ", file.path(tables_dir, "tab11_2_cate_subgroup.rtf"), "\n")
 cat("==========================================================\n")
 
