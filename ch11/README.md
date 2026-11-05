@@ -1,10 +1,18 @@
 # Chapter 11 — Instrumental Variables, CATE, MTE/MPRTE, and Policy Cost-Benefit Analysis
 
-This folder holds the Stata and R code for Chapter 11 of *Higher Education Policy Analysis Using Quantitative Techniques* (2nd Edition, Springer). The chapter works through instrumental variables (IV) estimation, conditional average treatment effects (CATE), marginal treatment effects (MTE), marginal policy-relevant treatment effects (MPRTE), and policy cost-benefit analysis (CBA), all applied to a synthetic panel dataset on master's degree completion.
+This folder holds the Stata and R code for Chapter 11 of *Higher Education Policy Analysis Using Quantitative Techniques* (2nd Edition, Springer). The chapter works through these methods:
+
+- instrumental variables (IV) estimation, reinterpreted as a local average treatment effect (LATE);
+- conditional average treatment effects (CATE);
+- marginal treatment effects (MTE);
+- policy-relevant and marginal policy-relevant treatment effects (PRTE and MPRTE);
+- policy cost-benefit analysis (CBA).
+
+All of them are applied to a synthetic dataset on master's degree completion.
 
 ## Empirical Setting
 
-The chapter's running example uses a synthetic dataset modeled on the Baccalaureate and Beyond (B&B) longitudinal study, examining the effect of master's degree completion on labor market outcomes. State-level graduate assistantship (GA) funding serves as the instrument, creating exogenous variation in graduate enrollment likelihood without directly affecting individual earnings and motivating the heterogeneity and policy-relevance extensions developed across the CATE and MTE/MPRTE sections.
+The running example uses a synthetic dataset built to mirror the Baccalaureate and Beyond (B&B) longitudinal study. Master's degree completion is the treatment and log annual salary is the outcome. State graduate assistantship (GA) funding is the instrument: it shifts the likelihood of completing a master's degree without directly affecting individual earnings. That property motivates the heterogeneity and policy-relevance extensions in the CATE and MTE/MPRTE sections.
 
 ## File Structure
 
@@ -12,64 +20,95 @@ The chapter's running example uses a synthetic dataset modeled on the Baccalaure
 
 | File | Description |
 |---|---|
-| `Stata_code11.do` | Master driver script. Calls `CATE.do` and `MTE_MPRTE.do`, in that order. Does not construct the dataset itself — see `Synthetic_truncated_BB.do` below. |
-| `CATE.do` | Runs first. Implements conditional average treatment effect estimation: subgroup IV, interaction IV, and visualization of heterogeneous treatment effects. Produces CATE figures. |
-| `MTE_MPRTE.do` | Runs second. Implements marginal treatment effect and marginal policy-relevant treatment effect estimation, including the MTE curve and the policy cost-benefit analysis components. Produces MTE/MPRTE figures. |
-| `Synthetic_truncated_BB.do` | Standalone, one-time data-generation script. Builds the synthetic, truncated B&B-style panel dataset (`Example_7_5_3.dta`) used throughout the chapter. **Not called by `Stata_code11.do`** — run separately, only when the dataset needs to be (re)generated. |
+| `Stata_code11.do` | Master driver script. Sets paths and the master log, installs packages, and calls `CATE.do` and `MTE_MPRTE.do`, in that order. Contains no estimation code. |
+| `CATE.do` | Runs first (Section 11.1.3). Subgroup IV, interaction IV, and supplementary CATE figures. Opens its own log. |
+| `MTE_MPRTE.do` | Runs second (Sections 11.1.1–11.1.2 and 11.2). OLS and IV/2SLS; MTE estimation with `mtefe` (quadratic pooled model, linear area-specific models); state-clustered and wild cluster bootstraps; PRTE for eight GA funding scenarios; cost-benefit analysis; the chapter's Figs. 11.1–11.2 and supplementary MTE figures. Opens its own log, which is the source of Tables 11.2–11.6. |
+| `Synthetic_truncated_BB.do` | Standalone, one-time data-generation script that builds `Example_7_5_3.dta`. **Not called by `Stata_code11.do`.** Run it separately, and only when the dataset needs to be regenerated. |
 
 ### R Translations
 
 | File | Stata Counterpart | Description |
 |---|---|---|
-| `R_code11.R` | `Stata_code11.do` | Master R script. Sources `CATE_R.R` and `MTE_MPRTE_R.R`, in that order. Does not construct the dataset itself. |
-| `CATE_R.R` | `CATE.do` | Runs first. R implementation of the CATE estimation and visualization workflow. |
-| `MTE_MPRTE_R.R` | `MTE_MPRTE.do` | Runs second. R implementation of the MTE/MPRTE estimation and cost-benefit analysis workflow. |
-| `R_Synthetic_truncated_BB.R` | `Synthetic_truncated_BB.do` | Standalone, one-time R version of the synthetic dataset construction. **Not sourced by `R_code11.R`** — run separately, only when the dataset needs to be (re)generated. |
+| `R_code11.R` | `Stata_code11.do` | Master R script. Sets paths and the master log, installs missing packages, and sources `CATE_R.R` and `MTE_MPRTE.R`, in that order. Contains no estimation code. |
+| `CATE_R.R` | `CATE.do` | Runs first. R implementation of the CATE estimation and figures. |
+| `MTE_MPRTE.R` | `MTE_MPRTE.do` | Runs second. R implementation of the MTE/PRTE/CBA workflow. `mtefe` has no R port, so `mte_poly()` re-implements its parametric polynomial local-IV estimator; on the chapter data it reproduces the Stata point estimates to four decimal places. The Heckman models and wild cluster bootstraps are coded directly. |
+| `R_Synthetic_truncated_BB.R` | `Synthetic_truncated_BB.do` | Standalone, one-time R version of the dataset construction. **Not sourced by `R_code11.R`.** |
 
 ## Data
 
-Datasets for this chapter are in the [data repository](https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch11). The file the current scripts actually load:
+Datasets for this chapter are in the [data repository](https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch11).
 
 | File | Used by | Description |
 |---|---|---|
-| `Example_7_5_3.dta` | `CATE.do`/`CATE_R.R`, `MTE_MPRTE.do`/`MTE_MPRTE_R.R`; produced by `Synthetic_truncated_BB.do`/`R_Synthetic_truncated_BB.R` | The dataset actually loaded by every script run today — synthetic B&B-style panel (N = 8,000) on master's degree completion. `ma_*` program-area variables are generated at runtime rather than pre-loaded. |
+| `Example_7_5_3_updated.dta` | All four sub-scripts | Primary dataset: the synthetic B&B-style sample (N = 8,000). It adds two sets of pre-generated variables: graduate program areas for completers (`ma_*`) and prospective program areas for non-completers (`ma_*_pro`). Because every script reads the same area assignments, the Stata and R area-specific estimates are identical. |
+| `Example_7_5_3.dta` | Fallback; the CATE listing printed in Section 11.1.3 | Base dataset produced by `Synthetic_truncated_BB.do` / `R_Synthetic_truncated_BB.R`; also in [`data/ch7`](https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch7), where Chapter 7 introduces it. The CATE and pooled MTE results are the same with either file. If a script falls back to it, the program areas are generated at run time, and the R and Stata area estimates then differ (each language uses its own random draws). |
+| `mte_bootstrap_draws.dta` | `MTE_MPRTE.do` | The 500 state-clustered bootstrap replications behind the book's published standard errors. Reused by default (see Run Time). |
 
-> **Note:** All four sub-scripts try `Example_7_5_3_updated.dta` first — a version with `ma_*` variables pre-generated — then fall back to `Example_7_5_3.dta` if it isn't found. Since `Example_7_5_3_updated.dta` isn't currently in `data/ch11`, the fallback is what every run actually uses. Consider either adding the updated file or simplifying the loading logic to target `Example_7_5_3.dta` directly.
+The MTE scripts and `CATE_R.R` download `Example_7_5_3_updated.dta` from the data repository if it is not in the working directory. `MTE_MPRTE.do` does the same for `mte_bootstrap_draws.dta`.
 
 ## Running the Code
 
-**Prerequisite:** `Example_7_5_3.dta` must be in the working directory before running either master script. If it isn't, `MTE_MPRTE.do` and `MTE_MPRTE_R.R` will attempt to download it from the data repository — the first attempt (for the `_updated` version) will fail since that file doesn't exist there yet, but the second attempt pulls `Example_7_5_3.dta` directly and succeeds. `CATE.do` and `CATE_R.R` do not have their own download logic, so they require the file to already be present locally. To build the dataset from scratch, run the standalone generator first:
-```stata
-do Synthetic_truncated_BB.do
-```
-
-**Stata** (target version 19; tested for compatibility with `version 19`):
+**Stata** (version 19 or later; tested in Stata 19.5):
 ```stata
 do Stata_code11.do
 ```
-This calls `CATE.do` followed by `MTE_MPRTE.do`.
 
-**R**:
+**R** (version 4.4 or later):
 ```r
 source("R_code11.R")
 ```
-This sources `CATE_R.R` followed by `MTE_MPRTE_R.R`. To regenerate the dataset instead, run `R_Synthetic_truncated_BB.R` first.
 
-Required packages cover IV and heterogeneous treatment effect estimation; the book's shared `theme_springer()` plotting theme is also needed (see Chapter 1 setup or the repository root for shared utilities).
+Required packages:
+- **Stata:** `mtefe`, `moremata`, `boottest` and `estout`, installed from SSC by `Stata_code11.do`.
+- **R:** `haven`, `dplyr`, `tidyr`, `ivreg`, `sandwich`, `lmtest`, `car`, `ggplot2`, `stringr` and `AER`, installed by `R_code11.R` if missing. The Springer plotting theme (`theme_springer()`) is defined inside the scripts.
 
-> **Note:** Path setup uses username-conditional branching (`if c(username) == "marvi"` in Stata) with a GitHub raw-URL fallback, following the same convention used across the rest of the 2nd edition codebase.
+### Run Time
+
+| Run | Stata MP (2 cores) | Stata SE | R |
+|---|---|---|---|
+| Default | 5–10 min | 10–15 min | about 5 min |
+| Full state-clustered bootstrap | about 7 hours | 9–12 hours | (default) |
+
+By default, `MTE_MPRTE.do` reuses the published bootstrap draws (`use_saved_boot = 1` in Section 6e), so every estimate, standard error and figure matches the book. To rerun the bootstrap, set `use_saved_boot = 0`. The R script runs its own 500-replication bootstrap by default because it takes only a few minutes.
+
+> **Caution:** The published draws are valid **only** for the book's exact specification: the same data, controls, models (quadratic pooled, linear areas), R = 500 and seed 20260101. If you change any of these, set `use_saved_boot = 0`. The script cannot detect such changes.
+
+### Stata vs. R
+
+Point estimates are identical in the two languages: OLS, IV, CATE, MTE parameters, area-specific estimates, PRTEs and benefit-cost ratios. Bootstrap standard errors differ because Stata and R use different random-number generators, and CATE robust standard errors differ slightly because of small-sample conventions. The book reports the Stata results.
+
+> **Note:** Paths use username-conditional branching (`if c(username) == "marvi"` in Stata, `Sys.info()[["user"]] == "marvi"` in R), following the convention used across the 2nd edition codebase. Other users get relative `Output/` paths and work from the current working directory.
 
 ## Methods Covered
 
-- **Instrumental variables (IV):** identification using state-level graduate assistantship (GA) funding as an instrument
-- **Conditional average treatment effects (CATE):** subgroup IV, interaction IV, and heterogeneity visualization
-- **Marginal treatment effects (MTE) and MPRTE:** local instrument variation, policy-relevant treatment parameters
-- **Cost-benefit analysis (CBA):** policy evaluation built on the MTE/MPRTE framework
+- **Instrumental variables (IV):** identification with state GA funding as the instrument; the IV/2SLS estimate interpreted as a LATE
+- **Conditional average treatment effects (CATE):** subgroup IV, interaction IV, and heterogeneity along observed characteristics
+- **Marginal treatment effects (MTE):** heterogeneity along unobserved resistance to treatment, estimated with a polynomial local-IV model (`mtefe`; Andresen, 2018); ATE, ATT, ATU, LATE and MPRTE as weighted averages of the MTE curve
+- **PRTE and MPRTE:** returns for the individuals induced to complete by specific GA funding policies (eight scenarios) and by marginal policy changes
+- **Cost-benefit analysis (CBA):** PRTEs converted into present-value earnings gains and benefit-cost ratios
 
 ## Output
 
-Running the scripts produces the figures and tables referenced in Chapter 11 — CATE plots and MTE/MPRTE curves — rendered in Stata's `s2mono` scheme for Springer monochrome print compatibility.
+### Chapter figures
+
+The scripts keep their original figure names. The two figures printed in the chapter map to script outputs as follows:
+
+| Chapter | Content | Stata (`$graphs_dir`) | R (`graphs_dir`) | Produced in |
+|---|---|---|---|---|
+| Fig. 11.1 | Pooled MTE curve with 95% bootstrap band | `fig11_3_mte_curve_Stata.png` (`fig11_3.gph`) | `fig11_3_mte_curve_R.png` | `MTE_MPRTE.do` / `MTE_MPRTE.R`, Section 8 |
+| Fig. 11.2 | PRTE by size of a uniform GA funding increase | `fig11_8_mprte_by_intensity_Stata.png` (`fig11_8.gph`) | `fig11_8_mprte_by_intensity_R.png` | `MTE_MPRTE.do` / `MTE_MPRTE.R`, Section 11 |
+
+### Other outputs
+
+| Output | Stata | R |
+|---|---|---|
+| Supplementary CATE figures (not in the chapter) | `fig11_1`, `fig11_2` | `fig11_1_cate_forest_R.png`, `fig11_2_cate_interact_R.png` |
+| Supplementary MTE figures (not in the chapter) | `fig11_4` (propensity-score histogram), `fig11_5` (MTE by program area), `fig11_6` (PRTE weights) | same names, `*_R.png` |
+| Logs | `Chapter11_Stata_output.log`, `CATE.do`'s own log, `MTE_MPRTE_output.log` | `Chapter11_R_output.log`, `CATE_output.log`, `MTE_MPRTE_R.log` |
+| Supplementary table | `tab11_2_cate_subgroup.rtf` | `tab11_2_cate_subgroup.rtf` |
+
+Figures use Stata's `s2mono` scheme (and a matching black-and-white `ggplot2` theme) for Springer print. The script names `fig11_1` and `fig11_2` refer to the supplementary CATE plots, not to the chapter's Figs. 11.1 and 11.2. The chapter's Tables 11.2–11.6 are compiled from `MTE_MPRTE_output.log`; the scripts do not export them as separate files. `tab11_2_cate_subgroup.rtf` is a supplementary comparison table that is not reproduced in the chapter; its `tab11_2` prefix is a holdover from an earlier draft. The scripts produce no `fig11_7`.
 
 ## Related Chapters
 
-This chapter extends the instrumental variables/2SLS approach introduced in Chapter 7, reinterpreting the IV/2SLS estimate as a local average treatment effect (LATE) and building out the MTE/MPRTE and CBA framework around it. It also complements Chapter 10's state- and institution-level causal inference toolkit (DiD, SCM, SDID, CS-DiD, RDD): where Chapter 10 addresses treatment assigned to a small number of units, Chapter 11 addresses individual-level selection into treatment.
+Chapter 7 introduced the IV/2SLS framework this chapter builds on; here that estimate is recast as a LATE and then extended into the MTE, PRTE/MPRTE and CBA framework. Chapter 10 is the natural companion for state- and institution-level causal inference (RDD, DiD, SCM, SDID, CS-DiD, ETWFE). The two chapters approach identification from different angles: Chapter 10 handles treatment assigned across a small number of units, and Chapter 11 focuses on individual-level selection.
