@@ -158,7 +158,7 @@ cat("MTE/IV packages confirmed.\n")
 #         tab11_2_cate_subgroup.rtf.
 #
 #   Script:   file.path(syntax_dir, "CATE_R.R")
-#             (opens its own log, log_dir/CATE_output.log)
+#             (opens its own log, log_dir/CATE_R.log)
 #   Inherits: graphs_dir, tables_dir, logdir
 #   Data:     Example_7_5_3_updated.dta (CATE_R.R runs first, so this is
 #             the chapter run's first data load; downloaded from GitHub
