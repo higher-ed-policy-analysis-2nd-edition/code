@@ -1,6 +1,6 @@
 # ==============================================================================
 # Chapter 12: Bayesian MTE Microsimulation
-# Cost-Benefit Analysis of a $100k Lifetime Cap on Grad PLUS Loans
+# Cost-Benefit Analysis of the $100k Aggregate Limit on Federal Graduate Loans
 # R Translation of Complete Stata Code
 # Higher Education Policy Analysis Using Quantitative Techniques
 # (2nd Edition)
@@ -12,11 +12,16 @@
 # ==============================================================================
 #
 # Overview:
-#   This script evaluates the net social benefit of a $100,000 lifetime
-#   aggregate cap on federal Grad PLUS borrowing (effective July 1, 2026
-#   under the One Big Beautiful Bill, Pub. L. 119-XX). The cap binds for
-#   graduate students whose program costs exceed the new limit. Using the
-#   marginal treatment effect (MTE) framework from Chapter 10, we estimate
+#   This script evaluates the net social benefit of the $100,000 aggregate
+#   limit on federal graduate borrowing enacted in the One Big Beautiful
+#   Bill Act (OBBBA; Pub. L. 119-21), effective July 1, 2026. The OBBBA
+#   ends Grad PLUS loans for new borrowers and limits Direct Unsubsidized
+#   loans for students in non-professional graduate programs to $20,500 a
+#   year and $100,000 in total (excluding undergraduate loans). This script
+#   models the $100,000 aggregate limit only (variable names such as
+#   grad_plus_loans and "cap" are retained from earlier drafts; the annual
+#   limit is not modeled). Using the marginal treatment effect (MTE)
+#   framework from Chapter 11, we estimate
 #   heterogeneous returns to master's degree completion and simulate which
 #   students a binding cap would push out of the program. A Bayesian
 #   microsimulation (parametric bootstrap, S = 1000 posterior draws)
@@ -57,6 +62,15 @@
 #   Chapter 11 MTE/MPRTE translation -- the qualitative conclusions
 #   (sign, rough magnitude, and policy verdict) should match; exact
 #   point estimates will not.
+#
+# REVISION (Nov 2026; mirrors Stata_code12.do): comment, labeling, and
+#   reporting changes only. No estimate, simulation draw, or figure value
+#   changes, EXCEPT that (a) Sections 3 and 6 now report exposure and
+#   institutional revenue loss for all five program areas (adds Health and
+#   Other), (b) Section 5 adds a heterogeneity test of the three MTE
+#   interaction terms, and (c) Fig. 12.5's caption no longer cites
+#   "Chapter 10, Table 10.1". Items flagged "UNDER REVIEW" change results
+#   and await the author's decision.
 # ==============================================================================
 
 
@@ -148,7 +162,7 @@ options(warn = 1)   # print warnings immediately (Stata default)
 set.seed(20251201)  # equivalent to: set seed 20251201
 
 # ── Global parameters ────────────────────────────────────────────────────────
-# Individual-level controls (same set as Chapter 10 for consistency)
+# Individual-level controls (same set as Chapter 11 for consistency)
 X_controls <- c("female", "black", "hispanic", "asian", "age_ba", "firstgen",
                  "parent_income_q", "parent_grad", "ugpa", "stem_major",
                  "bus_major", "ed_major", "selective_inst", "public_ug",
@@ -161,7 +175,7 @@ career_years    <- 30      # Earnings horizon (years)
 subsidy_rate    <- 0.20    # Government subsidy on Grad PLUS principal
 cap_threshold   <- 100     # Policy cap ($000s)
 base_salary     <- 47000   # Pooled mean annual salary (non-holders)
-cost_per_degree <- 100000  # Per-student cost of master's degree (full debt)
+cost_per_degree <- 100000  # Not used in any calculation (retained for reference)
 S_draws         <- 1000    # Number of Bayesian posterior draws
 
 
@@ -169,10 +183,21 @@ S_draws         <- 1000    # Number of Bayesian posterior draws
 # Section 2: Synthetic Data Generation
 #
 # Population: 8,000 graduate students drawn from a B&B-mirroring DGP.
-# The dataset extends the Chapter 10 synthetic panel (Example_7_5_3.dta)
-# with a Grad PLUS loan amount variable (grad_plus_loans, in $000s).
-# Loan amounts depend on program type, institutional selectivity, family
-# income, and a student-specific unobserved borrowing propensity.
+# The dataset is generated separately from the Chapter 11 data
+# (Example_7_5_3_updated.dta); it reuses many of the same variable names
+# but not the same draws, program areas, or GA funding distribution. The
+# canonical file is produced by Generate_Example_12_1.do and downloaded
+# below; the R block that follows runs only if the download fails and,
+# because R's RNG differs from Stata's, does NOT reproduce the canonical
+# file exactly.
+# Federal graduate borrowing (grad_plus_loans, $000s) depends on program
+# area, institutional selectivity, family income, GA funding, and a
+# student-specific unobserved borrowing propensity.
+# Unlike Chapter 11, where only completers have a master's program area
+# (ma_*), every student here is assigned the graduate program area they
+# are enrolled in or would enter (stem_major, bus_major, ed_major,
+# health_major; Other is the base), because borrowing and tuition depend
+# on the program.
 #
 # GitHub data repository:
 #   https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch12
@@ -284,7 +309,7 @@ if (!dl_ok) {
   attr(dat$net_inst_rev, "label") <- "Net Institutional Revenue per Student ($000s)"
 
   # ── Latent propensity to complete ───────────────────────────────────────────
-  # The selection equation follows Chapter 10. Students select into completion
+  # The selection equation mirrors Chapter 11. Students select into completion
   # based on observed covariates, GA funding, and an unobserved individual factor.
   epsilon <- rnorm(n, 0, 1)    # Latent selection error (positive correlation
                                 #   with earnings error to create selection bias)
@@ -399,12 +424,18 @@ cat("Constrained completers:", n_constrained, "/", n_completers,
     sprintf("(%.1f%%)\n", 100 * n_constrained / n_completers))
 
 # ── By program area ─────────────────────────────────────────────────────────
-cat("\nMean Grad PLUS loans by program area:\n")
-print(tabstat_by(dat, c("grad_plus_loans", "above_cap"), "stem_major",
-                  stats_fun = list(mean = mean, n = length)))
-print(tabstat_by(dat, c("grad_plus_loans", "above_cap"), "bus_major",
-                  stats_fun = list(mean = mean, n = length)))
-print(tabstat_by(dat, c("grad_plus_loans", "above_cap"), "ed_major",
+# All five graduate program areas, including Health and the Other base.
+# The above_cap mean is the share of ALL students in each area (completers
+# and non-completers) borrowing above the limit, not a completer-only share.
+dat$prog_area <- factor(
+  ifelse(dat$stem_major == 1, "STEM",
+  ifelse(dat$bus_major == 1, "Business",
+  ifelse(dat$ed_major == 1, "Education",
+  ifelse(dat$health_major == 1, "Health", "Other")))),
+  levels = c("STEM", "Business", "Education", "Health", "Other"))
+
+cat("\nMean federal graduate borrowing and share above the limit, by program area:\n")
+print(tabstat_by(dat, c("grad_plus_loans", "above_cap"), "prog_area",
                   stats_fun = list(mean = mean, n = length)))
 
 
@@ -488,15 +519,25 @@ mte_cubic <- lm(mte_formula, data = dat)
 mte_vcov  <- vcovHC(mte_cubic, type = "HC1")
 print(coeftest(mte_cubic, vcov. = mte_vcov))
 
-# ── Joint significance test for MTE polynomial coefficients ─────────────────
+# ── Joint tests for the MTE polynomial ──────────────────────────────────────
 # Individual coefficients are often imprecise due to multicollinearity among
-# polynomial terms. The joint F-test is the appropriate assessment of whether
-# the MTE curve is identified -- i.e., whether treatment effect heterogeneity
-# exists across the distribution of unobserved resistance to treatment.
+# polynomial terms, so joint tests are used.
+# (1) All four terms (masters plus the three interactions) = 0. This tests
+#     whether completion has ANY effect on log salary; on its own it is not
+#     a test of heterogeneity.
 mte_poly_terms <- c("masters", "masters:phat", "masters:phat2", "masters:phat3")
 joint_test <- linearHypothesis(mte_cubic,
     paste(mte_poly_terms, "= 0"), vcov. = mte_vcov, test = "F")
-cat(sprintf("Joint F-test p-value: %6.4f\n", joint_test[2, "Pr(>F)"]))
+cat(sprintf("Joint F-test, any effect (4 terms) p-value: %6.4f\n",
+            joint_test[2, "Pr(>F)"]))
+
+# (2) The three interaction terms = 0, i.e., the MTE is flat in u. Rejecting
+#     this is evidence of essential heterogeneity in returns.
+het_terms <- c("masters:phat", "masters:phat2", "masters:phat3")
+het_test <- linearHypothesis(mte_cubic,
+    paste(het_terms, "= 0"), vcov. = mte_vcov, test = "F")
+cat(sprintf("Heterogeneity F-test (MTE flat in u) p-value: %6.4f\n",
+            het_test[2, "Pr(>F)"]))
 
 # ── Store polynomial coefficients ───────────────────────────────────────────
 b0 <- coef(mte_cubic)["masters"]           # MTE at u = 0
@@ -512,6 +553,12 @@ cat(sprintf("\nMTE polynomial: MTE(u) = %7.4f + %7.4f*u + %7.4f*u^2 + %7.4f*u^3\
 ate <- b0 + b1/2 + b2/3 + b3/4
 cat(sprintf("Estimated ATE (cubic): %6.4f\n", ate))
 
+# UNDER REVIEW (outline Author note 3): ATT and ATU below average each
+# student's MTE evaluated at his or her own propensity score p-hat, i.e., the
+# return of the person at the margin p-hat. The standard Heckman-Vytlacil
+# definitions instead integrate MTE(u) over u < P (ATT) or u > P (ATU) with
+# the corresponding weights. The DGP also defines u = 1 - p, while this
+# section evaluates the MTE at p. Results are unchanged pending a decision.
 # ATT = E[MTE(u) | D=1] = weighted average over completers' propensity scores
 dat$mte_hat <- b0 + b1*dat$phat + b2*dat$phat^2 + b3*dat$phat^3
 att <- mean(dat$mte_hat[dat$masters == 1])
@@ -521,9 +568,9 @@ cat(sprintf("Estimated ATT: %6.4f\n", att))
 atu <- mean(dat$mte_hat[dat$masters == 0])
 cat(sprintf("Estimated ATU: %6.4f\n", atu))
 
-# Note: ATU > ATT reflects negative selection on gains in this dataset --
-# students currently kept out of graduate education have higher potential
-# returns than those who self-selected in, consistent with financial barriers.
+# Note: in this run ATU > ATT. Whether this reflects negative selection on
+# gains or the ATT/ATU definitions above (UNDER REVIEW) has not been settled;
+# the DGP comment describes a declining MTE (positive selection on gains).
 cat(sprintf("\nTreatment parameter hierarchy (this dataset): ATU > ATT > ATE = %6.4f > %6.4f > %6.4f\n",
             atu, att, ate))
 
@@ -535,9 +582,11 @@ cat(sprintf("\nTreatment parameter hierarchy (this dataset): ATU > ATT > ATE = %
 # $100k face a binding credit constraint. Those who cannot substitute with
 # private credit or personal resources drop out, forfeiting the returns to
 # completion. We model the probability of being pushed out as a function
-# of the loan overage: p_out(overage) = Phi(overage / 50). This implies a
-# smooth, increasing probability of displacement as the overage grows,
-# from near-zero at small overages to near-certainty for very large ones.
+# of the loan overage: p_out(overage) = Phi(overage / 50). The probability
+# rises smoothly with the overage, but because Phi(0) = 0.5 every student
+# above the limit has at least a 50% displacement probability, even one
+# $1 over. UNDER REVIEW (outline Author note 2): alternatives such as
+# 2*Phi(overage/50) - 1 start near zero.
 #
 # Constrained completers are classified as:
 #   (a) Remaining: find alternative financing; remain enrolled; D stays 1
@@ -581,9 +630,9 @@ cat(sprintf("ATE   (population average):           %6.4f\n", ate))
 cat(sprintf("ATT   (E[MTE | D=1], completers):     %6.4f\n", att))
 cat(sprintf("ATU   (E[MTE | D=0], non-completers): %6.4f\n", atu))
 cat(sprintf("MPRTE (cap-displaced margin):         %6.4f\n", mprte))
-cat("\nMPRTE compares the average return on the policy margin to the\n")
-cat("population-wide ATE. If MPRTE < ATT, the cap is removing students\n")
-cat("with below-average returns among completers (efficiency-improving).\n")
+cat("\nMPRTE compares the average return of displaced students with the\n")
+cat("average return of all completers (ATT). If MPRTE > ATT, the cap removes\n")
+cat("students with above-average returns among completers (efficiency loss).\n")
 
 # ── Present value factor ─────────────────────────────────────────────────────
 pv_factor <- (1 - (1 + discount_rate)^(-career_years)) / discount_rate
@@ -621,7 +670,9 @@ cat(sprintf("Benefit-cost ratio: %5.3f\n", (FS_point + EG_point) / max(1, BC_poi
 
 # ── Institutional revenue loss ───────────────────────────────────────────────
 # When a student is displaced by the cap, the institution loses their net
-# tuition revenue for the remaining program years. This is distinct from the
+# tuition revenue. As implemented, the loss is net_inst_rev for the FULL
+# program (all program years), not only the remaining years; if displaced
+# students leave partway through, this overstates the loss (UNDER REVIEW). This is distinct from the
 # student's human capital loss: it is a revenue shock to the institution that
 # affects staffing, cross-subsidies, and program viability.
 #
@@ -643,11 +694,8 @@ cat(sprintf("Total institutional sector impact ($000s):  %8.1f\n", IR_point + CS
 # Revenue loss by program area
 cat("\nInstitutional revenue loss by program area ($000s):\n")
 completers <- dat[dat$masters == 1, ]
-print(tabstat_by(completers, "inst_rev_loss_i", "stem_major",
-                  stats_fun = list(sum = sum, mean = mean, n = length)))
-print(tabstat_by(completers, "inst_rev_loss_i", "bus_major",
-                  stats_fun = list(sum = sum, mean = mean, n = length)))
-print(tabstat_by(completers, "inst_rev_loss_i", "ed_major",
+# All five areas (prog_area from Section 3)
+print(tabstat_by(completers, "inst_rev_loss_i", "prog_area",
                   stats_fun = list(sum = sum, mean = mean, n = length)))
 
 # Revenue loss by institution type
@@ -680,6 +728,9 @@ cat(sprintf("\nExtended net benefit (incl. institutional costs, $000s): %8.1f\n"
 # Additional uncertainty is propagated through draws on:
 #   - Base salary (log-normal, reflecting real-wage uncertainty)
 #   - Subsidy rate (uniform, reflecting fiscal policy uncertainty)
+#   - Tuition multiplier (log-normal, reflecting pricing uncertainty)
+# The propensity score (phat) is held fixed across draws, so uncertainty
+# in the first-stage probit is not propagated.
 # ------------------------------------------------------------------------------
 
 cat("\n============================================================\n")
@@ -717,7 +768,7 @@ sim_results <- data.frame(
 
 # ── Simulation loop ──────────────────────────────────────────────────────────
 cat("\nRunning", S_draws, "posterior draws...\n")
-cat("(This may take 1-2 minutes.)\n")
+cat("(This typically takes under a minute.)\n")
 
 # Draw all S_draws coefficient vectors jointly from N(b_full, V_full) up front,
 # preserving the correlation structure -- the direct R equivalent of Stata's
@@ -898,7 +949,7 @@ sim_results <- haven::read_dta(file.path(tables_dir, "sim_results_ch12.dta"))
 for (v in c("fiscal_s", "behav_cost_s", "effic_gain_s", "net_benefit_s", "bcr_s")) {
   x  <- sim_results[[v]]
   ci <- quantile(x, probs = c(0.025, 0.975))
-  cat(sprintf("%s: mean = %8.2f  95%% CI: [%8.2f, %8.2f]\n",
+  cat(sprintf("%s: mean = %12.2f  95%% CI: [%12.2f, %12.2f]\n",
               v, mean(x), ci[1], ci[2]))
 }
 
@@ -911,11 +962,11 @@ nb_ci     <- quantile(sim_results$net_benefit_s, probs = c(0.025, 0.975))
 
 cat("\n--- Policy Verdict ---\n")
 if (nb_mean > 0) {
-  cat(sprintf("Posterior mean NB = %6.2f ($000s) > 0\n", nb_mean))
+  cat(sprintf("Posterior mean NB = %12.2f ($000s) > 0\n", nb_mean))
   cat("Scenario A likely: cap predominantly displaces low-return borrowers.\n")
   cat("Policy generates net fiscal savings in excess of human capital loss.\n")
 } else {
-  cat(sprintf("Posterior mean NB = %6.2f ($000s) < 0\n", nb_mean))
+  cat(sprintf("Posterior mean NB = %12.2f ($000s) < 0\n", nb_mean))
   cat("Scenario B likely: cap displaces students with positive marginal returns.\n")
   cat("Human capital loss exceeds fiscal savings.\n")
 }
@@ -1014,7 +1065,9 @@ b3_pm <- mean(sim_results$b3_s)
 # Those with u near 0 (low resistance) self-select regardless of credit access.
 # Those with u near 1 (high resistance) would not enroll even without the cap.
 # The cap binds most tightly for students in u in [0.30, 0.65] (medium resistance).
-# These thresholds are calibrated from the loan overage distribution.
+# UNDER REVIEW (outline Author note 6): these thresholds are hardcoded, not
+# derived from the displacement weights or the loan overage distribution.
+# mte_cap_neg is empty whenever the MTE is positive throughout [0.30, 0.65].
 mte_curve <- data.frame(u = (1:100) / 100)
 mte_curve$mte <- b0_pm + b1_pm*mte_curve$u + b2_pm*mte_curve$u^2 + b3_pm*mte_curve$u^3
 mte_curve$region_cap <- mte_curve$u >= 0.30 & mte_curve$u <= 0.65
@@ -1098,12 +1151,14 @@ save_fig(fig12_4, "fig12_4_param_posteriors_R.png")
 # Fig. 12.5: MTE Curve by Graduate Program Area (Heterogeneity)
 # Field-specific MTE curves reveal which programs drive the efficiency verdict.
 #
-# This figure uses the field-specific interacted model (est store mte_byarea)
-# from the Chapter 10 pipeline. Here we illustrate the concept using the
-# pooled cubic MTE with program-area-specific intercept adjustments derived
-# from the Chapter 10 field-specific ATE differentials in Table 10.1.
+# Illustrates the concept using the pooled cubic MTE with program-area
+# intercept offsets. UNDER REVIEW (outline Author note 7): the offsets were
+# labeled as coming from "Chapter 10, Table 10.1", which no longer exists in
+# that form, and they do not match Chapter 11, Table 11.3 (e.g., Business
+# ATT 0.907, STEM ATE 0.455 there). Their source must be confirmed or the
+# offsets re-derived; values are unchanged here.
 #
-# Field-specific ATE offsets relative to base Other (from Chapter 10 Table 10.1):
+# Field-specific ATE offsets relative to base Other (source to be confirmed):
 #   STEM:      ATE = 0.9424 vs. Other ATE = 0.8085 -> offset = +0.134
 #   Business:  ATE = 1.6936 vs. Other ATE = 0.8085 -> offset = +0.885
 #   Education: ATE = 0.6437 vs. Other ATE = 0.8085 -> offset = -0.165
@@ -1146,9 +1201,9 @@ fig12_5 <- ggplot(byfield_long, aes(x = u, y = mte, linetype = field, color = fi
     "Education" = "grey50", "Other (base)" = "grey50")) +
   labs(x = "u (Unobserved Resistance to Treatment)", y = "Marginal Treatment Effect",
        caption = paste(
-         "Field-specific MTE adjusted by program-area ATE differentials from",
-         "the interacted model (Chapter 10, Table 10.1). Business programs",
-         "show the largest returns; Education the lowest.", sep = "\n")) +
+         "Illustrative: pooled MTE shifted by program-area intercept offsets.",
+         "Business programs show the largest returns; Education the lowest.",
+         sep = "\n")) +
   theme(legend.position = "bottom")
 
 save_fig(fig12_5, "fig12_5_mte_byfield_R.png")
