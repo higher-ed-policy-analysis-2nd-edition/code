@@ -3,14 +3,15 @@
 * Creates: Example_12_1.dta
 *
 * Application: Chapter 12 -- Bayesian MTE Microsimulation / Cost-Benefit
-*              Analysis of a $100k Lifetime Cap on Grad PLUS Loans
+*              Analysis of the OBBBA $100k Aggregate Limit on Federal
+*              Graduate Loans
 * Instrument:  State-Funded Graduate Assistantship (GA) Funding Level
 *
 * Higher Education Policy Analysis Using Quantitative Techniques
 * (2nd Edition)
 * Source: https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch12
 * Author: Marvin A. Titus
-* Date: June 2026
+* Date: June 2026 (revised November 2026; see REVISION below)
 * NOTE: Code development was assisted by Claude (Anthropic). The author
 * provided specifications and reviewed, tested, and validated all code.
 *========================================================================
@@ -33,6 +34,34 @@
 *   Stata_code12.do and R_code12.R to match, and re-push the resulting
 *   Example_12_1.dta to:
 *     https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch12
+*
+* REVISION (November 2026): resistance to treatment is now defined as
+*   U_D = normal(-epsilon) instead of 1 - normal(index_latent). U_D is
+*   uniform on [0,1], and a student completes (index_latent > 0) exactly
+*   when U_D is below the propensity score, as the MTE framework requires
+*   (Chapter 11, Eq. 11.1). The old definition mixed the instrument and
+*   the controls into each student's return, so GA funding affected
+*   salaries directly and no MTE estimator could recover the true
+*   effects. This change uses no random numbers, so every variable except
+*   ln_salary and salary is identical to the earlier canonical file
+*   (superseded by REVISION 3 below, which changes the data). The
+*   same change has been made in the inline fallback copies in
+*   Stata_code12.do and R_code12.R. Re-push the regenerated
+*   Example_12_1.dta to the GitHub data repository.
+*   The script now also reports the TRUE ATE, ATT, and ATU (computed from
+*   the potential outcomes before they are dropped) for validating the
+*   chapter's MTE estimates, and writes its output to
+*   Output/logs/Generate_Example_12_1.log.
+*
+*   REVISION 3 (November 2026): recalibrated DGP. Realistic returns that
+*   decline with resistance, MTE(u) = 0.40 - 0.40u + 0.10u^2 (true ATE
+*   0.233; positive selection on gains); potential outcomes with SD 0.45
+*   and selection on levels; GA funding drawn with SD 4.0 (bounds 0-20)
+*   and coefficient 0.25 in the selection index (intercept -3.00), so that
+*   propensity scores span nearly all of [0,1] and completion is about 38%.
+*   Verified by Monte Carlo (200 datasets, N = 8,000): the quadratic
+*   control-function estimator recovers the true ATE, ATT, ATU, and PRTE
+*   with negligible bias (SD of estimates about 0.03-0.04).
 *
 * NOTE ON SYNTHETIC DATA:
 *   This simulation uses synthetic data calibrated to mirror the
@@ -62,6 +91,29 @@ else {
 }
 
 di as text "Data directory: $data_dir"
+
+*========================================================================
+* LOG FILE
+* Written to Output/logs (the author's Dropbox Chapter 12 folder for
+* username "marvi"; a relative Output/logs folder otherwise). A named log
+* is used so it does not interfere with any other open log.
+*========================================================================
+
+if c(username) == "marvi" {
+    global log_dir "C:\Users\marvi\Dropbox\Book\2nd Edition\Chapter 12\Output\logs"
+    capture mkdir "C:\Users\marvi\Dropbox\Book\2nd Edition\Chapter 12\Output"
+    capture mkdir "$log_dir"
+}
+else {
+    global log_dir "Output/logs"
+    capture mkdir "Output"
+    capture mkdir "$log_dir"
+}
+
+capture log close gen12
+log using "$log_dir/Generate_Example_12_1.log", replace text name(gen12)
+di as text "Generate_Example_12_1.do log opened: " c(current_date) " " c(current_time)
+di as text "Log file: $log_dir/Generate_Example_12_1.log"
 
 version 19
 set more off
@@ -103,8 +155,10 @@ gen metro          = (runiform() < 0.68)
 * ── State GA funding (instrument) ───────────────────────────────────────────
 * Each student is assigned a state GA funding level. Variation is driven by
 * state budgetary conditions and is plausibly exogenous to individual earnings.
-gen ga_funding_adj = round(rnormal(7.5, 2.2) * 10) / 10
-replace ga_funding_adj = max(2.0, min(14.0, ga_funding_adj))
+* Calibration (REVISION 3): SD 4.0 and bounds 0-20 (previously SD 2.2,
+* bounds 2-14) so that propensity scores span nearly all of [0,1].
+gen ga_funding_adj = round(rnormal(7.5, 4.0) * 10) / 10
+replace ga_funding_adj = max(0, min(20, ga_funding_adj))
 
 * ── Grad PLUS loan amount ────────────────────────────────────────────────────
 * Loan amounts reflect program costs (STEM and business programs cost more),
@@ -160,14 +214,15 @@ label variable net_inst_rev "Net Institutional Revenue per Student ($000s)"
 drop tuition_noise
 
 * ── Latent propensity to complete ───────────────────────────────────────────
-* The selection equation follows Chapter 10. Students select into completion
+* The selection equation mirrors Chapter 11. Students select into completion
 * based on observed covariates, GA funding, and an unobserved individual factor.
-gen epsilon = rnormal(0, 1)    // Latent selection error (positive correlation
-gen nu      = rnormal(0, 1)    //   with earnings error to create selection bias)
+gen epsilon = rnormal(0, 1)    // Latent selection error; defines resistance U_D
+gen nu      = rnormal(0, 1)    // Not used below; retained so the random-number
+                               //   sequence is unchanged across revisions.
 
 * Latent index (linear combination of instrument + controls + noise)
-gen index_latent = -1.97 ///
-    + 0.13 * ga_funding_adj ///
+gen index_latent = -3.00 ///          // REVISION 3 (was -1.97)
+    + 0.25 * ga_funding_adj ///      // REVISION 3 (was 0.13)
     + 0.04 * ugpa * 10 ///
     + 0.08 * parent_grad ///
     - 0.10 * firstgen ///
@@ -184,19 +239,25 @@ label variable masters "Completed Master's Degree (1=Yes)"
 * ── Propensity score (true) ─────────────────────────────────────────────────
 gen phat_true = normal(index_latent)
 
-* ── Heterogeneous treatment effects ─────────────────────────────────────────
-* MTE(u) = b0 + b1*u + b2*u^2 + b3*u^3  (cubic polynomial)
-* True parameters imply declining MTE → positive selection on gains.
-* Interpretation: students most likely to complete (low u) benefit the most.
-local b0_true = -2.50
-local b1_true =  19.30
-local b2_true = -30.25
-local b3_true =  15.12
+* ── Heterogeneous treatment effects (REVISION 3) ────────────────────────────
+* MTE(u) = a0 + a1*u + a2*u^2  (quadratic in resistance u, as in Ch. 11)
+* Resistance is U_D = normal(-epsilon): uniform on [0,1], and a student
+* completes (index_latent > 0) exactly when U_D is below the propensity
+* score.
+* The MTE declines from 0.40 at u = 0 to 0.10 at u = 1: positive selection
+* on gains, so students most likely to complete benefit the most
+* (Carneiro, Heckman, & Vytlacil, 2011). True ATE = a0 + a1/2 + a2/3 = 0.233.
+* Selection on levels: students with higher resistance have higher
+* earnings without the degree (better outside options), so a naive OLS
+* comparison of completers and non-completers is biased.
+local a0_true =  0.40
+local a1_true = -0.40
+local a2_true =  0.10
 
-gen u_true      = 1 - phat_true
-gen mte_true    = `b0_true' + `b1_true'*u_true + `b2_true'*u_true^2 + `b3_true'*u_true^3
-gen Y1_latent   = mte_true + rnormal(0, 0.40)    // Log-salary under D=1
-gen Y0_latent   = rnormal(0, 0.70)               // Log-salary under D=0
+gen u_true      = normal(-epsilon)                // U_D: resistance
+gen mte_true    = `a0_true' + `a1_true'*u_true + `a2_true'*u_true^2
+gen Y0_latent   = 0.15*(u_true - 0.5) + rnormal(0, 0.45)   // Log-salary under D=0
+gen Y1_latent   = Y0_latent + mte_true + rnormal(0, 0.10)  // Log-salary under D=1
 
 * ── Observed log salary ─────────────────────────────────────────────────────
 gen ln_salary = 10.0 ///
@@ -216,9 +277,21 @@ label variable ln_salary "Log Annual Salary"
 gen salary = exp(ln_salary)
 label variable salary "Annual Salary ($)"
 
+* ── True treatment effects (for validating the chapter's estimates) ─────────
+* The individual effect of completion on log salary is Y1_latent - Y0_latent.
+* These are the targets the corrected MTE estimates in Stata_code12.do
+* (Section 5) should approximate. No random numbers are used here.
+gen te_true = Y1_latent - Y0_latent
+qui sum te_true
+local true_ate = r(mean)
+qui sum te_true if masters == 1
+local true_att = r(mean)
+qui sum te_true if masters == 0
+local true_atu = r(mean)
+
 * ── Drop construction intermediates ─────────────────────────────────────────
 drop prog_draw loan_noise epsilon nu index_latent phat_true u_true ///
-     mte_true Y1_latent Y0_latent
+     mte_true Y1_latent Y0_latent te_true
 
 * ── Save synthetic dataset ──────────────────────────────────────────────
 save "$data_dir/Example_12_1.dta", replace
@@ -234,6 +307,14 @@ tab masters
 summarize grad_plus_loans ln_salary salary, detail
 qui count if grad_plus_loans > 100
 di "Share above $100k cap: " %5.3f (r(N) / _N)
+
+di _n "--- True treatment effects (log salary units) ---"
+di "True ATE: " %6.4f `true_ate'
+di "True ATT: " %6.4f `true_att'
+di "True ATU: " %6.4f `true_atu'
+
+di _n as text "Generate_Example_12_1.do log closed: " c(current_date) " " c(current_time)
+log close gen12
 
 *========================================================================
 * END OF SCRIPT

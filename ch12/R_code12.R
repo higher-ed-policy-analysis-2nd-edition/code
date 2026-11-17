@@ -33,7 +33,7 @@
 #   Section 2.  Synthetic data generation (B&B-style panel, N = 8,000)
 #   Section 3.  Descriptive statistics and policy exposure
 #   Section 4.  Probit selection model and propensity score
-#   Section 5.  MTE estimation - cubic polynomial control function
+#   Section 5.  MTE estimation - quadratic polynomial control function
 #   Section 6.  Policy simulation - cap-binding student identification
 #   Section 7.  Bayesian microsimulation (S = 1000 parametric draws)
 #   Section 8.  Cost-benefit decomposition
@@ -71,6 +71,36 @@
 #   interaction terms, and (c) Fig. 12.5's caption no longer cites
 #   "Chapter 10, Table 10.1". Items flagged "UNDER REVIEW" change results
 #   and await the author's decision.
+#
+# REVISION 2 (Nov 2026; mirrors Stata_code12.do): MTE corrections. THESE
+#   CHANGE RESULTS.
+#   (1) MTE (Section 5): MTE(u) = beta(u) + u*beta'(u) + pi'(u), where pi(.)
+#       is the polynomial on phat, phat2, phat3. For the cubic,
+#       MTE(u) = m0 + m1*u + m2*u^2 + m3*u^3 with m0 = b0 + c1,
+#       m1 = 2(b1 + c2), m2 = 3(b2 + c3), m3 = 4*b3 (Eq. 12.3).
+#   (2) ATE = int_0^1 MTE; ATT = sum I(p_i) / sum p_i;
+#       ATU = sum [I(1) - I(p_i)] / sum (1 - p_i), I(p) = int_0^p MTE.
+#   (3) A displaced completer's expected return is TT(p_i) = I(p_i)/p_i;
+#       TT replaces MTE(phat) in the PRTE ("MPRTE"), behavioral cost, and
+#       efficiency gain, and in every draw.
+#   (4) DGP fallback (Section 2): resistance is U_D = pnorm(-epsilon).
+#       Generate_Example_12_1.do needs the same change, and
+#       Example_12_1.dta must be regenerated and re-uploaded.
+#
+# REVISION 3 (Nov 2026; mirrors Stata_code12.do): QUADRATIC control function
+#   (as in Chapter 11's pol(2)) and recalibrated DGP (see
+#   Generate_Example_12_1.do, REVISION 3). Eq. 12.2 now uses phat and phat2
+#   and their interactions with masters; MTE(u) = m0 + m1*u + m2*u^2 with
+#   m0 = b0 + c1, m1 = 2(b1 + c2), m2 = 3*b2 (Eq. 12.3). This supersedes
+#   the cubic formulas in item (1) of REVISION 2.
+#
+# REVISION 4 (Nov 2026; mirrors Stata_code12.do): (a) Section 6 adds a
+#   sensitivity check of the point-estimate CBA: two displacement functions
+#   (baseline pnorm(o/50), which starts at 0.50; alternative
+#   2*pnorm(o/50) - 1, which starts at 0) crossed with two earnings horizons
+#   (30 and 10 years). (b) Fig. 12.5's program-area offsets are now estimated
+#   from the data (masters x program-area intercept shifts in the quadratic
+#   MTE regression) instead of being hard-coded. No other results change.
 # ==============================================================================
 
 
@@ -254,8 +284,10 @@ if (!dl_ok) {
   # ── State GA funding (instrument) ───────────────────────────────────────────
   # Each student is assigned a state GA funding level. Variation is driven by
   # state budgetary conditions and is plausibly exogenous to individual earnings.
-  dat$ga_funding_adj <- round(rnorm(n, 7.5, 2.2) * 10) / 10
-  dat$ga_funding_adj <- pmax(2.0, pmin(14.0, dat$ga_funding_adj))
+  # Calibration (REVISION 3): SD 4.0 and bounds 0-20 (previously SD 2.2,
+  # bounds 2-14) so that propensity scores span nearly all of [0,1].
+  dat$ga_funding_adj <- round(rnorm(n, 7.5, 4.0) * 10) / 10
+  dat$ga_funding_adj <- pmax(0, pmin(20, dat$ga_funding_adj))
 
   # ── Grad PLUS loan amount ────────────────────────────────────────────────────
   # Loan amounts reflect program costs (STEM and business programs cost more),
@@ -311,12 +343,11 @@ if (!dl_ok) {
   # ── Latent propensity to complete ───────────────────────────────────────────
   # The selection equation mirrors Chapter 11. Students select into completion
   # based on observed covariates, GA funding, and an unobserved individual factor.
-  epsilon <- rnorm(n, 0, 1)    # Latent selection error (positive correlation
-                                #   with earnings error to create selection bias)
+  epsilon <- rnorm(n, 0, 1)    # Latent selection error; defines resistance U_D
 
   # Latent index (linear combination of instrument + controls + noise)
-  index_latent <- -1.97 +
-    0.13 * dat$ga_funding_adj +
+  index_latent <- -3.00 +                # REVISION 3 (was -1.97)
+    0.25 * dat$ga_funding_adj +          # REVISION 3 (was 0.13)
     0.04 * dat$ugpa * 10 +
     0.08 * dat$parent_grad -
     0.10 * dat$firstgen +
@@ -333,19 +364,22 @@ if (!dl_ok) {
   # ── Propensity score (true) ─────────────────────────────────────────────────
   phat_true <- pnorm(index_latent)
 
-  # ── Heterogeneous treatment effects ─────────────────────────────────────────
-  # MTE(u) = b0 + b1*u + b2*u^2 + b3*u^3  (cubic polynomial)
-  # True parameters imply declining MTE -> positive selection on gains.
-  # Interpretation: students most likely to complete (low u) benefit the most.
-  b0_true <- -2.50
-  b1_true <-  19.30
-  b2_true <- -30.25
-  b3_true <-  15.12
+  # ── Heterogeneous treatment effects (REVISION 3) ────────────────────────────
+  # MTE(u) = a0 + a1*u + a2*u^2  (quadratic in resistance u, as in Ch. 11)
+  # Resistance is U_D = pnorm(-epsilon): uniform on [0,1], and a student
+  # completes exactly when U_D is below the propensity score.
+  # The MTE declines from 0.40 at u = 0 to 0.10 at u = 1: positive selection
+  # on gains (Carneiro, Heckman, & Vytlacil, 2011). True ATE = 0.233.
+  # Selection on levels: students with higher resistance have higher
+  # earnings without the degree, so naive OLS is biased.
+  a0_true <-  0.40
+  a1_true <- -0.40
+  a2_true <-  0.10
 
-  u_true    <- 1 - phat_true
-  mte_true  <- b0_true + b1_true*u_true + b2_true*u_true^2 + b3_true*u_true^3
-  Y1_latent <- mte_true + rnorm(n, 0, 0.40)    # Log-salary under D=1
-  Y0_latent <- rnorm(n, 0, 0.70)               # Log-salary under D=0
+  u_true    <- pnorm(-epsilon)                       # U_D: resistance
+  mte_true  <- a0_true + a1_true*u_true + a2_true*u_true^2
+  Y0_latent <- 0.15*(u_true - 0.5) + rnorm(n, 0, 0.45)   # Log-salary under D=0
+  Y1_latent <- Y0_latent + mte_true + rnorm(n, 0, 0.10)  # Log-salary under D=1
 
   # ── Observed log salary ─────────────────────────────────────────────────────
   dat$ln_salary <- 10.0 +
@@ -478,7 +512,6 @@ attr(dat$z_index, "label") <- "Linear Index from Probit"
 
 # Polynomial terms for control function
 dat$phat2 <- dat$phat^2
-dat$phat3 <- dat$phat^3
 
 print(summary(dat$phat))
 ga_coef <- coef(probit_first)["ga_funding_adj"]
@@ -493,86 +526,92 @@ print(dat %>%
 
 
 # ------------------------------------------------------------------------------
-# Section 5: MTE Estimation - Cubic Polynomial Control Function
+# Section 5: MTE Estimation - Quadratic Polynomial Control Function
 #
 # Following Heckman and Vytlacil (1999, 2005), the MTE is recovered from
 # the derivative of the outcome regression with respect to the propensity
 # score. The polynomial control function approach is used here for
 # transparency and direct estimation of ATE, ATT, and ATU.
 #
-# MTE(u) = b0 + b1*u + b2*u^2 + b3*u^3
+# MTE(u) = m0 + m1*u + m2*u^2   (Eq. 12.3)
 #
-# where u is interpreted as unobserved resistance to treatment and the
-# polynomial coefficients are the coefficients on the interaction terms
-# masters:phat, masters:phat2, masters:phat3.
+# where u is unobserved resistance to treatment and the m coefficients are
+# built from the coefficients on masters, masters:phat, masters:phat2
+# (beta) and on phat, phat2 (pi, the control function).
 # ------------------------------------------------------------------------------
 
 cat("\n============================================================\n")
 cat("  Section 5: MTE Estimation\n")
 cat("============================================================\n")
 
-# ── Cubic MTE regression ────────────────────────────────────────────────────
+# ── Quadratic MTE regression (Eq. 12.2) ─────────────────────────────────────
 mte_formula <- rhs_formula("ln_salary",
-  c("masters", "masters:phat", "masters:phat2", "masters:phat3",
-    X_controls, "phat", "phat2", "phat3"))
-mte_cubic <- lm(mte_formula, data = dat)
-mte_vcov  <- vcovHC(mte_cubic, type = "HC1")
-print(coeftest(mte_cubic, vcov. = mte_vcov))
+  c("masters", "masters:phat", "masters:phat2",
+    X_controls, "phat", "phat2"))
+mte_quad <- lm(mte_formula, data = dat)
+mte_vcov  <- vcovHC(mte_quad, type = "HC1")
+print(coeftest(mte_quad, vcov. = mte_vcov))
 
 # ── Joint tests for the MTE polynomial ──────────────────────────────────────
 # Individual coefficients are often imprecise due to multicollinearity among
 # polynomial terms, so joint tests are used.
-# (1) All four terms (masters plus the three interactions) = 0. This tests
+# (1) All three terms (masters plus the two interactions) = 0. This tests
 #     whether completion has ANY effect on log salary; on its own it is not
 #     a test of heterogeneity.
-mte_poly_terms <- c("masters", "masters:phat", "masters:phat2", "masters:phat3")
-joint_test <- linearHypothesis(mte_cubic,
+mte_poly_terms <- c("masters", "masters:phat", "masters:phat2")
+joint_test <- linearHypothesis(mte_quad,
     paste(mte_poly_terms, "= 0"), vcov. = mte_vcov, test = "F")
-cat(sprintf("Joint F-test, any effect (4 terms) p-value: %6.4f\n",
+cat(sprintf("Joint F-test, any effect (3 terms) p-value: %6.4f\n",
             joint_test[2, "Pr(>F)"]))
 
-# (2) The three interaction terms = 0, i.e., the MTE is flat in u. Rejecting
+# (2) The two interaction terms = 0, i.e., the MTE is flat in u. Rejecting
 #     this is evidence of essential heterogeneity in returns.
-het_terms <- c("masters:phat", "masters:phat2", "masters:phat3")
-het_test <- linearHypothesis(mte_cubic,
+het_terms <- c("masters:phat", "masters:phat2")
+het_test <- linearHypothesis(mte_quad,
     paste(het_terms, "= 0"), vcov. = mte_vcov, test = "F")
 cat(sprintf("Heterogeneity F-test (MTE flat in u) p-value: %6.4f\n",
             het_test[2, "Pr(>F)"]))
 
-# ── Store polynomial coefficients ───────────────────────────────────────────
-b0 <- coef(mte_cubic)["masters"]           # MTE at u = 0
-b1 <- coef(mte_cubic)["masters:phat"]      # Linear slope
-b2 <- coef(mte_cubic)["masters:phat2"]     # Quadratic term
-b3 <- coef(mte_cubic)["masters:phat3"]     # Cubic term
+# ── Store regression coefficients (Eq. 12.2) ────────────────────────────────
+b0 <- unname(coef(mte_quad)["masters"])
+b1 <- unname(coef(mte_quad)["masters:phat"])
+b2 <- unname(coef(mte_quad)["masters:phat2"])
+# pi polynomial (control function): coefficients on phat, phat2
+c1 <- unname(coef(mte_quad)["phat"])
+c2 <- unname(coef(mte_quad)["phat2"])
 
-cat(sprintf("\nMTE polynomial: MTE(u) = %7.4f + %7.4f*u + %7.4f*u^2 + %7.4f*u^3\n",
-            b0, b1, b2, b3))
+# ── MTE (Eq. 12.3) ──────────────────────────────────────────────────────────
+# MTE(u) = beta(u) + u*beta'(u) + pi'(u)  (control-function / separate
+# approach; Heckman & Vytlacil, 2005; Andresen, 2018)
+m0 <- b0 + c1
+m1 <- 2 * (b1 + c2)
+m2 <- 3 * b2
 
-# ── Treatment parameters ────────────────────────────────────────────────────
-# ATE = integral of MTE(u) du from 0 to 1
-ate <- b0 + b1/2 + b2/3 + b3/4
-cat(sprintf("Estimated ATE (cubic): %6.4f\n", ate))
+cat(sprintf("\nMTE polynomial: MTE(u) = %7.4f + %7.4f*u + %7.4f*u^2\n",
+            m0, m1, m2))
 
-# UNDER REVIEW (outline Author note 3): ATT and ATU below average each
-# student's MTE evaluated at his or her own propensity score p-hat, i.e., the
-# return of the person at the margin p-hat. The standard Heckman-Vytlacil
-# definitions instead integrate MTE(u) over u < P (ATT) or u > P (ATU) with
-# the corresponding weights. The DGP also defines u = 1 - p, while this
-# section evaluates the MTE at p. Results are unchanged pending a decision.
-# ATT = E[MTE(u) | D=1] = weighted average over completers' propensity scores
-dat$mte_hat <- b0 + b1*dat$phat + b2*dat$phat^2 + b3*dat$phat^3
-att <- mean(dat$mte_hat[dat$masters == 1])
+# ── Treatment parameters (Chapter 11, Eq. 11.3 weights) ─────────────────────
+# I(p) = integral of MTE(u) du from 0 to p
+I_fun <- function(p, m0, m1, m2) m0*p + m1*p^2/2 + m2*p^3/3
+ate <- m0 + m1/2 + m2/3
+cat(sprintf("Estimated ATE: %6.4f\n", ate))
+
+# ATT = sum I(p_i) / sum p_i ; ATU = sum [I(1) - I(p_i)] / sum (1 - p_i)
+dat$I_hat <- I_fun(dat$phat, m0, m1, m2)
+sum_p <- sum(dat$phat)
+n_obs <- nrow(dat)
+att <- sum(dat$I_hat) / sum_p
+atu <- (n_obs * ate - sum(dat$I_hat)) / (n_obs - sum_p)
 cat(sprintf("Estimated ATT: %6.4f\n", att))
-
-# ATU = E[MTE(u) | D=0]
-atu <- mean(dat$mte_hat[dat$masters == 0])
 cat(sprintf("Estimated ATU: %6.4f\n", atu))
 
-# Note: in this run ATU > ATT. Whether this reflects negative selection on
-# gains or the ATT/ATU definitions above (UNDER REVIEW) has not been settled;
-# the DGP comment describes a declining MTE (positive selection on gains).
-cat(sprintf("\nTreatment parameter hierarchy (this dataset): ATU > ATT > ATE = %6.4f > %6.4f > %6.4f\n",
-            atu, att, ate))
+# Expected return for a completer with propensity score p: TT(p) = I(p)/p,
+# the average MTE over resistance levels below p (used in Sections 6 and 7).
+dat$tt_hat <- dat$I_hat / dat$phat
+
+# Check: ATE = E[P]*ATT + (1 - E[P])*ATU
+cat(sprintf("Check (should equal ATE): %6.4f\n",
+            (sum_p / n_obs) * att + (1 - sum_p / n_obs) * atu))
 
 
 # ------------------------------------------------------------------------------
@@ -610,9 +649,10 @@ print(summary(dat$p_displaced[dat$masters == 1 & dat$above_cap == 1]))
 dat$displaced_E <- dat$p_displaced * dat$masters    # Expected D: 1 -> 0 switchers
 print(summary(dat$displaced_E))
 
-# ── Marginal Policy-Relevant Treatment Effect (MPRTE) ────────────────────────
-# MPRTE = E[MTE(U) | margin shifted by the $100k cap]
-#       = displacement-weighted average of individual MTEs.
+# ── Policy-relevant treatment effect for displaced students ("MPRTE") ───────
+# Displacement-weighted average of each completer's expected return,
+# TT(phat) = I(phat)/phat (REVISION 2). Names keep the "mprte" label from
+# earlier drafts; conceptually this is a PRTE for a discrete policy.
 # Each student is weighted by their share of total expected displacement.
 # Restricted to completers (displaced_E = 0 for non-completers by construction).
 #
@@ -622,7 +662,7 @@ print(summary(dat$displaced_E))
 #   MPRTE < 0  -> cap displaces low-return students (efficiency gain)
 total_disp <- sum(dat$displaced_E[dat$masters == 1])
 mprte_weight <- ifelse(dat$masters == 1, dat$displaced_E / total_disp, NA_real_)
-mprte_i <- ifelse(dat$masters == 1, dat$mte_hat * mprte_weight, NA_real_)
+mprte_i <- ifelse(dat$masters == 1, dat$tt_hat * mprte_weight, NA_real_)
 mprte <- sum(mprte_i, na.rm = TRUE)
 
 cat("\n--- Treatment Parameter Hierarchy (Point Estimates) ---\n")
@@ -648,17 +688,17 @@ FS_point <- sum(dat$fiscal_saving_i)
 cat(sprintf("Point-estimate fiscal savings ($000s): %8.1f\n", FS_point))
 
 # Behavioral cost: lost human capital for displaced completers
-# = MTE x base_salary x PV_factor (in $000s, since salary is in $)
-dat$behav_cost_i <- dat$displaced_E * pmax(0, dat$mte_hat) *
+# = TT(phat) x base_salary x PV_factor (in $000s, since salary is in $)
+dat$behav_cost_i <- dat$displaced_E * pmax(0, dat$tt_hat) *
   (base_salary / 1000) * pv_factor
-# Note: pmax(0, MTE) reflects that only students with positive returns suffer a
-# human capital loss. Displaced students with negative MTE represent an
+# Note: pmax(0, TT) reflects that only students with positive returns suffer a
+# human capital loss. Displaced students with negative TT represent an
 # efficiency GAIN (removing low-return borrowers).
 BC_point <- sum(dat$behav_cost_i[dat$masters == 1])
 cat(sprintf("Point-estimate behavioral cost ($000s): %8.1f\n", BC_point))
 
-# Efficiency gain from removing low-return borrowers (negative MTE region)
-dat$efficiency_gain_i <- dat$displaced_E * pmax(0, -dat$mte_hat) *
+# Efficiency gain from removing low-return borrowers (negative TT region)
+dat$efficiency_gain_i <- dat$displaced_E * pmax(0, -dat$tt_hat) *
   (base_salary / 1000) * pv_factor
 EG_point <- sum(dat$efficiency_gain_i[dat$masters == 1])
 cat(sprintf("Point-estimate efficiency gain (low-return exit, $000s): %8.1f\n", EG_point))
@@ -709,6 +749,42 @@ print(tabstat_by(completers, "inst_rev_loss_i", "public_ug",
 NB_extended <- NB_point - IR_point - CS_point
 cat(sprintf("\nExtended net benefit (incl. institutional costs, $000s): %8.1f\n", NB_extended))
 
+# ── Sensitivity of the point-estimate CBA (REVISION 4) ──────────────────────
+# Two assumptions drive the size of the net benefit:
+#   (1) Displacement function. Baseline: pnorm(overage/50), which gives a
+#       student $1 over the limit a 0.50 probability of leaving. Alternative:
+#       2*pnorm(overage/50) - 1, which starts at 0 and rises toward 1.
+#   (2) Earnings horizon. Baseline: 30 years. Alternative: 10 years.
+# Fiscal savings do not depend on either assumption. The PRTE depends only
+# on the displacement function (it changes the weights).
+comp <- dat$masters == 1
+sens <- expand.grid(horizon = c(30, 10),
+                    displacement = c("pnorm(o/50)", "2pnorm(o/50)-1"),
+                    stringsAsFactors = FALSE)[, c("displacement", "horizon")]
+sens[, c("displaced", "prte", "behav_cost", "net_benefit", "bcr",
+         "ext_net_benefit")] <- NA_real_
+for (k in seq_len(nrow(sens))) {
+  pd_k <- if (sens$displacement[k] == "pnorm(o/50)") {
+    pnorm(dat$loan_overage / 50) * dat$above_cap
+  } else {
+    (2 * pnorm(dat$loan_overage / 50) - 1) * dat$above_cap
+  }
+  de_k <- (pd_k * dat$masters)[comp]
+  tt_k <- dat$tt_hat[comp]
+  pv_k <- (1 - (1 + discount_rate)^(-sens$horizon[k])) / discount_rate
+  bc_k <- sum(de_k * pmax(0,  tt_k) * (base_salary / 1000) * pv_k)
+  eg_k <- sum(de_k * pmax(0, -tt_k) * (base_salary / 1000) * pv_k)
+  ir_k <- sum(de_k * dat$net_inst_rev[comp])
+  sens$displaced[k]     <- sum(de_k)
+  sens$prte[k]          <- sum(de_k * tt_k) / sum(de_k)
+  sens$behav_cost[k]    <- bc_k
+  sens$net_benefit[k]   <- FS_point - bc_k + eg_k
+  sens$bcr[k]           <- (FS_point + eg_k) / max(1, bc_k)
+  sens$ext_net_benefit[k] <- sens$net_benefit[k] - 1.20 * ir_k
+}
+cat("\n--- Sensitivity of the point-estimate CBA ($000s) ---\n")
+print(format(sens, digits = 4, nsmall = 1, big.mark = ","), row.names = FALSE)
+
 
 # ------------------------------------------------------------------------------
 # Section 7: Bayesian Microsimulation (S = 1000 Parametric Draws)
@@ -720,7 +796,7 @@ cat(sprintf("\nExtended net benefit (incl. institutional costs, $000s): %8.1f\n"
 #   theta^(s) ~ N(theta_hat, V_hat)
 #
 # where theta_hat and V_hat are the estimated coefficient vector and its
-# variance-covariance matrix from the cubic MTE regression. For each draw,
+# variance-covariance matrix from the quadratic MTE regression. For each draw,
 # we recompute the MTE curve, the policy-affected margin, and the three
 # CBA components. The resulting distribution characterizes posterior
 # uncertainty about the net social benefit of the $100k cap.
@@ -739,20 +815,21 @@ cat("============================================================\n")
 
 # ── Coefficient vector and robust VCV ────────────────────────────────────────
 # Reuses the model object and robust VCV estimated in Section 5.
-b_full <- coef(mte_cubic)
+b_full <- coef(mte_quad)
 V_full <- mte_vcov
 k_full <- length(b_full)
 
 # Column positions of the four MTE polynomial coefficients. Unlike Stata's
 # `local cols : colnames b_full` loop, R coefficient vectors are named, so
 # the four terms of interest can be referenced directly by name.
-mte_poly_names <- c("masters", "masters:phat", "masters:phat2", "masters:phat3")
+mte_poly_names <- c("masters", "masters:phat", "masters:phat2")
 cat("MTE polynomial coefficient names:", paste(mte_poly_names, collapse = ", "), "\n")
 
 # ── Preallocate results data frame ───────────────────────────────────────────
 sim_results <- data.frame(
   draw             = 1:S_draws,
-  b0_s             = NA_real_, b1_s = NA_real_, b2_s = NA_real_, b3_s = NA_real_,
+  b0_s             = NA_real_, b1_s = NA_real_, b2_s = NA_real_,
+  m0_s             = NA_real_, m1_s = NA_real_, m2_s = NA_real_,
   ate_s            = NA_real_, att_s = NA_real_, atu_s = NA_real_, mprte_s = NA_real_,
   fiscal_s         = NA_real_,
   behav_cost_s     = NA_real_,
@@ -782,7 +859,12 @@ for (s in 1:S_draws) {
   b0_s <- B_draws[s, "masters"]
   b1_s <- B_draws[s, "masters:phat"]
   b2_s <- B_draws[s, "masters:phat2"]
-  b3_s <- B_draws[s, "masters:phat3"]
+  c1_s <- B_draws[s, "phat"]
+  c2_s <- B_draws[s, "phat2"]
+  # Implied MTE coefficients for this draw (Eq. 12.3)
+  m0_s <- b0_s + c1_s
+  m1_s <- 2 * (b1_s + c2_s)
+  m2_s <- 3 * b2_s
 
   # ── Additional economic uncertainty ─────────────────────────────────────
   # Base salary: log-normal with 10% coefficient of variation
@@ -795,14 +877,17 @@ for (s in 1:S_draws) {
   tuition_mult_s <- exp(rnorm(1, 0, 0.08))
 
   # ── Recompute MTE for this draw ──────────────────────────────────────────
-  mte_s <- b0_s + b1_s*dat$phat + b2_s*dat$phat^2 + b3_s*dat$phat^3
+  I_s   <- I_fun(dat$phat, m0_s, m1_s, m2_s)
 
-  # Treatment parameters
-  ate_s <- b0_s + b1_s/2 + b2_s/3 + b3_s/4
-  att_s <- mean(mte_s[dat$masters == 1])
-  atu_s <- mean(mte_s[dat$masters == 0])
+  # Treatment parameters (Eq. 11.3 weights)
+  ate_s <- m0_s + m1_s/2 + m2_s/3
+  att_s <- sum(I_s) / sum_p
+  atu_s <- (n_obs * ate_s - sum(I_s)) / (n_obs - sum_p)
 
-  # MPRTE: displacement-weighted average of draw-specific MTE.
+  # Expected return for each completer, TT(phat) = I(phat)/phat
+  mte_s <- I_s / dat$phat
+
+  # PRTE ("MPRTE"): displacement-weighted average of TT for this draw.
   # Reuses total_disp scalar from Section 6 (constant across draws since
   # displaced_E is a function of loan_overage, not the MTE polynomial).
   mprte_i_s <- ifelse(dat$masters == 1, dat$displaced_E * mte_s / total_disp, NA_real_)
@@ -844,7 +929,8 @@ for (s in 1:S_draws) {
 
   # ── Store results ─────────────────────────────────────────────────────────
   sim_results[s, ] <- list(
-    s, b0_s, b1_s, b2_s, b3_s,
+    s, b0_s, b1_s, b2_s,
+    m0_s, m1_s, m2_s,
     ate_s, att_s, atu_s, mprte_s,
     fiscal_s, behav_cost_s, effic_gain_s,
     net_benefit_s, nb_per_student_s, bcr_s, pnb_positive_s,
@@ -899,7 +985,7 @@ cat(sprintf("\nP(Extended NB > 0, incl. institutional costs): %5.3f\n",
             mean(sim_results$pnb_ext_pos_s)))
 
 print(sim_results %>%
-  summarise(across(c(b0_s, b1_s, b2_s, b3_s, ate_s, att_s, atu_s, mprte_s),
+  summarise(across(c(m0_s, m1_s, m2_s, ate_s, att_s, atu_s, mprte_s),
                     list(mean = mean, sd = sd))))
 
 # ── Treatment Parameter Posterior Summary (Table 12.5 inputs) ────────────────
@@ -1055,10 +1141,9 @@ save_fig(fig12_1, "fig12_1_posterior_nb_R.png")
 # Fig. 12.2: MTE Curve with Policy-Affected Region Shaded
 # Based on posterior mean MTE polynomial coefficients.
 # ------------------------------------------------------------------------------
-b0_pm <- mean(sim_results$b0_s)
-b1_pm <- mean(sim_results$b1_s)
-b2_pm <- mean(sim_results$b2_s)
-b3_pm <- mean(sim_results$b3_s)
+b0_pm <- mean(sim_results$m0_s)
+b1_pm <- mean(sim_results$m1_s)
+b2_pm <- mean(sim_results$m2_s)
 
 # Identify policy-affected u range:
 # Students pushed out by the cap tend to cluster in the intermediate-u range.
@@ -1069,7 +1154,7 @@ b3_pm <- mean(sim_results$b3_s)
 # derived from the displacement weights or the loan overage distribution.
 # mte_cap_neg is empty whenever the MTE is positive throughout [0.30, 0.65].
 mte_curve <- data.frame(u = (1:100) / 100)
-mte_curve$mte <- b0_pm + b1_pm*mte_curve$u + b2_pm*mte_curve$u^2 + b3_pm*mte_curve$u^3
+mte_curve$mte <- b0_pm + b1_pm*mte_curve$u + b2_pm*mte_curve$u^2
 mte_curve$region_cap <- mte_curve$u >= 0.30 & mte_curve$u <= 0.65
 mte_curve$mte_cap_pos <- ifelse(mte_curve$region_cap & mte_curve$mte > 0, mte_curve$mte, NA_real_)
 mte_curve$mte_cap_neg <- ifelse(mte_curve$region_cap & mte_curve$mte < 0, mte_curve$mte, NA_real_)
@@ -1140,8 +1225,8 @@ fig12_4 <- ggplot(dens_df, aes(x = x, y = d, linetype = param, color = param)) +
   scale_color_manual(name = NULL, values = c(ATE = "black", ATT = "black", ATU = "grey50")) +
   labs(x = "Estimated Treatment Effect (log salary)", y = "Posterior Density",
        caption = paste(
-         "ATU > ATT > ATE reflects negative selection: financially constrained",
-         "students have higher potential returns than self-selected completers.",
+         "Posterior distributions of the average treatment effects",
+         "(weights as in Chapter 11, Eq. 11.3).",
          sprintf("N = %d posterior draws.", S_draws), sep = "\n")) +
   theme(legend.position = "bottom")
 
@@ -1151,26 +1236,40 @@ save_fig(fig12_4, "fig12_4_param_posteriors_R.png")
 # Fig. 12.5: MTE Curve by Graduate Program Area (Heterogeneity)
 # Field-specific MTE curves reveal which programs drive the efficiency verdict.
 #
-# Illustrates the concept using the pooled cubic MTE with program-area
-# intercept offsets. UNDER REVIEW (outline Author note 7): the offsets were
-# labeled as coming from "Chapter 10, Table 10.1", which no longer exists in
-# that form, and they do not match Chapter 11, Table 11.3 (e.g., Business
-# ATT 0.907, STEM ATE 0.455 there). Their source must be confirmed or the
-# offsets re-derived; values are unchanged here.
-#
-# Field-specific ATE offsets relative to base Other (source to be confirmed):
-#   STEM:      ATE = 0.9424 vs. Other ATE = 0.8085 -> offset = +0.134
-#   Business:  ATE = 1.6936 vs. Other ATE = 0.8085 -> offset = +0.885
-#   Education: ATE = 0.6437 vs. Other ATE = 0.8085 -> offset = -0.165
-#   Health:    ATE = 0.8469 vs. Other ATE = 0.8085 -> offset = +0.038
+# REVISION 4: program-area offsets are estimated from the data. The
+# quadratic MTE regression (Eq. 12.2) is re-run with masters x program-area
+# intercept shifts (Other = base), so each area's MTE curve is the base
+# curve shifted up or down by its estimated offset. Health is added as a
+# main effect here so that each shift is measured against the right base.
 # ------------------------------------------------------------------------------
+dat$m_stem   <- dat$masters * dat$stem_major
+dat$m_bus    <- dat$masters * dat$bus_major
+dat$m_educ   <- dat$masters * dat$ed_major
+dat$m_health <- dat$masters * dat$health_major
+area_terms <- c("m_stem", "m_bus", "m_educ", "m_health")
+mte_area <- lm(rhs_formula("ln_salary",
+  c("masters", "masters:phat", "masters:phat2", area_terms,
+    X_controls, "health_major", "phat", "phat2")), data = dat)
+area_vcov <- vcovHC(mte_area, type = "HC1")
+ba <- coef(mte_area)
+mo0 <- unname(ba["masters"] + ba["phat"])
+mo1 <- unname(2 * (ba["masters:phat"] + ba["phat2"]))
+mo2 <- unname(3 * ba["masters:phat2"])
+off <- ba[area_terms]
+cat("\nProgram-area MTE offsets (relative to Other), log-salary units:\n")
+print(round(cbind(offset = off, se = sqrt(diag(area_vcov))[area_terms]), 4))
+area_test <- linearHypothesis(mte_area, paste(area_terms, "= 0"),
+                              vcov. = area_vcov, test = "F")
+p_area <- area_test[2, "Pr(>F)"]
+cat(sprintf("Joint test, no differences by program area: p = %6.4f\n", p_area))
+
 byfield <- data.frame(u = (1:100) / 100)
-# Uses the point-estimate polynomial b0-b3 stored in Section 5.
-byfield$mte_other  <- b0 + b1*byfield$u + b2*byfield$u^2 + b3*byfield$u^3
-byfield$mte_stem   <- byfield$mte_other + 0.134
-byfield$mte_bus    <- byfield$mte_other + 0.885
-byfield$mte_educ   <- byfield$mte_other - 0.165
-byfield$mte_health <- byfield$mte_other + 0.038
+# Base (Other) MTE from the program-area regression, shifted by each offset
+byfield$mte_other  <- mo0 + mo1*byfield$u + mo2*byfield$u^2
+byfield$mte_stem   <- byfield$mte_other + off["m_stem"]
+byfield$mte_bus    <- byfield$mte_other + off["m_bus"]
+byfield$mte_educ   <- byfield$mte_other + off["m_educ"]
+byfield$mte_health <- byfield$mte_other + off["m_health"]
 
 byfield_long <- byfield %>%
   tidyr::pivot_longer(cols = starts_with("mte_"), names_to = "field", values_to = "mte")
@@ -1201,8 +1300,8 @@ fig12_5 <- ggplot(byfield_long, aes(x = u, y = mte, linetype = field, color = fi
     "Education" = "grey50", "Other (base)" = "grey50")) +
   labs(x = "u (Unobserved Resistance to Treatment)", y = "Marginal Treatment Effect",
        caption = paste(
-         "Illustrative: pooled MTE shifted by program-area intercept offsets.",
-         "Business programs show the largest returns; Education the lowest.",
+         "MTE shifted by program-area offsets estimated from the data (Other = base).",
+         sprintf("Joint test of no differences by program area: p = %5.3f.", p_area),
          sep = "\n")) +
   theme(legend.position = "bottom")
 
