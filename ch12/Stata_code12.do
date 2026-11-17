@@ -714,7 +714,7 @@ foreach alt in 0 1 {
     foreach yrs in 30 10 {
         if `alt' == 0 {
             qui gen double sens_pd = normal(loan_overage/50) * above_cap
-            local dlab "normal(o/50)  "
+            local dlab "normal(o/50)"
         }
         else {
             qui gen double sens_pd = (2*normal(loan_overage/50) - 1) * above_cap
@@ -738,7 +738,7 @@ foreach alt in 0 1 {
         local ir_k = r(sum)
         local nb_k  = `FS_point' - `bc_k' + `eg_k'
         local nbx_k = `nb_k' - 1.20*`ir_k'
-        di "`dlab'" %9.0f `yrs' %11.1f `nd_k' %8.4f `prte_k' %13.1fc `bc_k' ///
+        di %-15s "`dlab'" %9.0f `yrs' %11.1f `nd_k' %8.4f `prte_k' %13.1fc `bc_k' ///
            %14.1fc `nb_k' %7.3f (`FS_point' + `eg_k')/max(1, `bc_k') %18.1fc `nbx_k'
         drop sens_pd sens_de sens_w
     }
