@@ -101,6 +101,12 @@
 #   (30 and 10 years). (b) Fig. 12.5's program-area offsets are now estimated
 #   from the data (masters x program-area intercept shifts in the quadratic
 #   MTE regression) instead of being hard-coded. No other results change.
+#
+# REVISION 5 (Nov 2026; mirrors Stata_code12.do): the two joint tests in
+#   Section 5 now test the MTE coefficients: "no effect" is m0 = m1 = m2 = 0
+#   and "MTE flat" is m1 = m2 = 0 (b2 = 0 and b1 + c2 = 0). The earlier
+#   tests (beta terms = 0) were not tests of these hypotheses under the
+#   control-function approach. Only the two test statistics change.
 # ==============================================================================
 
 
@@ -555,20 +561,21 @@ print(coeftest(mte_quad, vcov. = mte_vcov))
 # ── Joint tests for the MTE polynomial ──────────────────────────────────────
 # Individual coefficients are often imprecise due to multicollinearity among
 # polynomial terms, so joint tests are used.
-# (1) All three terms (masters plus the two interactions) = 0. This tests
-#     whether completion has ANY effect on log salary; on its own it is not
-#     a test of heterogeneity.
-mte_poly_terms <- c("masters", "masters:phat", "masters:phat2")
+# The tests are on the MTE coefficients (Eq. 12.3), m0 = b0 + c1,
+# m1 = 2(b1 + c2), m2 = 3*b2, not on the beta terms alone (REVISION 5).
+# (1) MTE(u) = 0 for every u (m0 = m1 = m2 = 0): completion has no effect
+#     on log salary for anyone.
 joint_test <- linearHypothesis(mte_quad,
-    paste(mte_poly_terms, "= 0"), vcov. = mte_vcov, test = "F")
-cat(sprintf("Joint F-test, any effect (3 terms) p-value: %6.4f\n",
+    c("masters + phat = 0", "masters:phat + phat2 = 0", "masters:phat2 = 0"),
+    vcov. = mte_vcov, test = "F")
+cat(sprintf("Joint F-test, no effect (MTE = 0) p-value: %6.4f\n",
             joint_test[2, "Pr(>F)"]))
 
-# (2) The two interaction terms = 0, i.e., the MTE is flat in u. Rejecting
-#     this is evidence of essential heterogeneity in returns.
-het_terms <- c("masters:phat", "masters:phat2")
+# (2) The MTE is flat in u (m1 = m2 = 0). Rejecting this is evidence of
+#     essential heterogeneity in returns.
 het_test <- linearHypothesis(mte_quad,
-    paste(het_terms, "= 0"), vcov. = mte_vcov, test = "F")
+    c("masters:phat + phat2 = 0", "masters:phat2 = 0"),
+    vcov. = mte_vcov, test = "F")
 cat(sprintf("Heterogeneity F-test (MTE flat in u) p-value: %6.4f\n",
             het_test[2, "Pr(>F)"]))
 
