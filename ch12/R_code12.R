@@ -616,7 +616,7 @@ t1 <- rbind(t1, setNames(data.frame("N", format(nrow(dat), big.mark = ","),
   "", "", "", format(sum(dat$masters == 1), big.mark = ","),
   format(sum(dat$masters == 0), big.mark = ",")), t1_names))
 write_word_table(t1, "12.1", "Descriptive statistics",
-  "Note: Completers and Non-completers columns report means. Binary variables are shown as proportions. Panel B characteristics are attached to each student's record; the data contain no institution or state identifiers. Amounts marked $000s are in thousands of dollars. Synthetic data (Example_12_1.dta).",
+  "Note: Completers and Non-completers columns report means. Binary variables are shown as proportions. Panel B characteristics are attached to each student's record; the data contain no institution or state identifiers. Amounts marked $000s are in thousands of dollars. Source: Synthetic data (Example_12_1.dta), available in the book's GitHub data repository (see Sect. 12.2.3).",
   file.path(tables_dir, "Table12_1_Descriptives_R.docx"),
   group_rows = t1_groups,
   col_widths = c(2.45, 0.6, 0.6, 0.55, 0.65, 0.8, 0.85))
@@ -876,7 +876,8 @@ write_word_table(t2, "12.2", "Simulation assumptions",
   paste0("Note: MTE coefficients are drawn from a normal distribution ",
          "centered on the estimates (Eq. 12.3), with the robust ",
          "variance-covariance matrix. The simulation uses ",
-         format(S_draws, big.mark = ","), " posterior draws."),
+         format(S_draws, big.mark = ","), " posterior draws.",
+         " Source: Parameter settings in Stata_code12.do and R_code12.R, available in the book's GitHub code repository."),
   file.path(tables_dir, "Table12_2_Assumptions_R.docx"),
   group_rows = c(1L, 4L, 8L, 11L), right_align = FALSE, fit_page = TRUE)
 
@@ -1346,7 +1347,7 @@ write_word_table(t3, "12.3",
          "draws. Net social benefit is the sum of the three accounts; tuition, ",
          "loans, subsidies, and taxes are transfers between accounts and net ",
          "out. Benefit-cost ratio = (avoided instructional cost + efficiency ",
-         "gain) / forgone earnings."),
+         "gain) / forgone earnings. Source: Posterior simulation using Example_12_1.dta (see Sect. 12.6)."),
   file.path(tables_dir, "Table12_3_CBA_Summary_R.docx"),
   group_rows = t3_groups)
 
