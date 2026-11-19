@@ -1,10 +1,10 @@
-# Chapter 12 — Bayesian MTE Microsimulation: Cost-Benefit Analysis of a $100k Lifetime Cap on Grad PLUS Loans
+# Chapter 12 — Bayesian MTE Microsimulation: Cost-Benefit Analysis of the $100,000 Federal Graduate Loan Limit
 
-This folder holds the Stata and R code for Chapter 12 of *Higher Education Policy Analysis Using Quantitative Techniques* (2nd Edition, Springer). The chapter takes the marginal treatment effect (MTE) framework developed in Chapters 10–11 and uses it to evaluate a real policy question: what happens if the federal government caps lifetime Grad PLUS borrowing at $100,000? A Bayesian parametric-bootstrap microsimulation (S = 1,000 posterior draws) propagates estimation uncertainty all the way through to a posterior distribution over the policy's net social benefit, closing the book's applied-methods arc on the idea that a policy's effect is a distribution, not a point estimate.
+This folder holds the Stata and R code for Chapter 12 of *Higher Education Policy Analysis Using Quantitative Techniques* (2nd Edition, Springer). The chapter takes the marginal treatment effect (MTE) framework developed in Chapter 11 and uses it to evaluate a real policy question: what happens when federal borrowing for graduate students in non-professional programs is limited to $100,000, as enacted in the One Big Beautiful Bill Act (OBBBA; Pub. L. 119-21)? A Bayesian parametric-bootstrap microsimulation (S = 1,000 posterior draws) propagates estimation uncertainty all the way through to a posterior distribution over the policy's net social benefit, closing the book's applied-methods arc on the idea that a policy's effect is a distribution, not a point estimate.
 
 ## Empirical Setting
 
-The chapter's running example uses a synthetic panel (N = 8,000) modeled on the Baccalaureate and Beyond (B&B) longitudinal study, extended with a Grad PLUS loan amount and institutional revenue variables specific to this chapter's policy question. State-level graduate assistantship (GA) funding again serves as the excluded instrument for master's degree completion, consistent with Chapters 10 and 11. The chapter simulates which students a binding $100k lifetime cap (effective July 1, 2026 under the One Big Beautiful Bill, Pub. L. 119-XX) would push out of their program, and decomposes the resulting net social benefit into fiscal savings, behavioral cost (lost human capital), efficiency gain (avoided loss from displacing low-return borrowers), institutional revenue loss, and cross-subsidy disruption.
+The chapter's running example uses a synthetic cross-sectional dataset ([`Example_12_1.dta`](https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch12), N = 8,000) modeled on the Baccalaureate and Beyond (B&B) longitudinal study, extended with federal graduate borrowing, tuition, and institutional revenue variables specific to this chapter's policy question. State-level graduate assistantship (GA) funding again serves as the excluded instrument for master's degree completion, consistent with Chapter 11. Under the OBBBA, Grad PLUS loans end for new borrowers on July 1, 2026, and federal graduate borrowing for students in non-professional programs is limited to $100,000 in aggregate. The chapter simulates which completers the $100,000 limit would push out of their program and reports the costs and benefits for three accounts — students, the federal government, and institutions — plus a social total in which transfers (tuition, loans, subsidies, and taxes) net out.
 
 ## File Structure
 
@@ -13,22 +13,24 @@ The chapter's running example uses a synthetic panel (N = 8,000) modeled on the 
 | File | Description |
 |---|---|
 | `Stata_code12.do` | Complete, self-contained chapter script. Unlike Chapter 11, this chapter does not use a master-driver-calls-sub-scripts architecture — all ten sections (data generation through figures) run in one file. |
-| `Generate_Example_12_1.do` | Standalone, one-time data-generation script. Builds the synthetic dataset (`Example_12_1.dta`) used throughout the chapter. **Not called by `Stata_code12.do`** — it contains the identical generation logic as an inline fallback already, so this script exists purely as a convenience for regenerating the canonical dataset independently (e.g., with a different seed). |
+| `Generate_Example_12_1.do` | Standalone, one-time data-generation script. Builds the synthetic dataset (`Example_12_1.dta`) used throughout the chapter and writes a log (`Output/logs/Generate_Example_12_1.log`) that reports the true ATE, ATT, and ATU, so readers can check the chapter's estimates against known values. **Not called by `Stata_code12.do`** — it contains the identical generation logic as an inline fallback already, so this script exists purely as a convenience for regenerating the canonical dataset independently (e.g., with a different seed). |
 
 ### R Translations
 
 | File | Stata Counterpart | Description |
 |---|---|---|
 | `R_code12.R` | `Stata_code12.do` | Complete, self-contained R translation. Same ten-section structure, no sourced sub-scripts. |
-| `Generate_Example_12_1.R` | `Generate_Example_12_1.do` | Standalone R version of the synthetic dataset construction. **Not sourced by `R_code12.R`** — same relationship as the Stata pair above. |
+| `Generate_Example_12_1.R` | `Generate_Example_12_1.do` | Standalone R version of the synthetic dataset construction. Saves `Example_12_1_R.dta` (an R-generated draw, not the canonical file) and writes `Output/logs/Generate_Example_12_1_R.log` with the true ATE, ATT, and ATU. **Not sourced by `R_code12.R`** — same relationship as the Stata pair above. |
 
 ## Data
+
+The synthetic dataset, `Example_12_1.dta`, can be downloaded from the book's GitHub data repository: https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch12
 
 The canonical dataset is in the [data repository](https://github.com/higher-ed-policy-analysis-2nd-edition/data/tree/main/ch12):
 
 | File | Description |
 |---|---|
-| `Example_12_1.dta` | Synthetic B&B-style panel (N = 8,000) with Grad PLUS loan amounts and institutional revenue variables. Generated by `Generate_Example_12_1.do`/`Generate_Example_12_1.R`. |
+| `Example_12_1.dta` | Synthetic B&B-style dataset (N = 8,000; 3,051 completers) with federal graduate borrowing, tuition, and institutional revenue variables. Generated by `Generate_Example_12_1.do`. True effects (log salary units): ATE 0.234, ATT 0.295, ATU 0.196. |
 
 Both `Stata_code12.do` and `R_code12.R` attempt to download `Example_12_1.dta` from the data repository first, and only fall back to generating a fresh synthetic dataset if that download fails. This means every run of either script uses the same fixed population by default — running `Generate_Example_12_1.do`/`.R` yourself is only necessary if you want to deliberately rebuild the dataset from scratch (e.g., after changing the DGP or drawing a new sample), not as a normal part of running the chapter.
 
@@ -38,6 +40,7 @@ The generator scripts save to a dedicated `Data` folder rather than `Output/`, u
 ```
 C:\Users\marvi\Dropbox\Book\2nd Edition\Chapter 12\Data\Example_12_1.dta   (if c(username) == "marvi")
 Data/Example_12_1.dta                                                      (all other users)
+Data/Example_12_1_R.dta                                                    (R generator)
 ```
 
 ## Running the Code
@@ -54,7 +57,7 @@ do Stata_code12.do
 source("R_code12.R")
 ```
 
-Required R packages: `haven`, `MASS`, `sandwich`, `lmtest`, `car`, `dplyr`, `tidyr`, `ggplot2`, `scales`. The script's own `install_if_missing()` helper installs anything missing automatically. The book's shared `theme_springer()` monochrome ggplot2 theme is defined inline at the top of the script.
+Required R packages: `haven`, `MASS`, `sandwich`, `lmtest`, `car`, `dplyr`, `tidyr`, `ggplot2`, `scales`, `flextable`, `officer`. The script's own `install_if_missing()` helper installs anything missing automatically. The book's shared `theme_springer()` monochrome ggplot2 theme is defined inline at the top of the script.
 
 > **Note:** Path setup uses username-conditional branching (`if c(username) == "marvi"` in Stata, `Sys.info()[["user"]]` in R) with a GitHub raw-URL download fallback, following the same convention used across the rest of the 2nd edition codebase.
 
@@ -62,22 +65,27 @@ Required R packages: `haven`, `MASS`, `sandwich`, `lmtest`, `car`, `dplyr`, `tid
 
 ## Methods Covered
 
-- **MTE estimation:** cubic polynomial control function, building directly on the Chapter 10/11 framework
-- **Policy simulation:** cap-binding student identification via a smooth displacement-probability function, `P(displaced) = Φ(loan overage / 50)`
-- **Bayesian microsimulation:** S = 1,000 parametric posterior draws from `N(θ̂, V̂)`, propagating coefficient uncertainty (plus additional draws on base salary and subsidy rate) through the full cost-benefit calculation
-- **Cost-benefit analysis:** five-component decomposition — fiscal savings, behavioral cost, efficiency gain, institutional revenue loss, and cross-subsidy disruption
+- **MTE estimation:** quadratic polynomial control function (as in Chapter 11), with MTE(u) = m0 + m1·u + m2·u², where m0 = β0 + π1, m1 = 2(β1 + π2), m2 = 3β2. Joint tests are on the MTE coefficients (no effect: m0 = m1 = m2 = 0; flat MTE: m1 = m2 = 0)
+- **Treatment parameters:** ATE, ATT, ATU, and the policy-relevant treatment effect (PRTE) for students displaced by the limit
+- **Policy simulation:** displacement of completers above the limit via a smooth probability function, `P(displaced) = Φ(loan overage / 50)`, with overage in $000s
+- **Bayesian microsimulation:** S = 1,000 parametric posterior draws from `N(θ̂, V̂)`, propagating coefficient uncertainty (plus draws on base salary, the subsidy rate, tuition, and the tax rate) through the full cost-benefit calculation
+- **Cost-benefit analysis:** accounts for students, the federal government, and institutions, plus a social total in which transfers net out
+- **Sensitivity check:** two displacement functions (Φ(overage/50) and 2Φ(overage/50) − 1) crossed with two earnings horizons (30 and 10 years)
+- **Heterogeneity by program area:** MTE intercept shifts by program area estimated from the data, with a joint test of no differences (Figure 12.5)
 
 ### CBA Framework
 
 ```
-Net Benefit(s) = Fiscal_Savings(s) - Behavioral_Cost(s) + Efficiency_Gain(s)
+Students      = - after-tax forgone earnings + avoided tuition + avoided debt service
+                - forgone loan disbursements - higher financing cost (students who stay)
+Federal       = subsidy savings - lost tax revenue
+Institutions  = - lost net tuition revenue (of which: cross-subsidy to other programs)
 
-Fiscal savings:   reduced federal lending on overage x subsidy rate
-Behavioral cost:  lost human capital for cap-displaced completers with MTE > 0
-Efficiency gain:  avoided loss from removing completers with MTE <= 0
+Net social benefit = Students + Federal + Institutions
+                   = - forgone earnings + efficiency gain + avoided instructional cost
 ```
 
-Extended net benefit further subtracts institutional revenue loss and cross-subsidy disruption to capture the impact on institutions, not just students and the federal government.
+Forgone earnings are the lost returns (TT × base salary × present-value factor) of displaced completers with positive returns; the efficiency gain counts displaced completers with negative returns (zero in this example, because the estimated MTE is positive throughout). Tuition, loans, subsidies, and taxes move money between accounts and net out of the social total. The present value of repayments on a dollar borrowed is (1 − subsidy rate), so avoided debt service and subsidy savings are consistent.
 
 ## Global Parameters
 
@@ -88,11 +96,24 @@ Both scripts use the following shared parameters:
 | `seed` | `20251201` | Random seed (Stata and R will still diverge — see Data note above) |
 | `discount_rate` | 0.03 | Annual social discount rate (3%) |
 | `career_years` | 30 | Earnings horizon for present-value calculation |
-| `subsidy_rate` | 0.20 | Government subsidy rate on Grad PLUS principal |
+| `subsidy_rate` | 0.20 | Government subsidy rate on federal graduate loan principal |
+| `tax_rate` | 0.20 | Marginal tax rate on forgone earnings |
+| `cross_sub_share` | 0.20 | Share of net institutional revenue that cross-subsidizes other programs |
 | `cap_threshold` | 100 | Policy cap ($000s) |
 | `base_salary` | 47,000 | Pooled mean annual salary for non-completers ($) |
-| `cost_per_degree` | 100,000 | Per-student cost of a master's degree, full debt ($) |
+| `cost_per_degree` | 100,000 | Not used in any calculation (retained for reference) |
 | `S_draws` | 1,000 | Number of Bayesian posterior draws |
+
+Prior settings for the posterior simulation:
+
+| Parameter | Value | Description |
+|---|---|---|
+| `prior_sd_salary` | 0.10 | SD of log base salary (log-normal prior) |
+| `prior_hw_subsidy` | 0.05 | Half-width of the uniform prior on the subsidy rate (15% to 25%) |
+| `prior_sd_tuition` | 0.08 | SD of the log tuition multiplier (log-normal prior) |
+| `tax_lo`, `tax_hi` | 0.15, 0.25 | Bounds of the uniform prior on the tax rate |
+
+Table 12.2 is built from these parameters, so it always matches the values the code uses.
 
 ## Output
 
@@ -103,7 +124,9 @@ Output/
 │   ├── Chapter12_Stata_output.log
 │   └── Chapter12_R_output.log
 ├── tables/
-│   ├── Table12_1_CBA_Summary.tex
+│   ├── Table12_1_Descriptives_Stata.docx    / Table12_1_Descriptives_R.docx
+│   ├── Table12_2_Assumptions_Stata.docx     / Table12_2_Assumptions_R.docx
+│   ├── Table12_3_CBA_Summary_Stata.docx     / Table12_3_CBA_Summary_R.docx
 │   └── sim_results_ch12.dta          (simulation posterior draws; both languages)
 └── graphs/
     ├── fig12_1_posterior_nb_Stata.png       / fig12_1_posterior_nb_R.png
@@ -114,6 +137,14 @@ Output/
     ├── fig12_6_inst_rev_byfield_Stata.png   / fig12_6_inst_rev_byfield_R.png
     └── fig12_7_full_cost_stack_Stata.png    / fig12_7_full_cost_stack_R.png
 ```
+Tables are written as Word files (`putdocx` in Stata; `flextable`/`officer` in R) in Times New Roman with horizontal rules only:
+
+| Table | Content |
+|---|---|
+| 12.1 | Descriptive statistics: Panel A, student-level variables; Panel B, institution- and state-level variables (mean, SD, min, max, and means for completers and non-completers) |
+| 12.2 | Simulation assumptions: baseline values, prior distributions, and sensitivity alternatives |
+| 12.3 | Posterior cost-benefit summary: society-level components and the three accounts (mean, SD, 2.5th and 97.5th percentiles) |
+
 All figures are exported in grayscale at approximately 1,200-pixel width for Springer print standards (`s2mono` scheme in Stata; a custom `theme_springer()` in R).
 
 Published output files are archived at:
@@ -124,21 +155,22 @@ Published output files are archived at:
 ### Stata (`Stata_code12.do`, `Generate_Example_12_1.do`)
 
 - **Version:** Stata 19 or later
-- **User-written packages:** none required — all estimation uses built-in `probit`, `regress`, `drawnorm`, `postfile`, and `kdensity`
+- **User-written packages:** none required — all estimation uses built-in `probit`, `regress`, `drawnorm`, `postfile`, and `kdensity`, and the tables use built-in `putdocx`
 
 ### R (`R_code12.R`, `Generate_Example_12_1.R`)
 
 - **Version:** R 4.4 or later
-- **Required packages:** `haven`, `MASS`, `sandwich`, `lmtest`, `car`, `dplyr`, `tidyr`, `ggplot2`, `scales`
+- **Required packages:** `haven`, `MASS`, `sandwich`, `lmtest`, `car`, `dplyr`, `tidyr`, `ggplot2`, `scales`, `flextable`, `officer`
 
 ```r
 install.packages(c("haven", "MASS", "sandwich", "lmtest", "car",
-                    "dplyr", "tidyr", "ggplot2", "scales"))
+                    "dplyr", "tidyr", "ggplot2", "scales",
+                    "flextable", "officer"))
 ```
 
 ## Notes on Script Alignment
 
-The Stata and R scripts are designed to produce distributional equivalents, not row-identical results, because Stata and R use different pseudo-random number generators. When the canonical `Example_12_1.dta` is available (the normal case — see Data above), Sections 2–6 produce identical sample composition, MTE polynomial coefficients, and point-estimate treatment parameters (ATE/ATT/ATU/MPRTE) across both languages, since both load the same fixed dataset rather than generating their own. The Bayesian posterior draws in Section 7 (`MASS::mvrnorm()` in R vs. `drawnorm` in Stata) will still differ numerically even given identical input data, since the two RNGs are not interchangeable — the qualitative conclusions (sign, rough magnitude, and policy verdict) match; exact posterior values do not.
+The Stata and R scripts are designed to produce distributional equivalents, not row-identical results, because Stata and R use different pseudo-random number generators. When the canonical `Example_12_1.dta` is available (the normal case — see Data above), Sections 2–6 produce identical sample composition, MTE polynomial coefficients, point-estimate treatment parameters (ATE/ATT/ATU/PRTE), point-estimate cost-benefit accounts, and Tables 12.1–12.2 across both languages, since both load the same fixed dataset rather than generating their own. The Bayesian posterior draws in Section 7 (`MASS::mvrnorm()` in R vs. `drawnorm` in Stata), and therefore Table 12.3, will still differ numerically even given identical input data, since the two RNGs are not interchangeable — the qualitative conclusions (sign, rough magnitude, and policy verdict) match; exact posterior values do not.
 
 ## Related Chapters
 
@@ -146,7 +178,6 @@ Chapter 12 builds directly on the MTE estimation framework introduced in Chapter
 
 - Chapter 10 code: [`code/ch10`](https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch10)
 - Chapter 11 code: [`code/ch11`](https://github.com/higher-ed-policy-analysis-2nd-edition/code/tree/main/ch11)
-- The field-specific ATE differentials applied in Figure 12.5 (STEM: +0.134, Business: +0.885, Education: −0.165, Health: +0.038) are taken from Table 10.1, produced by `Stata_code10.do`
 
 Where Chapters 10 and 11 focus on estimating causal effects and their heterogeneity, Chapter 12 is the book's closing applied example: taking those estimates and simulating an actual policy intervention, with uncertainty carried through to the final answer rather than collapsed into a single point estimate.
 
