@@ -117,6 +117,25 @@
   m1 = m2 = 0 (b2 = 0 and b1 + c2 = 0). The earlier tests (beta terms = 0)
   were not tests of these hypotheses under the control-function approach.
   No estimates change; only the two test statistics do.
+
+  REVISION 6 (Nov 2026): the CBA is reorganized into three accounts --
+  students, the federal government, and institutions -- plus a social
+  total in which transfers (tuition, loans, subsidies, taxes) net out.
+  New items: lost tax revenue, avoided tuition, avoided debt service, and
+  avoided instructional cost; subsidy savings now cover all borrowing by
+  displaced students. The cross-subsidy is now reported as part of the
+  institutional revenue loss rather than added to it, and the "extended"
+  net benefit is dropped (it double-counted tuition). New global tax_rate
+  (prior: uniform 0.15-0.25). Table 12.1 and Figs. 12.3 and 12.7 change.
+
+  REVISION 7 (Nov 2026): tables are written as Word files with putdocx
+  (built into Stata) instead of LaTeX: Table 12.1 (descriptive statistics,
+  Panel A student-level and Panel B institution- and state-level variables,
+  Section 3), Table 12.2 (simulation assumptions, Section 6),
+  and Table 12.3 (posterior CBA summary, Section 9; formerly Table 12.1).
+  The prior settings, the cross-subsidy share, and the tax-rate range are
+  now globals, so Table 12.2 always matches the values the code uses.
+  No results change.
 ===========================================================================*/
 
 
@@ -161,10 +180,18 @@ global Z "ga_funding_adj"
 global discount_rate   0.03    // Annual discount rate (3%)
 global career_years    30      // Earnings horizon (years)
 global subsidy_rate    0.20    // Government subsidy on Grad PLUS principal
+global tax_rate        0.20    // Marginal tax rate on forgone earnings (REVISION 6)
 global cap_threshold   100     // Policy cap ($000s)
 global base_salary     47000   // Pooled mean annual salary (non-holders)
 global cost_per_degree 100000  // Not used in any calculation (retained for reference)
 global S_draws         1000     // Number of Bayesian posterior draws
+global cross_sub_share 0.20    // Share of net revenue that cross-subsidizes other programs
+* Prior settings for the posterior simulation (Section 7; Table 12.2)
+global prior_sd_salary  0.10   // SD of log base salary
+global prior_hw_subsidy 0.05   // Half-width of uniform prior on subsidy rate
+global prior_sd_tuition 0.08   // SD of log tuition multiplier
+global tax_lo           0.15   // Tax-rate prior: uniform lower bound
+global tax_hi           0.25   // Tax-rate prior: uniform upper bound
 
 
 /*---------------------------------------------------------------------------
@@ -427,6 +454,121 @@ label variable prog_area "Graduate program area"
 di _n "Mean federal graduate borrowing and share above the limit, by program area:"
 tabstat grad_plus_loans above_cap, by(prog_area) stats(mean n)
 
+* ── Table 12.1: Descriptive statistics (Word) ──────────────────────────────
+* Panel A: student-level variables; Panel B: institution- and state-level
+* variables. Mean, SD, minimum, and maximum for all students, plus means for
+* completers and non-completers. Written with putdocx so it pastes into Word.
+gen other_major = 1 - stem_major - bus_major - ed_major - health_major
+
+* Row list: a word starting with "@" is a panel heading ("_" = space)
+local t1rows "@Panel_A:_Student-level_variables ln_salary salary female black"
+local t1rows "`t1rows' hispanic asian age_ba firstgen parent_income_q parent_grad ugpa"
+local t1rows "`t1rows' stem_major bus_major ed_major health_major other_major"
+local t1rows "`t1rows' grad_plus_loans above_cap"
+local t1rows "`t1rows' @Panel_B:_Institution-_and_state-level_variables selective_inst"
+local t1rows "`t1rows' public_ug annual_tuition program_years net_inst_rev"
+local t1rows "`t1rows' ga_funding_adj state_unemp metro"
+local t1bin "female black hispanic asian firstgen parent_grad stem_major bus_major"
+local t1bin "`t1bin' ed_major health_major other_major selective_inst public_ug metro above_cap"
+
+local lab_ln_salary       "Log annual salary"
+local lab_salary          "Annual salary ($)"
+local lab_female          "Female"
+local lab_black           "Black"
+local lab_hispanic        "Hispanic"
+local lab_asian           "Asian"
+local lab_age_ba          "Age at bachelor's degree"
+local lab_firstgen        "First-generation student"
+local lab_parent_income_q "Parental income quartile (1-4)"
+local lab_parent_grad     "Parent holds a graduate degree"
+local lab_ugpa            "Undergraduate GPA"
+local lab_stem_major      "Program area: STEM"
+local lab_bus_major       "Program area: Business"
+local lab_ed_major        "Program area: Education"
+local lab_health_major    "Program area: Health"
+local lab_other_major     "Program area: Other"
+local lab_grad_plus_loans "Federal graduate borrowing ($000s)"
+local lab_above_cap       "Borrowing above the $100,000 limit"
+local lab_selective_inst  "Selective institution"
+local lab_public_ug       "Public undergraduate institution"
+local lab_annual_tuition  "Annual tuition ($000s)"
+local lab_program_years   "Program length (years)"
+local lab_net_inst_rev    "Net institutional revenue per student ($000s)"
+local lab_ga_funding_adj  "State GA funding (instrument)"
+local lab_state_unemp     "State unemployment rate (%)"
+local lab_metro           "Metropolitan area"
+
+local nrow : word count `t1rows'
+local R1 = `nrow' + 3                       // header + rows + N + note
+putdocx clear
+putdocx begin, font("Times New Roman", 10)
+putdocx paragraph
+putdocx text ("Table 12.1 "), bold
+putdocx text ("Descriptive statistics")
+putdocx table t1 = (`R1', 7), border(all, nil) layout(autofitcontents)
+putdocx table t1(1,1) = ("Variable")
+local c = 1
+foreach h in "Mean" "SD" "Min" "Max" "Completers" "Non-completers" {
+    local ++c
+    putdocx table t1(1,`c') = ("`h'"), halign(right)
+}
+local r = 1
+foreach w of local t1rows {
+    local ++r
+    if substr("`w'", 1, 1) == "@" {
+        local g = subinstr(substr("`w'", 2, .), "_", " ", .)
+        putdocx table t1(`r',1) = ("`g'"), italic
+        continue
+    }
+    putdocx table t1(`r',1) = ("    `lab_`w''")
+    local isbin : list w in t1bin
+    qui sum `w'
+    local xm  = r(mean)
+    local xsd = r(sd)
+    local xlo = r(min)
+    local xhi = r(max)
+    * Formats: binary = 3 decimals (min/max 0); large amounts = 0; others = 2
+    if `isbin' {
+        local fm "%9.3f"
+        local fx "%9.0f"
+    }
+    else if abs(`xm') >= 1000 {
+        local fm "%12.0fc"
+        local fx "%12.0fc"
+    }
+    else {
+        local fm "%12.2fc"
+        local fx "%12.2fc"
+    }
+    qui sum `w' if masters == 1
+    local xm1 = r(mean)
+    qui sum `w' if masters == 0
+    local xm0 = r(mean)
+    putdocx table t1(`r',2) = (strtrim(string(`xm',  "`fm'"))), halign(right)
+    putdocx table t1(`r',3) = (strtrim(string(`xsd', "`fm'"))), halign(right)
+    putdocx table t1(`r',4) = (strtrim(string(`xlo', "`fx'"))), halign(right)
+    putdocx table t1(`r',5) = (strtrim(string(`xhi', "`fx'"))), halign(right)
+    putdocx table t1(`r',6) = (strtrim(string(`xm1', "`fm'"))), halign(right)
+    putdocx table t1(`r',7) = (strtrim(string(`xm0', "`fm'"))), halign(right)
+}
+local ++r
+putdocx table t1(`r',1) = ("N")
+local nall = strtrim(string(_N, "%9.0fc"))
+qui count if masters == 1
+local n1 = strtrim(string(r(N), "%9.0fc"))
+qui count if masters == 0
+local n0 = strtrim(string(r(N), "%9.0fc"))
+putdocx table t1(`r',2) = ("`nall'"), halign(right)
+putdocx table t1(`r',6) = ("`n1'"), halign(right)
+putdocx table t1(`r',7) = ("`n0'"), halign(right)
+local ++r
+putdocx table t1(`r',1) = ("Note: Completers and Non-completers columns report means. Binary variables are shown as proportions. Panel B characteristics are attached to each student's record; the data contain no institution or state identifiers. Amounts marked $000s are in thousands of dollars. Synthetic data (Example_12_1.dta)."), colspan(7)
+putdocx table t1(1,.), border(top)
+putdocx table t1(1,.), border(bottom)
+putdocx table t1(`=`R1'-1',.), border(bottom)
+putdocx save "$tables_dir/Table12_1_Descriptives_Stata.docx", replace
+di as text "Table 12.1 written to $tables_dir/Table12_1_Descriptives_Stata.docx"
+
 
 /*---------------------------------------------------------------------------
   Section 4: Probit Selection Model and Propensity Score
@@ -636,60 +778,169 @@ local pv_factor = (1 - (1 + $discount_rate)^(-$career_years)) / $discount_rate
 di "Present value factor (" $career_years " yrs, " $discount_rate*100 "% r): " ///
     %6.3f `pv_factor'
 
-* ── Point-estimate CBA (pre-simulation baseline) ─────────────────────────────
-* Fiscal savings: government recovers subsidy on overage lending
-gen fiscal_saving_i = loan_overage * $subsidy_rate * above_cap
-* This applies to ALL students above the cap (completers and non-completers)
-* because the cap reduces federal exposure regardless of enrollment outcome.
-qui sum fiscal_saving_i
-local FS_point = r(sum)
-di "Point-estimate fiscal savings ($000s): " %8.1f `FS_point'
+* ── Table 12.2: Simulation assumptions (Word) ───────────────────────────────
+* Built from the globals at the top of the script and from the data, so the
+* table always matches the values the code uses.
+qui sum net_inst_rev
+local net_tot = r(sum)
+qui sum gross_tuition
+local instr_share = 1 - `net_tot' / r(sum)
+local pct = "%"
+putdocx clear
+putdocx begin, font("Times New Roman", 10)
+putdocx paragraph
+putdocx text ("Table 12.2 "), bold
+putdocx text ("Simulation assumptions")
+putdocx table t2 = (15, 4), border(all, nil) layout(autofitwindow)
+putdocx table t2(1,1) = ("Parameter")
+putdocx table t2(1,2) = ("Baseline value")
+putdocx table t2(1,3) = ("Prior distribution (Sect. 12.6)")
+putdocx table t2(1,4) = ("Sensitivity check (Sect. 12.7.3)")
+putdocx table t2(2,1) = ("Policy and behavior"), italic
+putdocx table t2(3,1) = ("    Aggregate federal loan limit")
+putdocx table t2(3,2) = (char(36) + strtrim(string(1000*$cap_threshold, "%12.0fc")))
+putdocx table t2(3,3) = ("Fixed")
+putdocx table t2(3,4) = ("None")
+putdocx table t2(4,1) = ("    Probability that a completer above the limit leaves")
+putdocx table t2(4,2) = ("Φ(overage / 50), overage in $000s")
+putdocx table t2(4,3) = ("Fixed")
+putdocx table t2(4,4) = ("2Φ(overage / 50) − 1")
+putdocx table t2(5,1) = ("Earnings"), italic
+putdocx table t2(6,1) = ("    Base salary (non-degree holders)")
+putdocx table t2(6,2) = (char(36) + strtrim(string($base_salary, "%12.0fc")))
+putdocx table t2(6,3) = ("Log-normal, SD " + strtrim(string($prior_sd_salary, "%4.2f")) + " on the log scale")
+putdocx table t2(6,4) = ("None")
+putdocx table t2(7,1) = ("    Earnings horizon")
+putdocx table t2(7,2) = ("$career_years years")
+putdocx table t2(7,3) = ("Fixed")
+putdocx table t2(7,4) = ("10 years")
+putdocx table t2(8,1) = ("    Discount rate")
+putdocx table t2(8,2) = (strtrim(string(100*$discount_rate, "%4.0f")) + "`pct'")
+putdocx table t2(8,3) = ("Fixed")
+putdocx table t2(8,4) = ("None")
+putdocx table t2(9,1) = ("Federal government"), italic
+putdocx table t2(10,1) = ("    Federal subsidy rate")
+putdocx table t2(10,2) = (strtrim(string(100*$subsidy_rate, "%4.0f")) + "`pct'")
+putdocx table t2(10,3) = ("Uniform, " + strtrim(string(100*($subsidy_rate - $prior_hw_subsidy), "%4.0f")) + "`pct' to " + strtrim(string(100*($subsidy_rate + $prior_hw_subsidy), "%4.0f")) + "`pct'")
+putdocx table t2(10,4) = ("None")
+putdocx table t2(11,1) = ("    Tax rate on forgone earnings")
+putdocx table t2(11,2) = (strtrim(string(100*$tax_rate, "%4.0f")) + "`pct'")
+putdocx table t2(11,3) = ("Uniform, " + strtrim(string(100*$tax_lo, "%4.0f")) + "`pct' to " + strtrim(string(100*$tax_hi, "%4.0f")) + "`pct'")
+putdocx table t2(11,4) = ("None")
+putdocx table t2(12,1) = ("Institutions"), italic
+putdocx table t2(13,1) = ("    Tuition")
+putdocx table t2(13,2) = ("Program values in the data")
+putdocx table t2(13,3) = ("Log-normal multiplier, SD " + strtrim(string($prior_sd_tuition, "%4.2f")))
+putdocx table t2(13,4) = ("None")
+putdocx table t2(14,1) = ("    Instructional cost share of tuition; cross-subsidy share of net revenue")
+putdocx table t2(14,2) = (strtrim(string(100*`instr_share', "%4.0f")) + "`pct'; " + strtrim(string(100*$cross_sub_share, "%4.0f")) + "`pct'")
+putdocx table t2(14,3) = ("Fixed")
+putdocx table t2(14,4) = ("None")
+putdocx table t2(15,1) = ("Note: MTE coefficients are drawn from a normal distribution centered on the estimates (Eq. 12.3), with the robust variance-covariance matrix. The simulation uses $S_draws posterior draws."), colspan(4)
+putdocx table t2(1,.), border(top)
+putdocx table t2(1,.), border(bottom)
+putdocx table t2(14,.), border(bottom)
+putdocx save "$tables_dir/Table12_2_Assumptions_Stata.docx", replace
+di as text "Table 12.2 written to $tables_dir/Table12_2_Assumptions_Stata.docx"
 
-* Behavioral cost: lost human capital for displaced completers
-* = TT(phat) × base_salary × PV_factor (in $000s, since salary is in $)
+* ── Point-estimate CBA by account (REVISION 6) ──────────────────────────────
+* Three accounts plus a social total. Amounts are present values in $000s.
+*
+*   Students:     - after-tax forgone earnings (+ after-tax efficiency gain)
+*                 + avoided tuition (displaced students no longer pay it)
+*                 + avoided debt service (repayments they no longer make)
+*                 - forgone loan disbursements (loans they no longer receive)
+*                 - higher financing cost for students who stay above the
+*                   limit (the subsidy they lose on borrowing above $100k)
+*   Federal:      + subsidy savings (all borrowing by displaced students,
+*                   plus the overage of students who stay)
+*                 - lost tax revenue on forgone earnings
+*   Institutions: - lost net tuition revenue (gross tuition minus the
+*                   variable instructional cost avoided)
+*   Society:      sum of the three accounts. Tuition, loans, subsidies, and
+*                 taxes are transfers between accounts and net out, leaving
+*                 - forgone earnings + efficiency gain + avoided
+*                   instructional cost.
+*
+* The present value of repayments on a dollar borrowed is (1 - subsidy
+* rate), so avoided debt service and the subsidy are consistent.
+
+* Forgone earnings (pre-tax): TT(phat) x base_salary x PV factor ($000s)
 gen behav_cost_i = displaced_E * max(0, tt_hat) * ($base_salary/1000) * `pv_factor'
 * Note: max(0, TT) reflects that only students with positive returns suffer a
 * human capital loss. Displaced students with negative TT represent an
 * efficiency GAIN (removing low-return borrowers).
 qui sum behav_cost_i if masters == 1
 local BC_point = r(sum)
-di "Point-estimate behavioral cost ($000s): " %8.1f `BC_point'
-
-* Efficiency gain from removing low-return borrowers (negative TT region)
 gen efficiency_gain_i = displaced_E * max(0, -tt_hat) * ($base_salary/1000) * `pv_factor'
 qui sum efficiency_gain_i if masters == 1
 local EG_point = r(sum)
-di "Point-estimate efficiency gain (low-return exit, $000s): " %8.1f `EG_point'
 
-* Net benefit (point estimate)
-local NB_point = `FS_point' - `BC_point' + `EG_point'
-di "Point-estimate net benefit ($000s): " %12.1fc `NB_point'
-di "Benefit-cost ratio: " %5.3f (`FS_point' + `EG_point') / max(1, `BC_point')
+* Federal subsidy savings
+gen fiscal_saving_i = $subsidy_rate * (displaced_E * grad_plus_loans ///
+    + (above_cap - displaced_E) * loan_overage)
+qui sum fiscal_saving_i
+local FS_point = r(sum)
+* Lost tax revenue on (net) forgone earnings
+local TL_point = $tax_rate * (`BC_point' - `EG_point')
 
-* ── Institutional revenue loss ───────────────────────────────────────────────
-* When a student is displaced by the cap, the institution loses their net
-* tuition revenue. As implemented, the loss is net_inst_rev for the FULL
-* program (all program years), not only the remaining years; if displaced
-* students leave partway through, this overstates the loss (UNDER REVIEW). This is distinct from the
-* student's human capital loss: it is a revenue shock to the institution that
-* affects staffing, cross-subsidies, and program viability.
-*
-* Two components:
-*   (a) Direct net revenue loss:  displaced_E × net_inst_rev
-*   (b) Cross-subsidy disruption: 20% of (a), representing the upstream effect
-*       on undergraduate aid and other programs funded by graduate tuition.
+* Students' tuition and loans (displaced completers)
+gen avoid_tuition_i = displaced_E * gross_tuition
+qui sum avoid_tuition_i
+local AT_point = r(sum)
+gen loans_disp_i = displaced_E * grad_plus_loans
+qui sum loans_disp_i
+local LD_point = r(sum)
+local DS_point = (1 - $subsidy_rate) * `LD_point'     // avoided debt service
+gen stay_cost_i = $subsidy_rate * (above_cap - displaced_E) * loan_overage
+qui sum stay_cost_i
+local SC_point = r(sum)
+
+* Institutions: lost net tuition revenue; cross-subsidy is part of it
+* As implemented, the loss covers the FULL program (all program years); if
+* displaced students leave partway through, this overstates it (UNDER REVIEW).
 gen inst_rev_loss_i   = displaced_E * net_inst_rev
-gen cross_sub_loss_i  = 0.20 * inst_rev_loss_i
-
+gen cross_sub_loss_i  = $cross_sub_share * inst_rev_loss_i  // of which: cross-subsidy
+gen avoid_instr_i     = displaced_E * (gross_tuition - net_inst_rev)
 qui sum inst_rev_loss_i  if masters == 1
 local IR_point = r(sum)
 qui sum cross_sub_loss_i if masters == 1
 local CS_point = r(sum)
+qui sum avoid_instr_i    if masters == 1
+local AI_point = r(sum)
 
-di _n "--- Institutional Outcomes (Point Estimates) ---"
-di "Net institutional revenue loss ($000s):     " %8.1f `IR_point'
-di "Cross-subsidy disruption ($000s):           " %8.1f `CS_point'
-di "Total institutional sector impact ($000s):  " %8.1f (`IR_point' + `CS_point')
+* Account totals
+local STU_point = -(1 - $tax_rate)*(`BC_point' - `EG_point') + `AT_point' ///
+                  + `DS_point' - `LD_point' - `SC_point'
+local FED_point = `FS_point' - `TL_point'
+local INS_point = -`IR_point'
+local NB_point  = `STU_point' + `FED_point' + `INS_point'
+local BCR_point = (`AI_point' + `EG_point') / max(1, `BC_point')
+
+di _n "--- Point-estimate CBA by account ($000s) ---"
+di "Students"
+di "  Forgone after-tax earnings              " %12.1fc -(1 - $tax_rate)*(`BC_point' - `EG_point')
+di "  Avoided tuition                         " %12.1fc `AT_point'
+di "  Avoided debt service                    " %12.1fc `DS_point'
+di "  Forgone loan disbursements              " %12.1fc -`LD_point'
+di "  Higher financing cost (students who stay)" %11.1fc -`SC_point'
+di "  Student account                         " %12.1fc `STU_point'
+di "Federal government"
+di "  Subsidy savings                         " %12.1fc `FS_point'
+di "  Lost tax revenue                        " %12.1fc -`TL_point'
+di "  Federal account                         " %12.1fc `FED_point'
+di "Institutions"
+di "  Lost net tuition revenue                " %12.1fc -`IR_point'
+di "    of which cross-subsidy to other programs" %10.1fc -`CS_point'
+di "  Institutional account                   " %12.1fc `INS_point'
+di "Society (transfers net out)"
+di "  Forgone earnings (pre-tax)              " %12.1fc -`BC_point'
+di "  Efficiency gain                         " %12.1fc `EG_point'
+di "  Avoided instructional cost              " %12.1fc `AI_point'
+di "Point-estimate net benefit ($000s):       " %12.1fc `NB_point'
+di "Check (- forgone earnings + efficiency gain + avoided instructional cost): " ///
+    %12.1fc (-`BC_point' + `EG_point' + `AI_point')
+di "Benefit-cost ratio: " %5.3f `BCR_point'
 
 * Revenue loss by program area (all five areas; prog_area from Section 3)
 di _n "Institutional revenue loss by program area ($000s):"
@@ -703,20 +954,15 @@ tabstat inst_rev_loss_i if masters == 1, ///
 tabstat inst_rev_loss_i if masters == 1, ///
     by(public_ug) stats(sum mean n)
 
-* Extended net benefit including institutional costs
-local NB_extended = `NB_point' - `IR_point' - `CS_point'
-di _n "Extended net benefit (incl. institutional costs, $000s): " %12.1fc `NB_extended'
-
-* ── Sensitivity of the point-estimate CBA (REVISION 4) ──────────────────────
+* ── Sensitivity of the point-estimate CBA (REVISIONS 4 and 6) ───────────────
 * Two assumptions drive the size of the net benefit:
 *   (1) Displacement function. Baseline: normal(overage/50), which gives a
 *       student $1 over the limit a 0.50 probability of leaving. Alternative:
 *       2*normal(overage/50) - 1, which starts at 0 and rises toward 1.
 *   (2) Earnings horizon. Baseline: 30 years. Alternative: 10 years.
-* Fiscal savings do not depend on either assumption. The PRTE depends only
-* on the displacement function (it changes the weights).
+* The PRTE depends only on the displacement function (it changes the weights).
 di _n "--- Sensitivity of the point-estimate CBA ($000s) ---"
-di "Displacement    Horizon  Displaced    PRTE  Behav. cost   Net benefit    BCR  Ext. net benefit"
+di "Displacement    Horizon  Displaced    PRTE  Forgone earn.  Net social ben.    BCR  Federal acct."
 foreach alt in 0 1 {
     foreach yrs in 30 10 {
         if `alt' == 0 {
@@ -740,13 +986,17 @@ foreach alt in 0 1 {
         qui replace sens_w = sens_de * max(0, -tt_hat) * ($base_salary/1000) * `pv_k' if masters == 1
         qui sum sens_w
         local eg_k = r(sum)
-        qui replace sens_w = sens_de * net_inst_rev if masters == 1
+        qui replace sens_w = sens_de * (gross_tuition - net_inst_rev) if masters == 1
         qui sum sens_w
-        local ir_k = r(sum)
-        local nb_k  = `FS_point' - `bc_k' + `eg_k'
-        local nbx_k = `nb_k' - 1.20*`ir_k'
-        di %-15s "`dlab'" %9.0f `yrs' %11.1f `nd_k' %8.4f `prte_k' %13.1fc `bc_k' ///
-           %14.1fc `nb_k' %7.3f (`FS_point' + `eg_k')/max(1, `bc_k') %18.1fc `nbx_k'
+        local ai_k = r(sum)
+        qui replace sens_w = $subsidy_rate * (sens_de * grad_plus_loans ///
+            + (above_cap - sens_de) * loan_overage)
+        qui sum sens_w
+        local fs_k = r(sum)
+        local nb_k  = -`bc_k' + `eg_k' + `ai_k'
+        local fed_k = `fs_k' - $tax_rate * (`bc_k' - `eg_k')
+        di %-15s "`dlab'" %9.0f `yrs' %11.1f `nd_k' %8.4f `prte_k' %15.1fc `bc_k' ///
+           %17.1fc `nb_k' %7.3f (`ai_k' + `eg_k')/max(1, `bc_k') %15.1fc `fed_k'
         drop sens_pd sens_de sens_w
     }
 }
@@ -771,6 +1021,7 @@ foreach alt in 0 1 {
     - Base salary (log-normal, reflecting real-wage uncertainty)
     - Subsidy rate (uniform, reflecting fiscal policy uncertainty)
     - Tuition multiplier (log-normal, reflecting pricing uncertainty)
+    - Tax rate (uniform, 0.15 to 0.25; REVISION 6)
   The propensity score (phat) is held fixed across draws, so uncertainty
   in the first-stage probit is not propagated.
 ---------------------------------------------------------------------------*/
@@ -813,16 +1064,21 @@ postfile sim_handle ///
     b0_s b1_s b2_s             ///  Posterior draws on beta polynomial (Eq. 12.2)
     m0_s m1_s m2_s             ///  Implied MTE polynomial (Eq. 12.3)
     ate_s att_s atu_s mprte_s  ///  Treatment parameters per draw (incl. MPRTE)
-    fiscal_s                   ///  Fiscal savings ($000s)
-    behav_cost_s               ///  Behavioral cost ($000s)
+    fiscal_s                   ///  Federal subsidy savings ($000s)
+    tax_loss_s                 ///  Lost tax revenue ($000s)
+    behav_cost_s               ///  Forgone earnings, pre-tax ($000s)
     effic_gain_s               ///  Efficiency gain from low-return exit ($000s)
+    avoid_tuition_s            ///  Avoided tuition, students ($000s)
+    avoid_instr_s              ///  Avoided instructional cost ($000s)
+    student_acct_s             ///  Student account ($000s)
+    federal_acct_s             ///  Federal account ($000s)
+    inst_acct_s                ///  Institutional account ($000s)
     net_benefit_s              ///  Net social benefit ($000s)
     nb_per_student_s           ///  NB per displaced student ($000s)
     bcr_s                      ///  Benefit-cost ratio
     pnb_positive_s             ///  Indicator: NB > 0 this draw
     inst_rev_loss_s            ///  Net institutional revenue loss ($000s)
-    cross_sub_loss_s           ///  Cross-subsidy disruption ($000s)
-    nb_extended_s              ///  Extended NB including institutional costs ($000s)
+    cross_sub_loss_s           ///  of which: cross-subsidy ($000s)
     using `sim_results', replace
 
 * ── Simulation loop ──────────────────────────────────────────────────────────
@@ -838,6 +1094,20 @@ drawnorm draw_1-draw_`k_full', n($S_draws) means(b_full) cov(V_full) clear
 * This avoids loading and trimming a dataset on every iteration.
 mkmat draw_1-draw_`k_full', matrix(B_draws)
 restore
+
+* Quantities that do not change across draws (displacement is fixed)
+qui sum loans_disp_i
+local LD_0 = r(sum)
+qui sum avoid_tuition_i
+local AT_0 = r(sum)
+qui sum avoid_instr_i if masters == 1
+local AI_0 = r(sum)
+qui sum inst_rev_loss_i if masters == 1
+local IR_0 = r(sum)
+gen double ov_stay_i = (above_cap - displaced_E) * loan_overage
+qui sum ov_stay_i
+local OS_0 = r(sum)
+drop ov_stay_i
 
 forvalues s = 1 / $S_draws {
 
@@ -857,13 +1127,15 @@ forvalues s = 1 / $S_draws {
 
     * ── Additional economic uncertainty ─────────────────────────────────────
     * Base salary: log-normal with 10% coefficient of variation
-    local base_sal_s = exp(ln($base_salary) + rnormal(0, 0.10))
+    local base_sal_s = exp(ln($base_salary) + rnormal(0, $prior_sd_salary))
     * Subsidy rate: uniform ± 5 percentage points around baseline
-    local sub_rate_s = $subsidy_rate + runiform(-0.05, 0.05)
+    local sub_rate_s = $subsidy_rate + runiform(-$prior_hw_subsidy, $prior_hw_subsidy)
     * Tuition multiplier: log-normal with 8% CV, reflecting uncertainty in
     * actual tuition levels, discount rates, and institutional aid policies.
     * This ensures inst_rev_loss_s varies meaningfully across draws.
-    local tuition_mult_s = exp(rnormal(0, 0.08))
+    local tuition_mult_s = exp(rnormal(0, $prior_sd_tuition))
+    * Tax rate on forgone earnings: uniform 0.15 to 0.25 (REVISION 6)
+    local tax_rate_s = runiform($tax_lo, $tax_hi)
 
     * ── Recompute MTE for this draw ──────────────────────────────────────────
     qui {
@@ -885,11 +1157,6 @@ forvalues s = 1 / $S_draws {
         sum mprte_i_s if masters == 1
         local mprte_s = r(sum)
 
-        * Fiscal savings (uses draw-specific subsidy rate)
-        gen fs_i_s = loan_overage * `sub_rate_s' * above_cap
-        sum fs_i_s
-        local fiscal_s = r(sum)
-
         * Behavioral cost: human capital loss for displaced high-return students
         gen bc_i_s = displaced_E * max(0, mte_s) * (`base_sal_s'/1000) * `pv_factor'
         sum bc_i_s if masters == 1
@@ -900,8 +1167,23 @@ forvalues s = 1 / $S_draws {
         sum eg_i_s if masters == 1
         local effic_gain_s = r(sum)
 
-        * Net benefit
-        local net_benefit_s = `fiscal_s' - `behav_cost_s' + `effic_gain_s'
+        * Accounts (REVISION 6; see Section 6)
+        local fiscal_s        = `sub_rate_s' * (`LD_0' + `OS_0')
+        local tax_loss_s      = `tax_rate_s' * (`behav_cost_s' - `effic_gain_s')
+        local avoid_tuition_s = `AT_0' * `tuition_mult_s'
+        local avoid_instr_s   = `AI_0' * `tuition_mult_s'
+        local inst_rev_loss_s = `IR_0' * `tuition_mult_s'
+        local cross_sub_loss_s = $cross_sub_share * `inst_rev_loss_s'
+        * Students: after-tax earnings, tuition, and the subsidy they lose
+        * (avoided debt service minus forgone loans = -subsidy on displaced
+        * borrowing; plus the subsidy lost by students who stay)
+        local student_acct_s = -(1 - `tax_rate_s')*(`behav_cost_s' - `effic_gain_s') ///
+                               + `avoid_tuition_s' - `fiscal_s'
+        local federal_acct_s = `fiscal_s' - `tax_loss_s'
+        local inst_acct_s    = -`inst_rev_loss_s'
+
+        * Net social benefit = sum of the accounts
+        local net_benefit_s = `student_acct_s' + `federal_acct_s' + `inst_acct_s'
 
         * Per-displaced-student net benefit
         sum displaced_E if masters == 1
@@ -909,22 +1191,12 @@ forvalues s = 1 / $S_draws {
         local nb_per_student_s = `net_benefit_s' / `n_disp_s'
 
         * Benefit-cost ratio
-        local bcr_s = (`fiscal_s' + `effic_gain_s') / max(1, `behav_cost_s')
+        local bcr_s = (`avoid_instr_s' + `effic_gain_s') / max(1, `behav_cost_s')
 
         * Efficiency indicator
         local pnb_positive_s = (`net_benefit_s' > 0)
 
-        * Institutional revenue loss
-        * Net tuition revenue forgone when displaced students leave.
-        * Draw-specific tuition multiplier propagates pricing uncertainty.
-        * Cross-subsidy disruption adds 20% for upstream undergraduate impact.
-        gen ir_i_s = displaced_E * net_inst_rev * `tuition_mult_s'
-        sum ir_i_s if masters == 1
-        local inst_rev_loss_s = r(sum)
-        local cross_sub_loss_s = 0.20 * `inst_rev_loss_s'
-        local nb_extended_s = `net_benefit_s' - `inst_rev_loss_s' - `cross_sub_loss_s'
-
-        drop I_s mte_s mprte_i_s fs_i_s bc_i_s eg_i_s ir_i_s
+        drop I_s mte_s mprte_i_s bc_i_s eg_i_s
     }
 
     * ── Post results ──────────────────────────────────────────────────────────
@@ -933,9 +1205,11 @@ forvalues s = 1 / $S_draws {
         (`b0_s') (`b1_s') (`b2_s') ///
         (`m0_s') (`m1_s') (`m2_s') ///
         (`ate_s') (`att_s') (`atu_s') (`mprte_s') ///
-        (`fiscal_s') (`behav_cost_s') (`effic_gain_s') ///
+        (`fiscal_s') (`tax_loss_s') (`behav_cost_s') (`effic_gain_s') ///
+        (`avoid_tuition_s') (`avoid_instr_s') ///
+        (`student_acct_s') (`federal_acct_s') (`inst_acct_s') ///
         (`net_benefit_s') (`nb_per_student_s') (`bcr_s') (`pnb_positive_s') ///
-        (`inst_rev_loss_s') (`cross_sub_loss_s') (`nb_extended_s')
+        (`inst_rev_loss_s') (`cross_sub_loss_s')
 
     * Progress indicator every 100 draws
     if mod(`s', 100) == 0 {
@@ -964,7 +1238,7 @@ di _n "--- Posterior Summary: CBA Components ($000s) ---"
 
 * tabstat does not accept decimal percentiles (p2.5, p97.5).
 * Use _pctile to compute 2.5th and 97.5th percentiles directly.
-foreach var in fiscal_s behav_cost_s effic_gain_s net_benefit_s {
+foreach var in behav_cost_s effic_gain_s avoid_instr_s net_benefit_s {
     qui sum `var'
     local xm = r(mean)
     local xs = r(sd)
@@ -974,8 +1248,9 @@ foreach var in fiscal_s behav_cost_s effic_gain_s net_benefit_s {
         "  95% CI: [" %10.2f r(r1) ", " %10.2f r(r2) "]"
 }
 
-di _n "--- Institutional Outcomes: Posterior Summary ($000s) ---"
-foreach var in inst_rev_loss_s cross_sub_loss_s nb_extended_s {
+di _n "--- Accounts by Perspective: Posterior Summary ($000s) ---"
+foreach var in student_acct_s federal_acct_s fiscal_s tax_loss_s ///
+    inst_acct_s cross_sub_loss_s {
     qui sum `var'
     local xm = r(mean)
     _pctile `var', p(2.5 97.5)
@@ -983,16 +1258,17 @@ foreach var in inst_rev_loss_s cross_sub_loss_s nb_extended_s {
         "  95% CI: [" %10.2f r(r1) ", " %10.2f r(r2) "]"
 }
 
-* Probability extended NB > 0
-gen pnb_ext_pos_s = (nb_extended_s > 0)
-qui sum pnb_ext_pos_s
-di _n "P(Extended NB > 0, incl. institutional costs): " %5.3f r(mean)
+* Probability that the federal government comes out ahead
+gen pfed_pos_s = (federal_acct_s > 0)
+qui sum pfed_pos_s
+di _n "P(Federal account > 0): " %5.3f r(mean)
+drop pfed_pos_s
 tabstat m0_s m1_s m2_s ate_s att_s atu_s mprte_s, ///
     stats(mean sd) columns(statistics)
 
-* ── Treatment Parameter Posterior Summary (Table 12.5 inputs) ────────────────
+* ── Treatment Parameter Posterior Summary (Sects. 12.3.3 and 12.6.3) ─────────
 * Posterior means and 95% credible intervals for ATE, ATT, MPRTE, ATU.
-* These four numbers populate the Estimate column of Table 12.5 and provide
+* These four numbers are reported in the text and provide
 * the inferential basis for the MPRTE > ATT claim in the chapter narrative.
 di _n "--- Treatment Parameter Posterior (log-salary units) ---"
 foreach var in ate_s att_s mprte_s atu_s {
@@ -1056,7 +1332,8 @@ use "$tables_dir/sim_results_ch12.dta", clear
 
 * ── 95% credible intervals ───────────────────────────────────────────────────
 * r(p2) and r(p97) are not stored by sum,detail. Use _pctile instead.
-foreach var in fiscal_s behav_cost_s effic_gain_s net_benefit_s bcr_s {
+foreach var in behav_cost_s effic_gain_s avoid_instr_s net_benefit_s bcr_s ///
+    student_acct_s federal_acct_s inst_acct_s {
     qui sum `var'
     local xm = r(mean)
     _pctile `var', p(2.5 97.5)
@@ -1080,53 +1357,63 @@ di _n "--- Policy Verdict ---"
 if `nb_mean' > 0 {
     di as text "Posterior mean NB = " %12.2fc `nb_mean' " ($000s) > 0"
     di as text "Scenario A likely: cap predominantly displaces low-return borrowers."
-    di as text "Policy generates net fiscal savings in excess of human capital loss."
+    di as text "Resources saved exceed forgone earnings."
 }
 else {
     di as text "Posterior mean NB = " %12.2fc `nb_mean' " ($000s) < 0"
     di as text "Scenario B likely: cap displaces students with positive marginal returns."
-    di as text "Human capital loss exceeds fiscal savings."
+    di as text "Forgone earnings exceed the resources saved."
 }
 
-* ── LaTeX-ready summary table ────────────────────────────────────────────────
-file open ftab using "$tables_dir/Table12_1_CBA_Summary.tex", write replace
-file write ftab "\begin{table}[ht]" _n
-file write ftab "\caption{Posterior Cost--Benefit Summary: \$100k Grad PLUS Cap}" _n
-file write ftab "\begin{tabular}{lrrrr}" _n
-file write ftab "\hline" _n
-file write ftab "Component & Mean & SD & 2.5\% & 97.5\% \\" _n
-file write ftab "\hline" _n
+* ── Table 12.3: Posterior cost-benefit summary (Word) ───────────────────────
+local t3vars "behav_cost_s effic_gain_s avoid_instr_s net_benefit_s bcr_s @ student_acct_s federal_acct_s inst_acct_s"
+local lab_behav_cost_s   "Forgone earnings"
+local lab_effic_gain_s   "Efficiency gain"
+local lab_avoid_instr_s  "Avoided instructional cost"
+local lab_net_benefit_s  "Net social benefit"
+local lab_bcr_s          "Benefit-cost ratio"
+local lab_student_acct_s "Students"
+local lab_federal_acct_s "Federal government"
+local lab_inst_acct_s    "Institutions"
 
-foreach var in fiscal_s behav_cost_s effic_gain_s net_benefit_s bcr_s {
+putdocx clear
+putdocx begin, font("Times New Roman", 10)
+putdocx paragraph
+putdocx text ("Table 12.3 "), bold
+putdocx text ("Posterior cost-benefit summary: $100,000 federal graduate loan limit ($000s)")
+putdocx table t3 = (12, 5), border(all, nil) layout(autofitcontents)
+putdocx table t3(1,1) = ("Component")
+putdocx table t3(1,2) = ("Mean"), halign(right)
+putdocx table t3(1,3) = ("SD"), halign(right)
+putdocx table t3(1,4) = ("2.5th pct."), halign(right)
+putdocx table t3(1,5) = ("97.5th pct."), halign(right)
+putdocx table t3(2,1) = ("Society"), italic
+local r = 2
+foreach var of local t3vars {
+    local ++r
+    if "`var'" == "@" {
+        putdocx table t3(`r',1) = ("By account"), italic
+        continue
+    }
+    local fmt = cond("`var'" == "bcr_s", "%9.3f", "%12.1fc")
     qui sum `var'
     local xmean = r(mean)
     local xsd   = r(sd)
     _pctile `var', p(2.5 97.5)
     local p_lo = r(r1)
     local p_hi = r(r2)
-    local label = cond("`var'" == "fiscal_s",       "Fiscal savings (\$000s)", ///
-                  cond("`var'" == "behav_cost_s",   "Behavioral cost (\$000s)", ///
-                  cond("`var'" == "effic_gain_s",   "Efficiency gain (\$000s)", ///
-                  cond("`var'" == "net_benefit_s",  "Net benefit (\$000s)", ///
-                                                    "Benefit-cost ratio"))))
-    * Use string() to format numbers before file write — avoids %fmt parsing issues
-    local s1 = string(`xmean', "%10.2f")
-    local s2 = string(`xsd',   "%10.2f")
-    local s3 = string(`p_lo',  "%10.2f")
-    local s4 = string(`p_hi',  "%10.2f")
-    file write ftab "`label' & `s1' & `s2' & `s3' & `s4' \\" _n
+    putdocx table t3(`r',1) = ("    `lab_`var''")
+    putdocx table t3(`r',2) = (strtrim(string(`xmean', "`fmt'"))), halign(right)
+    putdocx table t3(`r',3) = (strtrim(string(`xsd',   "`fmt'"))), halign(right)
+    putdocx table t3(`r',4) = (strtrim(string(`p_lo',  "`fmt'"))), halign(right)
+    putdocx table t3(`r',5) = (strtrim(string(`p_hi',  "`fmt'"))), halign(right)
 }
-
-file write ftab "\hline" _n
-file write ftab "\multicolumn{5}{l}{\textit{Note: " ///
-    "$S_draws posterior draws. " ///
-    "Behavioral cost = lost human capital for displaced completers with MTE > 0. " ///
-    "Efficiency gain = avoided loss from removing completers with MTE \$\leq\$ 0.}} \\" _n
-file write ftab "\end{tabular}" _n
-file write ftab "\end{table}" _n
-file close ftab
-
-di _n "Summary table written to $tables_dir/Table12_1_CBA_Summary.tex"
+putdocx table t3(12,1) = ("Note: Based on $S_draws posterior draws. Net social benefit is the sum of the three accounts; tuition, loans, subsidies, and taxes are transfers between accounts and net out. Benefit-cost ratio = (avoided instructional cost + efficiency gain) / forgone earnings."), colspan(5)
+putdocx table t3(1,.), border(top)
+putdocx table t3(1,.), border(bottom)
+putdocx table t3(11,.), border(bottom)
+putdocx save "$tables_dir/Table12_3_CBA_Summary_Stata.docx", replace
+di _n "Table 12.3 written to $tables_dir/Table12_3_CBA_Summary_Stata.docx"
 
 restore
 
@@ -1229,9 +1516,9 @@ restore
 preserve
 use "$tables_dir/sim_results_ch12.dta", clear
 
-* Compute posterior means — each command on its own line (no inline semicolons)
-qui sum fiscal_s
-scalar sc_fs = r(mean)
+* Posterior means of the real (non-transfer) components (REVISION 6)
+qui sum avoid_instr_s
+scalar sc_ai = r(mean)
 qui sum behav_cost_s
 scalar sc_bc = r(mean)
 qui sum effic_gain_s
@@ -1245,16 +1532,12 @@ set obs 3
 gen component = _n
 gen label     = ""
 gen value     = .
-gen color_grp = .
-replace label = "Fiscal Savings"   in 1
-replace label = "Efficiency Gain"  in 2
-replace label = "Behavioral Cost"  in 3
-replace value = sc_fs              in 1
+replace label = "Avoided Instructional Cost" in 1
+replace label = "Efficiency Gain"            in 2
+replace label = "Forgone Earnings"           in 3
+replace value = sc_ai              in 1
 replace value = sc_eg              in 2
 replace value = -sc_bc             in 3
-replace color_grp = 1              in 1
-replace color_grp = 1              in 2
-replace color_grp = 2              in 3
 
 graph bar value, over(label, sort(component)) ///
     bar(1, fcolor(gs4) lcolor(gs0)) ///
@@ -1262,8 +1545,9 @@ graph bar value, over(label, sort(component)) ///
     ytitle("Posterior Mean ($000s)") ///
     title("Cost–Benefit Decomposition") ///
     subtitle("$100k Federal Loan Cap (Posterior Mean Components)") ///
-    note("Behavioral cost shown as negative (subtracted from net benefit)." ///
-         "Net benefit = Fiscal Savings + Efficiency Gain − Behavioral Cost.") ///
+    note("Forgone earnings shown as negative. Net social benefit =" ///
+         "Avoided Instructional Cost + Efficiency Gain − Forgone Earnings;" ///
+         "tuition, loans, subsidies, and taxes are transfers and net out.") ///
     name(fig12_3_cba_decomp, replace)
 
 graph export "$graphs_dir/fig12_3_cba_decomp_Stata.png", ///
@@ -1417,57 +1701,45 @@ graph export "$graphs_dir/fig12_6_inst_rev_byfield_Stata.png", ///
 restore
 
 * ─────────────────────────────────────────────────────────────────────────────
-* Fig. 12.7: Full Social Cost Stack — Student + Institutional Channels
-* Stacks all costs and savings to show the complete distributional picture.
+* Fig. 12.7: Who Bears the Cost — Accounts by Perspective (REVISION 6)
+* Posterior means of the student, federal, and institutional accounts and
+* their sum, the net social benefit.
 * ─────────────────────────────────────────────────────────────────────────────
 preserve
 use "$tables_dir/sim_results_ch12.dta", clear
 
-qui sum fiscal_s
-scalar sc_fs  = r(mean)
-qui sum behav_cost_s
-scalar sc_bc  = r(mean)
-qui sum effic_gain_s
-scalar sc_eg  = r(mean)
-qui sum inst_rev_loss_s
-scalar sc_ir  = r(mean)
-qui sum cross_sub_loss_s
-scalar sc_cs  = r(mean)
+qui sum student_acct_s
+scalar sc_st = r(mean)
+qui sum federal_acct_s
+scalar sc_fe = r(mean)
+qui sum inst_acct_s
+scalar sc_in = r(mean)
+qui sum net_benefit_s
+scalar sc_nb = r(mean)
 
 clear
-set obs 5
+set obs 4
 gen component = _n
 gen label     = ""
 gen value     = .
-gen category  = ""   // "Benefit" or "Cost"
+replace label = "Students"           in 1
+replace label = "Federal Government" in 2
+replace label = "Institutions"       in 3
+replace label = "Society (Total)"    in 4
+replace value = sc_st in 1
+replace value = sc_fe in 2
+replace value = sc_in in 3
+replace value = sc_nb in 4
 
-replace label    = "Fiscal Savings"          in 1
-replace label    = "Efficiency Gain"         in 2
-replace label    = "Human Capital Loss"      in 3
-replace label    = "Institutional Rev. Loss" in 4
-replace label    = "Cross-Subsidy Disruption" in 5
-
-replace value    =  sc_fs  in 1
-replace value    =  sc_eg  in 2
-replace value    = -sc_bc  in 3
-replace value    = -sc_ir  in 4
-replace value    = -sc_cs  in 5
-
-replace category = "Benefit" in 1
-replace category = "Benefit" in 2
-replace category = "Cost"    in 3
-replace category = "Cost"    in 4
-replace category = "Cost"    in 5
-
-graph bar value, over(label, sort(component) label(angle(30))) ///
+graph bar value, over(label, sort(component)) ///
     bar(1, fcolor(gs5) lcolor(gs0)) ///
     yline(0, lpattern(dash) lcolor(gs8)) ///
     ytitle("Posterior Mean ($000s)") ///
-    title("Full Social Cost Stack") ///
-    subtitle("Student and Institutional Channels Combined") ///
-    note("Benefits shown positive; costs shown negative." ///
-         "Human capital loss and institutional revenue loss dominate." ///
-         "Cross-subsidy disruption captures upstream undergraduate impact.") ///
+    title("Who Bears the Cost") ///
+    subtitle("Accounts by Perspective (Posterior Means)") ///
+    note("Society = Students + Federal Government + Institutions." ///
+         "Students: after-tax earnings, tuition, and lost loan subsidies." ///
+         "Federal: subsidy savings minus lost tax revenue.") ///
     name(fig12_7_full_cost_stack, replace)
 
 graph export "$graphs_dir/fig12_7_full_cost_stack_Stata.png", ///
@@ -1486,7 +1758,9 @@ di    "============================================================"
 di as text "Output files:"
 di as text "  Stata log:    Output/logs/Chapter12_Stata_output.log"
 di as text "  Data:         Example_12_1.dta"
-di as text "  Table:        $tables_dir/Table12_1_CBA_Summary.tex"
+di as text "  Tables:       $tables_dir/Table12_1_Descriptives_Stata.docx"
+di as text "                $tables_dir/Table12_2_Assumptions_Stata.docx"
+di as text "                $tables_dir/Table12_3_CBA_Summary_Stata.docx"
 di as text "  Sim results:  $tables_dir/sim_results_ch12.dta"
 di as text "  Figures:      $graphs_dir/fig12_1_posterior_nb_Stata.png"
 di as text "                $graphs_dir/fig12_2_mte_policy_Stata.png"

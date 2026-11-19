@@ -107,6 +107,26 @@
 #   and "MTE flat" is m1 = m2 = 0 (b2 = 0 and b1 + c2 = 0). The earlier
 #   tests (beta terms = 0) were not tests of these hypotheses under the
 #   control-function approach. Only the two test statistics change.
+#
+# REVISION 6 (Nov 2026; mirrors Stata_code12.do): the CBA is reorganized
+#   into three accounts -- students, the federal government, and
+#   institutions -- plus a social total in which transfers (tuition, loans,
+#   subsidies, taxes) net out. New items: lost tax revenue, avoided tuition,
+#   avoided debt service, and avoided instructional cost; subsidy savings now
+#   cover all borrowing by displaced students. The cross-subsidy is reported
+#   as part of the institutional revenue loss rather than added to it, and
+#   the "extended" net benefit is dropped (it double-counted tuition). New
+#   parameter tax_rate (prior: uniform 0.15-0.25). Table 12.1 and Figs. 12.3
+#   and 12.7 change.
+#
+# REVISION 7 (Nov 2026; mirrors Stata_code12.do): tables are written as Word
+#   files with flextable/officer instead of LaTeX: Table 12.1 (descriptive
+#   statistics, Panel A student-level and Panel B institution- and
+#   state-level variables, Section 3), Table 12.2 (simulation
+#   assumptions, Section 6), and Table 12.3 (posterior CBA summary, Section 9;
+#   formerly Table 12.1). The prior settings, the cross-subsidy share, and the
+#   tax-rate range are now parameters, so Table 12.2 always matches the
+#   values the code uses. No results change.
 # ==============================================================================
 
 
@@ -124,7 +144,8 @@ install_if_missing <- function(pkgs) {
 }
 
 install_if_missing(c("haven", "MASS", "sandwich", "lmtest", "car",
-                      "dplyr", "tidyr", "ggplot2", "scales"))
+                      "dplyr", "tidyr", "ggplot2", "scales",
+                      "flextable", "officer"))
 
 suppressPackageStartupMessages({
   library(haven)     # read_dta/write_dta()   - replaces: use/save *.dta
@@ -137,7 +158,59 @@ suppressPackageStartupMessages({
   library(ggplot2)   # all graphs             - replaces: twoway, graph bar,
                      #                          histogram, kdensity
   library(scales)    # axis label formatting
+  library(flextable) # Word tables            - replaces: putdocx table
+  library(officer)   # Word documents         - replaces: putdocx begin/save
 })
+
+# ----------------------------------------------------------------------------
+# Helper: write a table to Word in the book's style (REVISION 7)
+# Times New Roman 10 pt, black text, horizontal rules only, a bold table
+# number, and a note below. group_rows are italic group headings; all other
+# rows are indented under them.
+# ----------------------------------------------------------------------------
+write_word_table <- function(df, number, title, note, path,
+                             group_rows = integer(0), right_align = TRUE,
+                             fit_page = FALSE, col_widths = NULL) {
+  rule <- officer::fp_border(color = "black", width = 0.75)
+  ft <- flextable::flextable(df)
+  ft <- flextable::border_remove(ft)
+  ft <- flextable::align(ft, j = 1, align = "left", part = "all")
+  if (right_align && ncol(df) > 1)
+    ft <- flextable::align(ft, j = 2:ncol(df), align = "right", part = "all")
+  if (length(group_rows) > 0) {
+    ft <- flextable::italic(ft, i = group_rows, j = 1, part = "body")
+    ft <- flextable::padding(ft, i = setdiff(seq_len(nrow(df)), group_rows),
+                             j = 1, padding.left = 14, part = "body")
+  }
+  ft <- flextable::hline_top(ft, border = rule, part = "header")
+  ft <- flextable::hline_bottom(ft, border = rule, part = "header")
+  ft <- flextable::hline_bottom(ft, border = rule, part = "body")
+  ft <- flextable::add_footer_lines(ft, note)
+  ft <- flextable::font(ft, fontname = "Times New Roman", part = "all")
+  ft <- flextable::fontsize(ft, size = 10, part = "all")
+  ft <- flextable::color(ft, color = "black", part = "all")
+  ft <- flextable::padding(ft, padding.top = 1, padding.bottom = 1, part = "all")
+  ft <- flextable::line_spacing(ft, space = 1, part = "all")
+  ft <- flextable::autofit(ft)
+  # Text-heavy tables: fit to the page width so long text wraps in its cell
+  if (fit_page)
+    ft <- flextable::set_table_properties(ft, width = 1, layout = "autofit")
+  # Explicit column widths in inches (overrides the above)
+  if (!is.null(col_widths)) {
+    ft <- flextable::width(ft, j = seq_along(col_widths), width = col_widths)
+    ft <- flextable::set_table_properties(ft, layout = "fixed")
+  }
+  txt  <- officer::fp_text(font.family = "Times New Roman", font.size = 10)
+  txtb <- officer::fp_text(font.family = "Times New Roman", font.size = 10,
+                           bold = TRUE)
+  cap <- officer::fpar(officer::ftext(paste0("Table ", number, " "), txtb),
+                       officer::ftext(title, txt))
+  doc <- officer::read_docx()
+  doc <- officer::body_add_fpar(doc, cap)
+  doc <- flextable::body_add_flextable(doc, ft, align = "left")
+  print(doc, target = path)
+  cat("Table", number, "written to", path, "\n")
+}
 
 # NOTE: car and dplyr both export a function called recode() with incompatible
 # argument styles (see Section 10, Fig. 12.5). We avoid recode() entirely and
@@ -209,10 +282,18 @@ Z_instrument <- "ga_funding_adj"
 discount_rate   <- 0.03    # Annual discount rate (3%)
 career_years    <- 30      # Earnings horizon (years)
 subsidy_rate    <- 0.20    # Government subsidy on Grad PLUS principal
+tax_rate        <- 0.20    # Marginal tax rate on forgone earnings (REVISION 6)
 cap_threshold   <- 100     # Policy cap ($000s)
 base_salary     <- 47000   # Pooled mean annual salary (non-holders)
 cost_per_degree <- 100000  # Not used in any calculation (retained for reference)
 S_draws         <- 1000    # Number of Bayesian posterior draws
+cross_sub_share <- 0.20    # Share of net revenue that cross-subsidizes other programs
+# Prior settings for the posterior simulation (Section 7; Table 12.2)
+prior_sd_salary  <- 0.10   # SD of log base salary
+prior_hw_subsidy <- 0.05   # Half-width of uniform prior on subsidy rate
+prior_sd_tuition <- 0.08   # SD of log tuition multiplier
+tax_lo           <- 0.15   # Tax-rate prior: uniform lower bound
+tax_hi           <- 0.25   # Tax-rate prior: uniform upper bound
 
 
 # ------------------------------------------------------------------------------
@@ -478,6 +559,68 @@ cat("\nMean federal graduate borrowing and share above the limit, by program are
 print(tabstat_by(dat, c("grad_plus_loans", "above_cap"), "prog_area",
                   stats_fun = list(mean = mean, n = length)))
 
+# ── Table 12.1: Descriptive statistics (Word) ──────────────────────────────
+# Panel A: student-level variables; Panel B: institution- and state-level
+# variables. Mean, SD, minimum, and maximum for all students, plus means for
+# completers and non-completers. Written with flextable so it pastes into Word.
+dat$other_major <- 1 - dat$stem_major - dat$bus_major - dat$ed_major -
+  dat$health_major
+t1_spec <- list(
+  "Panel A: Student-level variables" = c(
+    ln_salary = "Log annual salary", salary = "Annual salary ($)",
+    female = "Female", black = "Black", hispanic = "Hispanic", asian = "Asian",
+    age_ba = "Age at bachelor's degree", firstgen = "First-generation student",
+    parent_income_q = "Parental income quartile (1-4)",
+    parent_grad = "Parent holds a graduate degree", ugpa = "Undergraduate GPA",
+    stem_major = "Program area: STEM", bus_major = "Program area: Business",
+    ed_major = "Program area: Education", health_major = "Program area: Health",
+    other_major = "Program area: Other",
+    grad_plus_loans = "Federal graduate borrowing ($000s)",
+    above_cap = "Borrowing above the $100,000 limit"),
+  "Panel B: Institution- and state-level variables" = c(
+    selective_inst = "Selective institution",
+    public_ug = "Public undergraduate institution",
+    annual_tuition = "Annual tuition ($000s)",
+    program_years = "Program length (years)",
+    net_inst_rev = "Net institutional revenue per student ($000s)",
+    ga_funding_adj = "State GA funding (instrument)",
+    state_unemp = "State unemployment rate (%)", metro = "Metropolitan area"))
+t1_bin <- c("female", "black", "hispanic", "asian", "firstgen", "parent_grad",
+            "stem_major", "bus_major", "ed_major", "health_major",
+            "other_major", "selective_inst", "public_ug", "metro", "above_cap")
+# Formats: binary = 3 decimals (min/max 0); large amounts = 0; others = 2
+t1_fmt <- function(x, bin, big, minmax = FALSE) {
+  d <- if (bin) (if (minmax) 0 else 3) else if (big) 0 else 2
+  formatC(x, format = "f", digits = d, big.mark = ",")
+}
+t1_names <- c("Variable", "Mean", "SD", "Min", "Max",
+              "Completers", "Non-completers")
+t1 <- setNames(data.frame(matrix(character(0), ncol = 7)), t1_names)
+t1_groups <- integer(0)
+for (g in names(t1_spec)) {
+  t1 <- rbind(t1, setNames(data.frame(g, "", "", "", "", "", ""), t1_names))
+  t1_groups <- c(t1_groups, nrow(t1))
+  for (v in names(t1_spec[[g]])) {
+    x   <- dat[[v]]
+    b   <- v %in% t1_bin
+    big <- abs(mean(x)) >= 1000
+    t1 <- rbind(t1, setNames(data.frame(
+      t1_spec[[g]][[v]],
+      t1_fmt(mean(x), b, big), t1_fmt(sd(x), b, big),
+      t1_fmt(min(x), b, big, TRUE), t1_fmt(max(x), b, big, TRUE),
+      t1_fmt(mean(x[dat$masters == 1]), b, big),
+      t1_fmt(mean(x[dat$masters == 0]), b, big)), t1_names))
+  }
+}
+t1 <- rbind(t1, setNames(data.frame("N", format(nrow(dat), big.mark = ","),
+  "", "", "", format(sum(dat$masters == 1), big.mark = ","),
+  format(sum(dat$masters == 0), big.mark = ",")), t1_names))
+write_word_table(t1, "12.1", "Descriptive statistics",
+  "Note: Completers and Non-completers columns report means. Binary variables are shown as proportions. Panel B characteristics are attached to each student's record; the data contain no institution or state identifiers. Amounts marked $000s are in thousands of dollars. Synthetic data (Example_12_1.dta).",
+  file.path(tables_dir, "Table12_1_Descriptives_R.docx"),
+  group_rows = t1_groups,
+  col_widths = c(2.45, 0.6, 0.6, 0.55, 0.65, 0.8, 0.85))
+
 
 # ------------------------------------------------------------------------------
 # Section 4: Probit Selection Model and Propensity Score
@@ -686,57 +829,147 @@ pv_factor <- (1 - (1 + discount_rate)^(-career_years)) / discount_rate
 cat(sprintf("Present value factor (%d yrs, %.0f%% r): %6.3f\n",
             career_years, discount_rate * 100, pv_factor))
 
-# ── Point-estimate CBA (pre-simulation baseline) ─────────────────────────────
-# Fiscal savings: government recovers subsidy on overage lending
-dat$fiscal_saving_i <- dat$loan_overage * subsidy_rate * dat$above_cap
-# This applies to ALL students above the cap (completers and non-completers)
-# because the cap reduces federal exposure regardless of enrollment outcome.
-FS_point <- sum(dat$fiscal_saving_i)
-cat(sprintf("Point-estimate fiscal savings ($000s): %8.1f\n", FS_point))
+# ── Table 12.2: Simulation assumptions (Word) ───────────────────────────────
+# Built from the parameters at the top of the script and from the data, so
+# the table always matches the values the code uses.
+pct <- function(x) paste0(formatC(100 * x, format = "f", digits = 0), "%")
+instr_share <- 1 - sum(dat$net_inst_rev) / sum(dat$gross_tuition)
+t2 <- data.frame(
+  Parameter = c(
+    "Policy and behavior",
+    "Aggregate federal loan limit",
+    "Probability that a completer above the limit leaves",
+    "Earnings",
+    "Base salary (non-degree holders)",
+    "Earnings horizon",
+    "Discount rate",
+    "Federal government",
+    "Federal subsidy rate",
+    "Tax rate on forgone earnings",
+    "Institutions",
+    "Tuition",
+    "Instructional cost share of tuition; cross-subsidy share of net revenue"),
+  `Baseline value` = c(
+    "", paste0("$", formatC(1000 * cap_threshold, format = "f", digits = 0,
+                            big.mark = ",")),
+    "\u03a6(overage / 50), overage in $000s",
+    "", paste0("$", formatC(base_salary, format = "f", digits = 0, big.mark = ",")),
+    paste(career_years, "years"), pct(discount_rate),
+    "", pct(subsidy_rate), pct(tax_rate),
+    "", "Program values in the data",
+    paste0(pct(instr_share), "; ", pct(cross_sub_share))),
+  `Prior distribution (Sect. 12.6)` = c(
+    "", "Fixed", "Fixed",
+    "", sprintf("Log-normal, SD %.2f on the log scale", prior_sd_salary),
+    "Fixed", "Fixed",
+    "", paste0("Uniform, ", pct(subsidy_rate - prior_hw_subsidy), " to ",
+               pct(subsidy_rate + prior_hw_subsidy)),
+    paste0("Uniform, ", pct(tax_lo), " to ", pct(tax_hi)),
+    "", sprintf("Log-normal multiplier, SD %.2f", prior_sd_tuition), "Fixed"),
+  `Sensitivity check (Sect. 12.7.3)` = c(
+    "", "None", "2\u03a6(overage / 50) \u2212 1",
+    "", "None", "10 years", "None",
+    "", "None", "None",
+    "", "None", "None"),
+  check.names = FALSE)
+write_word_table(t2, "12.2", "Simulation assumptions",
+  paste0("Note: MTE coefficients are drawn from a normal distribution ",
+         "centered on the estimates (Eq. 12.3), with the robust ",
+         "variance-covariance matrix. The simulation uses ",
+         format(S_draws, big.mark = ","), " posterior draws."),
+  file.path(tables_dir, "Table12_2_Assumptions_R.docx"),
+  group_rows = c(1L, 4L, 8L, 11L), right_align = FALSE, fit_page = TRUE)
 
-# Behavioral cost: lost human capital for displaced completers
-# = TT(phat) x base_salary x PV_factor (in $000s, since salary is in $)
+# ── Point-estimate CBA by account (REVISION 6) ──────────────────────────────
+# Three accounts plus a social total. Amounts are present values in $000s.
+#
+#   Students:     - after-tax forgone earnings (+ after-tax efficiency gain)
+#                 + avoided tuition (displaced students no longer pay it)
+#                 + avoided debt service (repayments they no longer make)
+#                 - forgone loan disbursements (loans they no longer receive)
+#                 - higher financing cost for students who stay above the
+#                   limit (the subsidy they lose on borrowing above $100k)
+#   Federal:      + subsidy savings (all borrowing by displaced students,
+#                   plus the overage of students who stay)
+#                 - lost tax revenue on forgone earnings
+#   Institutions: - lost net tuition revenue (gross tuition minus the
+#                   variable instructional cost avoided)
+#   Society:      sum of the three accounts. Tuition, loans, subsidies, and
+#                 taxes are transfers between accounts and net out, leaving
+#                 - forgone earnings + efficiency gain + avoided
+#                   instructional cost.
+#
+# The present value of repayments on a dollar borrowed is (1 - subsidy
+# rate), so avoided debt service and the subsidy are consistent.
+comp <- dat$masters == 1
+
+# Forgone earnings (pre-tax): TT(phat) x base_salary x PV factor ($000s)
 dat$behav_cost_i <- dat$displaced_E * pmax(0, dat$tt_hat) *
   (base_salary / 1000) * pv_factor
 # Note: pmax(0, TT) reflects that only students with positive returns suffer a
 # human capital loss. Displaced students with negative TT represent an
 # efficiency GAIN (removing low-return borrowers).
-BC_point <- sum(dat$behav_cost_i[dat$masters == 1])
-cat(sprintf("Point-estimate behavioral cost ($000s): %8.1f\n", BC_point))
-
-# Efficiency gain from removing low-return borrowers (negative TT region)
+BC_point <- sum(dat$behav_cost_i[comp])
 dat$efficiency_gain_i <- dat$displaced_E * pmax(0, -dat$tt_hat) *
   (base_salary / 1000) * pv_factor
-EG_point <- sum(dat$efficiency_gain_i[dat$masters == 1])
-cat(sprintf("Point-estimate efficiency gain (low-return exit, $000s): %8.1f\n", EG_point))
+EG_point <- sum(dat$efficiency_gain_i[comp])
 
-# Net benefit (point estimate)
-NB_point <- FS_point - BC_point + EG_point
-cat(sprintf("Point-estimate net benefit ($000s): %8.1f\n", NB_point))
-cat(sprintf("Benefit-cost ratio: %5.3f\n", (FS_point + EG_point) / max(1, BC_point)))
+# Federal subsidy savings
+dat$fiscal_saving_i <- subsidy_rate * (dat$displaced_E * dat$grad_plus_loans +
+  (dat$above_cap - dat$displaced_E) * dat$loan_overage)
+FS_point <- sum(dat$fiscal_saving_i)
+# Lost tax revenue on (net) forgone earnings
+TL_point <- tax_rate * (BC_point - EG_point)
 
-# ── Institutional revenue loss ───────────────────────────────────────────────
-# When a student is displaced by the cap, the institution loses their net
-# tuition revenue. As implemented, the loss is net_inst_rev for the FULL
-# program (all program years), not only the remaining years; if displaced
-# students leave partway through, this overstates the loss (UNDER REVIEW). This is distinct from the
-# student's human capital loss: it is a revenue shock to the institution that
-# affects staffing, cross-subsidies, and program viability.
-#
-# Two components:
-#   (a) Direct net revenue loss:  displaced_E x net_inst_rev
-#   (b) Cross-subsidy disruption: 20% of (a), representing the upstream effect
-#       on undergraduate aid and other programs funded by graduate tuition.
+# Students' tuition and loans (displaced completers)
+AT_point <- sum(dat$displaced_E * dat$gross_tuition)
+LD_point <- sum(dat$displaced_E * dat$grad_plus_loans)
+DS_point <- (1 - subsidy_rate) * LD_point                 # avoided debt service
+SC_point <- sum(subsidy_rate * (dat$above_cap - dat$displaced_E) * dat$loan_overage)
+
+# Institutions: lost net tuition revenue; cross-subsidy is part of it
+# As implemented, the loss covers the FULL program (all program years); if
+# displaced students leave partway through, this overstates it (UNDER REVIEW).
 dat$inst_rev_loss_i  <- dat$displaced_E * dat$net_inst_rev
-dat$cross_sub_loss_i <- 0.20 * dat$inst_rev_loss_i
+dat$cross_sub_loss_i <- cross_sub_share * dat$inst_rev_loss_i  # of which: cross-subsidy
+dat$avoid_instr_i    <- dat$displaced_E * (dat$gross_tuition - dat$net_inst_rev)
+IR_point <- sum(dat$inst_rev_loss_i[comp])
+CS_point <- sum(dat$cross_sub_loss_i[comp])
+AI_point <- sum(dat$avoid_instr_i[comp])
 
-IR_point <- sum(dat$inst_rev_loss_i[dat$masters == 1])
-CS_point <- sum(dat$cross_sub_loss_i[dat$masters == 1])
+# Account totals
+STU_point <- -(1 - tax_rate) * (BC_point - EG_point) + AT_point +
+  DS_point - LD_point - SC_point
+FED_point <- FS_point - TL_point
+INS_point <- -IR_point
+NB_point  <- STU_point + FED_point + INS_point
+BCR_point <- (AI_point + EG_point) / max(1, BC_point)
 
-cat("\n--- Institutional Outcomes (Point Estimates) ---\n")
-cat(sprintf("Net institutional revenue loss ($000s):     %8.1f\n", IR_point))
-cat(sprintf("Cross-subsidy disruption ($000s):           %8.1f\n", CS_point))
-cat(sprintf("Total institutional sector impact ($000s):  %8.1f\n", IR_point + CS_point))
+acct_line <- function(label, x) cat(sprintf("%-44s %12s\n", label,
+  formatC(x, format = "f", digits = 1, big.mark = ",")))
+cat("\n--- Point-estimate CBA by account ($000s) ---\n")
+cat("Students\n")
+acct_line("  Forgone after-tax earnings", -(1 - tax_rate) * (BC_point - EG_point))
+acct_line("  Avoided tuition", AT_point)
+acct_line("  Avoided debt service", DS_point)
+acct_line("  Forgone loan disbursements", -LD_point)
+acct_line("  Higher financing cost (students who stay)", -SC_point)
+acct_line("  Student account", STU_point)
+cat("Federal government\n")
+acct_line("  Subsidy savings", FS_point)
+acct_line("  Lost tax revenue", -TL_point)
+acct_line("  Federal account", FED_point)
+cat("Institutions\n")
+acct_line("  Lost net tuition revenue", -IR_point)
+acct_line("    of which cross-subsidy to other programs", -CS_point)
+acct_line("  Institutional account", INS_point)
+cat("Society (transfers net out)\n")
+acct_line("  Forgone earnings (pre-tax)", -BC_point)
+acct_line("  Efficiency gain", EG_point)
+acct_line("  Avoided instructional cost", AI_point)
+acct_line("Point-estimate net benefit ($000s):", NB_point)
+acct_line("Check (- forgone earn. + eff. gain + instr.):", -BC_point + EG_point + AI_point)
+cat(sprintf("Benefit-cost ratio: %5.3f\n", BCR_point))
 
 # Revenue loss by program area
 cat("\nInstitutional revenue loss by program area ($000s):\n")
@@ -752,42 +985,39 @@ print(tabstat_by(completers, "inst_rev_loss_i", "selective_inst",
 print(tabstat_by(completers, "inst_rev_loss_i", "public_ug",
                   stats_fun = list(sum = sum, mean = mean, n = length)))
 
-# Extended net benefit including institutional costs
-NB_extended <- NB_point - IR_point - CS_point
-cat(sprintf("\nExtended net benefit (incl. institutional costs, $000s): %8.1f\n", NB_extended))
-
-# ── Sensitivity of the point-estimate CBA (REVISION 4) ──────────────────────
+# ── Sensitivity of the point-estimate CBA (REVISIONS 4 and 6) ───────────────
 # Two assumptions drive the size of the net benefit:
 #   (1) Displacement function. Baseline: pnorm(overage/50), which gives a
 #       student $1 over the limit a 0.50 probability of leaving. Alternative:
 #       2*pnorm(overage/50) - 1, which starts at 0 and rises toward 1.
 #   (2) Earnings horizon. Baseline: 30 years. Alternative: 10 years.
-# Fiscal savings do not depend on either assumption. The PRTE depends only
-# on the displacement function (it changes the weights).
-comp <- dat$masters == 1
+# The PRTE depends only on the displacement function (it changes the weights).
 sens <- expand.grid(horizon = c(30, 10),
                     displacement = c("pnorm(o/50)", "2pnorm(o/50)-1"),
                     stringsAsFactors = FALSE)[, c("displacement", "horizon")]
-sens[, c("displaced", "prte", "behav_cost", "net_benefit", "bcr",
-         "ext_net_benefit")] <- NA_real_
+sens[, c("displaced", "prte", "forgone_earn", "net_social_benefit", "bcr",
+         "federal_acct")] <- NA_real_
 for (k in seq_len(nrow(sens))) {
   pd_k <- if (sens$displacement[k] == "pnorm(o/50)") {
     pnorm(dat$loan_overage / 50) * dat$above_cap
   } else {
     (2 * pnorm(dat$loan_overage / 50) - 1) * dat$above_cap
   }
-  de_k <- (pd_k * dat$masters)[comp]
+  de_all <- pd_k * dat$masters
+  de_k <- de_all[comp]
   tt_k <- dat$tt_hat[comp]
   pv_k <- (1 - (1 + discount_rate)^(-sens$horizon[k])) / discount_rate
   bc_k <- sum(de_k * pmax(0,  tt_k) * (base_salary / 1000) * pv_k)
   eg_k <- sum(de_k * pmax(0, -tt_k) * (base_salary / 1000) * pv_k)
-  ir_k <- sum(de_k * dat$net_inst_rev[comp])
-  sens$displaced[k]     <- sum(de_k)
-  sens$prte[k]          <- sum(de_k * tt_k) / sum(de_k)
-  sens$behav_cost[k]    <- bc_k
-  sens$net_benefit[k]   <- FS_point - bc_k + eg_k
-  sens$bcr[k]           <- (FS_point + eg_k) / max(1, bc_k)
-  sens$ext_net_benefit[k] <- sens$net_benefit[k] - 1.20 * ir_k
+  ai_k <- sum(de_k * (dat$gross_tuition[comp] - dat$net_inst_rev[comp]))
+  fs_k <- sum(subsidy_rate * (de_all * dat$grad_plus_loans +
+                (dat$above_cap - de_all) * dat$loan_overage))
+  sens$displaced[k]          <- sum(de_k)
+  sens$prte[k]               <- sum(de_k * tt_k) / sum(de_k)
+  sens$forgone_earn[k]       <- bc_k
+  sens$net_social_benefit[k] <- -bc_k + eg_k + ai_k
+  sens$bcr[k]                <- (ai_k + eg_k) / max(1, bc_k)
+  sens$federal_acct[k]       <- fs_k - tax_rate * (bc_k - eg_k)
 }
 cat("\n--- Sensitivity of the point-estimate CBA ($000s) ---\n")
 print(format(sens, digits = 4, nsmall = 1, big.mark = ","), row.names = FALSE)
@@ -812,6 +1042,7 @@ print(format(sens, digits = 4, nsmall = 1, big.mark = ","), row.names = FALSE)
 #   - Base salary (log-normal, reflecting real-wage uncertainty)
 #   - Subsidy rate (uniform, reflecting fiscal policy uncertainty)
 #   - Tuition multiplier (log-normal, reflecting pricing uncertainty)
+#   - Tax rate (uniform, 0.15 to 0.25; REVISION 6)
 # The propensity score (phat) is held fixed across draws, so uncertainty
 # in the first-stage probit is not propagated.
 # ------------------------------------------------------------------------------
@@ -838,17 +1069,29 @@ sim_results <- data.frame(
   b0_s             = NA_real_, b1_s = NA_real_, b2_s = NA_real_,
   m0_s             = NA_real_, m1_s = NA_real_, m2_s = NA_real_,
   ate_s            = NA_real_, att_s = NA_real_, atu_s = NA_real_, mprte_s = NA_real_,
-  fiscal_s         = NA_real_,
-  behav_cost_s     = NA_real_,
+  fiscal_s         = NA_real_,   # Federal subsidy savings
+  tax_loss_s       = NA_real_,   # Lost tax revenue
+  behav_cost_s     = NA_real_,   # Forgone earnings, pre-tax
   effic_gain_s     = NA_real_,
-  net_benefit_s    = NA_real_,
+  avoid_tuition_s  = NA_real_,   # Avoided tuition, students
+  avoid_instr_s    = NA_real_,   # Avoided instructional cost
+  student_acct_s   = NA_real_,
+  federal_acct_s   = NA_real_,
+  inst_acct_s      = NA_real_,
+  net_benefit_s    = NA_real_,   # Net social benefit
   nb_per_student_s = NA_real_,
   bcr_s            = NA_real_,
   pnb_positive_s   = NA_real_,
   inst_rev_loss_s  = NA_real_,
-  cross_sub_loss_s = NA_real_,
-  nb_extended_s    = NA_real_
+  cross_sub_loss_s = NA_real_    # of which: cross-subsidy
 )
+
+# Quantities that do not change across draws (displacement is fixed)
+LD_0 <- LD_point
+AT_0 <- AT_point
+AI_0 <- AI_point
+IR_0 <- IR_point
+OS_0 <- sum((dat$above_cap - dat$displaced_E) * dat$loan_overage)
 
 # ── Simulation loop ──────────────────────────────────────────────────────────
 cat("\nRunning", S_draws, "posterior draws...\n")
@@ -875,13 +1118,15 @@ for (s in 1:S_draws) {
 
   # ── Additional economic uncertainty ─────────────────────────────────────
   # Base salary: log-normal with 10% coefficient of variation
-  base_sal_s <- exp(log(base_salary) + rnorm(1, 0, 0.10))
+  base_sal_s <- exp(log(base_salary) + rnorm(1, 0, prior_sd_salary))
   # Subsidy rate: uniform +/- 5 percentage points around baseline
-  sub_rate_s <- subsidy_rate + runif(1, -0.05, 0.05)
+  sub_rate_s <- subsidy_rate + runif(1, -prior_hw_subsidy, prior_hw_subsidy)
   # Tuition multiplier: log-normal with 8% CV, reflecting uncertainty in
   # actual tuition levels, discount rates, and institutional aid policies.
   # This ensures inst_rev_loss_s varies meaningfully across draws.
-  tuition_mult_s <- exp(rnorm(1, 0, 0.08))
+  tuition_mult_s <- exp(rnorm(1, 0, prior_sd_tuition))
+  # Tax rate on forgone earnings: uniform 0.15 to 0.25 (REVISION 6)
+  tax_rate_s <- runif(1, tax_lo, tax_hi)
 
   # ── Recompute MTE for this draw ──────────────────────────────────────────
   I_s   <- I_fun(dat$phat, m0_s, m1_s, m2_s)
@@ -900,10 +1145,6 @@ for (s in 1:S_draws) {
   mprte_i_s <- ifelse(dat$masters == 1, dat$displaced_E * mte_s / total_disp, NA_real_)
   mprte_s <- sum(mprte_i_s, na.rm = TRUE)
 
-  # Fiscal savings (uses draw-specific subsidy rate)
-  fs_i_s   <- dat$loan_overage * sub_rate_s * dat$above_cap
-  fiscal_s <- sum(fs_i_s)
-
   # Behavioral cost: human capital loss for displaced high-return students
   bc_i_s       <- dat$displaced_E * pmax(0, mte_s) * (base_sal_s / 1000) * pv_factor
   behav_cost_s <- sum(bc_i_s[dat$masters == 1])
@@ -912,36 +1153,44 @@ for (s in 1:S_draws) {
   eg_i_s       <- dat$displaced_E * pmax(0, -mte_s) * (base_sal_s / 1000) * pv_factor
   effic_gain_s <- sum(eg_i_s[dat$masters == 1])
 
-  # Net benefit
-  net_benefit_s <- fiscal_s - behav_cost_s + effic_gain_s
+  # Accounts (REVISION 6; see Section 6)
+  fiscal_s         <- sub_rate_s * (LD_0 + OS_0)
+  tax_loss_s       <- tax_rate_s * (behav_cost_s - effic_gain_s)
+  avoid_tuition_s  <- AT_0 * tuition_mult_s
+  avoid_instr_s    <- AI_0 * tuition_mult_s
+  inst_rev_loss_s  <- IR_0 * tuition_mult_s
+  cross_sub_loss_s <- cross_sub_share * inst_rev_loss_s
+  # Students: after-tax earnings, tuition, and the subsidy they lose
+  # (avoided debt service minus forgone loans = -subsidy on displaced
+  # borrowing; plus the subsidy lost by students who stay)
+  student_acct_s <- -(1 - tax_rate_s) * (behav_cost_s - effic_gain_s) +
+    avoid_tuition_s - fiscal_s
+  federal_acct_s <- fiscal_s - tax_loss_s
+  inst_acct_s    <- -inst_rev_loss_s
+
+  # Net social benefit = sum of the accounts
+  net_benefit_s <- student_acct_s + federal_acct_s + inst_acct_s
 
   # Per-displaced-student net benefit
   n_disp_s         <- max(1, sum(dat$displaced_E[dat$masters == 1]))
   nb_per_student_s <- net_benefit_s / n_disp_s
 
   # Benefit-cost ratio
-  bcr_s <- (fiscal_s + effic_gain_s) / max(1, behav_cost_s)
+  bcr_s <- (avoid_instr_s + effic_gain_s) / max(1, behav_cost_s)
 
   # Efficiency indicator
   pnb_positive_s <- as.numeric(net_benefit_s > 0)
-
-  # Institutional revenue loss
-  # Net tuition revenue forgone when displaced students leave.
-  # Draw-specific tuition multiplier propagates pricing uncertainty.
-  # Cross-subsidy disruption adds 20% for upstream undergraduate impact.
-  ir_i_s          <- dat$displaced_E * dat$net_inst_rev * tuition_mult_s
-  inst_rev_loss_s <- sum(ir_i_s[dat$masters == 1])
-  cross_sub_loss_s <- 0.20 * inst_rev_loss_s
-  nb_extended_s    <- net_benefit_s - inst_rev_loss_s - cross_sub_loss_s
 
   # ── Store results ─────────────────────────────────────────────────────────
   sim_results[s, ] <- list(
     s, b0_s, b1_s, b2_s,
     m0_s, m1_s, m2_s,
     ate_s, att_s, atu_s, mprte_s,
-    fiscal_s, behav_cost_s, effic_gain_s,
+    fiscal_s, tax_loss_s, behav_cost_s, effic_gain_s,
+    avoid_tuition_s, avoid_instr_s,
+    student_acct_s, federal_acct_s, inst_acct_s,
     net_benefit_s, nb_per_student_s, bcr_s, pnb_positive_s,
-    inst_rev_loss_s, cross_sub_loss_s, nb_extended_s
+    inst_rev_loss_s, cross_sub_loss_s
   )
 
   # Progress indicator every 100 draws
@@ -974,30 +1223,30 @@ summarize_ci <- function(x, label, digits = 2) {
 
 # ── Component-level summaries ────────────────────────────────────────────────
 cat("\n--- Posterior Summary: CBA Components ($000s) ---\n")
-for (v in c("fiscal_s", "behav_cost_s", "effic_gain_s", "net_benefit_s")) {
+for (v in c("behav_cost_s", "effic_gain_s", "avoid_instr_s", "net_benefit_s")) {
   summarize_ci(sim_results[[v]], v, digits = 2)
 }
 
-cat("\n--- Institutional Outcomes: Posterior Summary ($000s) ---\n")
-for (v in c("inst_rev_loss_s", "cross_sub_loss_s", "nb_extended_s")) {
+cat("\n--- Accounts by Perspective: Posterior Summary ($000s) ---\n")
+for (v in c("student_acct_s", "federal_acct_s", "fiscal_s", "tax_loss_s",
+            "inst_acct_s", "cross_sub_loss_s")) {
   x  <- sim_results[[v]]
   ci <- quantile(x, probs = c(0.025, 0.975))
   cat(sprintf("%s:  mean = %10.2f  95%% CI: [%10.2f, %10.2f]\n",
               v, mean(x), ci[1], ci[2]))
 }
 
-# Probability extended NB > 0
-sim_results$pnb_ext_pos_s <- as.numeric(sim_results$nb_extended_s > 0)
-cat(sprintf("\nP(Extended NB > 0, incl. institutional costs): %5.3f\n",
-            mean(sim_results$pnb_ext_pos_s)))
+# Probability that the federal government comes out ahead
+cat(sprintf("\nP(Federal account > 0): %5.3f\n",
+            mean(sim_results$federal_acct_s > 0)))
 
 print(sim_results %>%
   summarise(across(c(m0_s, m1_s, m2_s, ate_s, att_s, atu_s, mprte_s),
                     list(mean = mean, sd = sd))))
 
-# ── Treatment Parameter Posterior Summary (Table 12.5 inputs) ────────────────
+# ── Treatment Parameter Posterior Summary (Sects. 12.3.3 and 12.6.3) ─────────
 # Posterior means and 95% credible intervals for ATE, ATT, MPRTE, ATU.
-# These four numbers populate the Estimate column of Table 12.5 and provide
+# These four numbers are reported in the text and provide
 # the inferential basis for the MPRTE > ATT claim in the chapter narrative.
 cat("\n--- Treatment Parameter Posterior (log-salary units) ---\n")
 for (v in c("ate_s", "att_s", "mprte_s", "atu_s")) {
@@ -1039,7 +1288,8 @@ cat("============================================================\n")
 sim_results <- haven::read_dta(file.path(tables_dir, "sim_results_ch12.dta"))
 
 # ── 95% credible intervals ───────────────────────────────────────────────────
-for (v in c("fiscal_s", "behav_cost_s", "effic_gain_s", "net_benefit_s", "bcr_s")) {
+for (v in c("behav_cost_s", "effic_gain_s", "avoid_instr_s", "net_benefit_s", "bcr_s",
+            "student_acct_s", "federal_acct_s", "inst_acct_s")) {
   x  <- sim_results[[v]]
   ci <- quantile(x, probs = c(0.025, 0.975))
   cat(sprintf("%s: mean = %12.2f  95%% CI: [%12.2f, %12.2f]\n",
@@ -1057,52 +1307,48 @@ cat("\n--- Policy Verdict ---\n")
 if (nb_mean > 0) {
   cat(sprintf("Posterior mean NB = %12.2f ($000s) > 0\n", nb_mean))
   cat("Scenario A likely: cap predominantly displaces low-return borrowers.\n")
-  cat("Policy generates net fiscal savings in excess of human capital loss.\n")
+  cat("Resources saved exceed forgone earnings.\n")
 } else {
   cat(sprintf("Posterior mean NB = %12.2f ($000s) < 0\n", nb_mean))
   cat("Scenario B likely: cap displaces students with positive marginal returns.\n")
-  cat("Human capital loss exceeds fiscal savings.\n")
+  cat("Forgone earnings exceed the resources saved.\n")
 }
 
-# ── LaTeX-ready summary table ────────────────────────────────────────────────
-tex_path <- file.path(tables_dir, "Table12_1_CBA_Summary.tex")
-tex_con  <- file(tex_path, open = "wt")
-
-writeLines(c(
-  "\\begin{table}[ht]",
-  "\\caption{Posterior Cost--Benefit Summary: \\$100k Grad PLUS Cap}",
-  "\\begin{tabular}{lrrrr}",
-  "\\hline",
-  "Component & Mean & SD & 2.5\\% & 97.5\\% \\\\",
-  "\\hline"
-), tex_con)
-
-cba_vars   <- c("fiscal_s", "behav_cost_s", "effic_gain_s", "net_benefit_s", "bcr_s")
-cba_labels <- c(
-  fiscal_s      = "Fiscal savings (\\$000s)",
-  behav_cost_s  = "Behavioral cost (\\$000s)",
-  effic_gain_s  = "Efficiency gain (\\$000s)",
-  net_benefit_s = "Net benefit (\\$000s)",
-  bcr_s         = "Benefit-cost ratio"
-)
-
-for (v in cba_vars) {
-  x  <- sim_results[[v]]
-  ci <- quantile(x, probs = c(0.025, 0.975))
-  row <- sprintf("%s & %.2f & %.2f & %.2f & %.2f \\\\",
-                  cba_labels[[v]], mean(x), sd(x), ci[1], ci[2])
-  writeLines(row, tex_con)
+# ── Table 12.3: Posterior cost-benefit summary (Word) ───────────────────────
+t3_spec <- list(
+  "Society" = c(behav_cost_s = "Forgone earnings", effic_gain_s = "Efficiency gain",
+                avoid_instr_s = "Avoided instructional cost",
+                net_benefit_s = "Net social benefit", bcr_s = "Benefit-cost ratio"),
+  "By account" = c(student_acct_s = "Students", federal_acct_s = "Federal government",
+                   inst_acct_s = "Institutions"))
+t3_fmt <- function(x, v) {
+  if (v == "bcr_s") return(formatC(x, format = "f", digits = 3))
+  formatC(x, format = "f", digits = 1, big.mark = ",")
 }
-
-writeLines(c(
-  "\\hline",
-  sprintf("\\multicolumn{5}{l}{\\textit{Note: %d posterior draws. Behavioral cost = lost human capital for displaced completers with MTE > 0. Efficiency gain = avoided loss from removing completers with MTE $\\leq$ 0.}} \\\\", S_draws),
-  "\\end{tabular}",
-  "\\end{table}"
-), tex_con)
-
-close(tex_con)
-cat("\nSummary table written to", tex_path, "\n")
+t3 <- data.frame(Component = character(0), Mean = character(0), SD = character(0),
+                 `2.5th pct.` = character(0), `97.5th pct.` = character(0),
+                 check.names = FALSE)
+t3_groups <- integer(0)
+for (g in names(t3_spec)) {
+  t3 <- rbind(t3, setNames(data.frame(g, "", "", "", ""), names(t3)))
+  t3_groups <- c(t3_groups, nrow(t3))
+  for (v in names(t3_spec[[g]])) {
+    x  <- sim_results[[v]]
+    ci <- quantile(x, probs = c(0.025, 0.975))
+    t3 <- rbind(t3, setNames(data.frame(t3_spec[[g]][[v]],
+      t3_fmt(mean(x), v), t3_fmt(sd(x), v), t3_fmt(ci[[1]], v),
+      t3_fmt(ci[[2]], v)), names(t3)))
+  }
+}
+write_word_table(t3, "12.3",
+  "Posterior cost-benefit summary: $100,000 federal graduate loan limit ($000s)",
+  paste0("Note: Based on ", format(S_draws, big.mark = ","), " posterior ",
+         "draws. Net social benefit is the sum of the three accounts; tuition, ",
+         "loans, subsidies, and taxes are transfers between accounts and net ",
+         "out. Benefit-cost ratio = (avoided instructional cost + efficiency ",
+         "gain) / forgone earnings."),
+  file.path(tables_dir, "Table12_3_CBA_Summary_R.docx"),
+  group_rows = t3_groups)
 
 
 # ------------------------------------------------------------------------------
@@ -1188,14 +1434,15 @@ save_fig(fig12_2, "fig12_2_mte_policy_R.png")
 # Fig. 12.3: Benefit-Cost Decomposition - Stacked Bar Chart
 # Shows posterior mean of each component and their net contribution.
 # ------------------------------------------------------------------------------
-sc_fs <- mean(sim_results$fiscal_s)
+# Posterior means of the real (non-transfer) components (REVISION 6)
+sc_ai <- mean(sim_results$avoid_instr_s)
 sc_bc <- mean(sim_results$behav_cost_s)
 sc_eg <- mean(sim_results$effic_gain_s)
 
+decomp_levels <- c("Avoided Instructional Cost", "Efficiency Gain", "Forgone Earnings")
 decomp <- data.frame(
-  label = factor(c("Fiscal Savings", "Efficiency Gain", "Behavioral Cost"),
-                  levels = c("Fiscal Savings", "Efficiency Gain", "Behavioral Cost")),
-  value = c(sc_fs, sc_eg, -sc_bc)
+  label = factor(decomp_levels, levels = decomp_levels),
+  value = c(sc_ai, sc_eg, -sc_bc)
 )
 
 fig12_3 <- ggplot(decomp, aes(x = label, y = value)) +
@@ -1205,8 +1452,9 @@ fig12_3 <- ggplot(decomp, aes(x = label, y = value)) +
        title = "Cost-Benefit Decomposition",
        subtitle = "$100k Federal Loan Cap (Posterior Mean Components)",
        caption = paste(
-         "Behavioral cost shown as negative (subtracted from net benefit).",
-         "Net benefit = Fiscal Savings + Efficiency Gain - Behavioral Cost.",
+         "Forgone earnings shown as negative. Net social benefit =",
+         "Avoided Instructional Cost + Efficiency Gain - Forgone Earnings;",
+         "tuition, loans, subsidies, and taxes are transfers and net out.",
          sep = "\n"))
 
 save_fig(fig12_3, "fig12_3_cba_decomp_R.png")
@@ -1358,39 +1606,30 @@ fig12_6 <- ggplot(byarea, aes(x = prog_area, y = inst_rev_loss_i)) +
 save_fig(fig12_6, "fig12_6_inst_rev_byfield_R.png")
 
 # ------------------------------------------------------------------------------
-# Fig. 12.7: Full Social Cost Stack - Student + Institutional Channels
-# Stacks all costs and savings to show the complete distributional picture.
+# Fig. 12.7: Who Bears the Cost - Accounts by Perspective (REVISION 6)
+# Posterior means of the student, federal, and institutional accounts and
+# their sum, the net social benefit.
 # ------------------------------------------------------------------------------
 sim_results <- haven::read_dta(file.path(tables_dir, "sim_results_ch12.dta"))
 
-sc_fs <- mean(sim_results$fiscal_s)
-sc_bc <- mean(sim_results$behav_cost_s)
-sc_eg <- mean(sim_results$effic_gain_s)
-sc_ir <- mean(sim_results$inst_rev_loss_s)
-sc_cs <- mean(sim_results$cross_sub_loss_s)
-
-full_stack <- data.frame(
-  label = factor(c("Fiscal Savings", "Efficiency Gain", "Human Capital Loss",
-                    "Institutional Rev. Loss", "Cross-Subsidy Disruption"),
-                  levels = c("Fiscal Savings", "Efficiency Gain", "Human Capital Loss",
-                             "Institutional Rev. Loss", "Cross-Subsidy Disruption")),
-  value = c(sc_fs, sc_eg, -sc_bc, -sc_ir, -sc_cs),
-  category = c("Benefit", "Benefit", "Cost", "Cost", "Cost")
+acct_levels <- c("Students", "Federal Government", "Institutions", "Society (Total)")
+accounts <- data.frame(
+  label = factor(acct_levels, levels = acct_levels),
+  value = c(mean(sim_results$student_acct_s), mean(sim_results$federal_acct_s),
+            mean(sim_results$inst_acct_s),    mean(sim_results$net_benefit_s))
 )
 
-fig12_7 <- ggplot(full_stack, aes(x = label, y = value, fill = category)) +
-  geom_col(color = "black") +
+fig12_7 <- ggplot(accounts, aes(x = label, y = value)) +
+  geom_col(fill = "grey45", color = "black") +
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
-  scale_fill_manual(name = NULL, values = c(Benefit = "grey75", Cost = "grey35")) +
   labs(x = NULL, y = "Posterior Mean ($000s)",
-       title = "Full Social Cost Stack",
-       subtitle = "Student and Institutional Channels Combined",
+       title = "Who Bears the Cost",
+       subtitle = "Accounts by Perspective (Posterior Means)",
        caption = paste(
-         "Benefits shown positive; costs shown negative.",
-         "Human capital loss and institutional revenue loss dominate.",
-         "Cross-subsidy disruption captures upstream undergraduate impact.",
-         sep = "\n")) +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+         "Society = Students + Federal Government + Institutions.",
+         "Students: after-tax earnings, tuition, and lost loan subsidies.",
+         "Federal: subsidy savings minus lost tax revenue.",
+         sep = "\n"))
 
 save_fig(fig12_7, "fig12_7_full_cost_stack_R.png")
 
@@ -1405,7 +1644,9 @@ cat("============================================================\n")
 cat("Output files:\n")
 cat("  R log:         ", log_path, "\n")
 cat("  Data:          Example_12_1.dta\n")
-cat("  Table:         ", file.path(tables_dir, "Table12_1_CBA_Summary.tex"), "\n")
+cat("  Tables:        ", file.path(tables_dir, "Table12_1_Descriptives_R.docx"), "\n")
+cat("                 ", file.path(tables_dir, "Table12_2_Assumptions_R.docx"), "\n")
+cat("                 ", file.path(tables_dir, "Table12_3_CBA_Summary_R.docx"), "\n")
 cat("  Sim results:   ", file.path(tables_dir, "sim_results_ch12.dta"), "\n")
 cat("  Figures:       ", file.path(graphs_dir, "fig12_1_posterior_nb_R.png"), "\n")
 cat("                 ", file.path(graphs_dir, "fig12_2_mte_policy_R.png"), "\n")
