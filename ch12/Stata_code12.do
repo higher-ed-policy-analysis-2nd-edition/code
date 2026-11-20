@@ -136,6 +136,11 @@
   The prior settings, the cross-subsidy share, and the tax-rate range are
   now globals, so Table 12.2 always matches the values the code uses.
   No results change.
+
+  REVISION 8 (Nov 2026): Table 12.2 reformatted to fit the page: shorter
+  parameter labels, the instructional cost and cross-subsidy shares on
+  separate rows, label definitions moved to the table note, and fixed
+  column widths. No results change.
 ===========================================================================*/
 
 
@@ -791,22 +796,26 @@ putdocx begin, font("Times New Roman", 10)
 putdocx paragraph
 putdocx text ("Table 12.2 "), bold
 putdocx text ("Simulation assumptions")
-putdocx table t2 = (15, 4), border(all, nil) layout(autofitwindow)
+* REVISION 8: shorter labels (one line each), the two institutional shares
+* on separate rows, label definitions moved to the note, and fixed column
+* widths (1.75", 1.3", 2.1", 1.35" = 27/20/32/21 percent of 6.5").
+matrix t2w = (27, 20, 32, 21)
+putdocx table t2 = (16, 4), border(all, nil) width(100%) width(t2w) layout(fixed)
 putdocx table t2(1,1) = ("Parameter")
 putdocx table t2(1,2) = ("Baseline value")
 putdocx table t2(1,3) = ("Prior distribution (Sect. 12.6)")
 putdocx table t2(1,4) = ("Sensitivity check (Sect. 12.7.3)")
 putdocx table t2(2,1) = ("Policy and behavior"), italic
-putdocx table t2(3,1) = ("    Aggregate federal loan limit")
+putdocx table t2(3,1) = ("    Aggregate loan limit")
 putdocx table t2(3,2) = (char(36) + strtrim(string(1000*$cap_threshold, "%12.0fc")))
 putdocx table t2(3,3) = ("Fixed")
 putdocx table t2(3,4) = ("None")
-putdocx table t2(4,1) = ("    Probability that a completer above the limit leaves")
-putdocx table t2(4,2) = ("Φ(overage / 50), overage in $000s")
+putdocx table t2(4,1) = ("    Displacement probability")
+putdocx table t2(4,2) = ("Φ(overage / 50)")
 putdocx table t2(4,3) = ("Fixed")
 putdocx table t2(4,4) = ("2Φ(overage / 50) − 1")
 putdocx table t2(5,1) = ("Earnings"), italic
-putdocx table t2(6,1) = ("    Base salary (non-degree holders)")
+putdocx table t2(6,1) = ("    Base salary, no master's")
 putdocx table t2(6,2) = (char(36) + strtrim(string($base_salary, "%12.0fc")))
 putdocx table t2(6,3) = ("Log-normal, SD " + strtrim(string($prior_sd_salary, "%4.2f")) + " on the log scale")
 putdocx table t2(6,4) = ("None")
@@ -819,11 +828,11 @@ putdocx table t2(8,2) = (strtrim(string(100*$discount_rate, "%4.0f")) + "`pct'")
 putdocx table t2(8,3) = ("Fixed")
 putdocx table t2(8,4) = ("None")
 putdocx table t2(9,1) = ("Federal government"), italic
-putdocx table t2(10,1) = ("    Federal subsidy rate")
+putdocx table t2(10,1) = ("    Subsidy rate")
 putdocx table t2(10,2) = (strtrim(string(100*$subsidy_rate, "%4.0f")) + "`pct'")
 putdocx table t2(10,3) = ("Uniform, " + strtrim(string(100*($subsidy_rate - $prior_hw_subsidy), "%4.0f")) + "`pct' to " + strtrim(string(100*($subsidy_rate + $prior_hw_subsidy), "%4.0f")) + "`pct'")
 putdocx table t2(10,4) = ("None")
-putdocx table t2(11,1) = ("    Tax rate on forgone earnings")
+putdocx table t2(11,1) = ("    Tax rate")
 putdocx table t2(11,2) = (strtrim(string(100*$tax_rate, "%4.0f")) + "`pct'")
 putdocx table t2(11,3) = ("Uniform, " + strtrim(string(100*$tax_lo, "%4.0f")) + "`pct' to " + strtrim(string(100*$tax_hi, "%4.0f")) + "`pct'")
 putdocx table t2(11,4) = ("None")
@@ -832,14 +841,18 @@ putdocx table t2(13,1) = ("    Tuition")
 putdocx table t2(13,2) = ("Program values in the data")
 putdocx table t2(13,3) = ("Log-normal multiplier, SD " + strtrim(string($prior_sd_tuition, "%4.2f")))
 putdocx table t2(13,4) = ("None")
-putdocx table t2(14,1) = ("    Instructional cost share of tuition; cross-subsidy share of net revenue")
-putdocx table t2(14,2) = (strtrim(string(100*`instr_share', "%4.0f")) + "`pct'; " + strtrim(string(100*$cross_sub_share, "%4.0f")) + "`pct'")
+putdocx table t2(14,1) = ("    Instructional cost share")
+putdocx table t2(14,2) = (strtrim(string(100*`instr_share', "%4.0f")) + "`pct'")
 putdocx table t2(14,3) = ("Fixed")
 putdocx table t2(14,4) = ("None")
-putdocx table t2(15,1) = ("Note: MTE coefficients are drawn from a normal distribution centered on the estimates (Eq. 12.3), with the robust variance-covariance matrix. The simulation uses $S_draws posterior draws. Source: Parameter settings in Stata_code12.do and R_code12.R, available in the book's GitHub code repository."), colspan(4)
+putdocx table t2(15,1) = ("    Cross-subsidy share")
+putdocx table t2(15,2) = (strtrim(string(100*$cross_sub_share, "%4.0f")) + "`pct'")
+putdocx table t2(15,3) = ("Fixed")
+putdocx table t2(15,4) = ("None")
+putdocx table t2(16,1) = ("Note: MTE coefficients are drawn from a normal distribution centered on the estimates (Eq. 12.3), with the robust variance-covariance matrix. The simulation uses $S_draws posterior draws. Displacement probability is the probability that a completer whose borrowing exceeds the limit leaves the program; overage is the amount above the limit, in thousands of dollars. The tax rate applies to forgone earnings. The instructional cost share is a share of tuition; the cross-subsidy share is a share of net institutional revenue. Source: Parameter settings in Stata_code12.do and R_code12.R, available in the book's GitHub code repository."), colspan(4)
 putdocx table t2(1,.), border(top)
 putdocx table t2(1,.), border(bottom)
-putdocx table t2(14,.), border(bottom)
+putdocx table t2(15,.), border(bottom)
 putdocx save "$tables_dir/Table12_2_Assumptions_Stata.docx", replace
 di as text "Table 12.2 written to $tables_dir/Table12_2_Assumptions_Stata.docx"
 

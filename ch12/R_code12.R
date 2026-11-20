@@ -127,6 +127,11 @@
 #   formerly Table 12.1). The prior settings, the cross-subsidy share, and the
 #   tax-rate range are now parameters, so Table 12.2 always matches the
 #   values the code uses. No results change.
+#
+# REVISION 8 (Nov 2026; mirrors Stata_code12.do): Table 12.2 reformatted to
+#   fit the page: shorter parameter labels, the instructional cost and
+#   cross-subsidy shares on separate rows, label definitions moved to the
+#   table note, and fixed column widths. No results change.
 # ==============================================================================
 
 
@@ -837,27 +842,28 @@ instr_share <- 1 - sum(dat$net_inst_rev) / sum(dat$gross_tuition)
 t2 <- data.frame(
   Parameter = c(
     "Policy and behavior",
-    "Aggregate federal loan limit",
-    "Probability that a completer above the limit leaves",
+    "Aggregate loan limit",
+    "Displacement probability",
     "Earnings",
-    "Base salary (non-degree holders)",
+    "Base salary, no master's",
     "Earnings horizon",
     "Discount rate",
     "Federal government",
-    "Federal subsidy rate",
-    "Tax rate on forgone earnings",
+    "Subsidy rate",
+    "Tax rate",
     "Institutions",
     "Tuition",
-    "Instructional cost share of tuition; cross-subsidy share of net revenue"),
+    "Instructional cost share",
+    "Cross-subsidy share"),
   `Baseline value` = c(
     "", paste0("$", formatC(1000 * cap_threshold, format = "f", digits = 0,
                             big.mark = ",")),
-    "\u03a6(overage / 50), overage in $000s",
+    "\u03a6(overage / 50)",
     "", paste0("$", formatC(base_salary, format = "f", digits = 0, big.mark = ",")),
     paste(career_years, "years"), pct(discount_rate),
     "", pct(subsidy_rate), pct(tax_rate),
     "", "Program values in the data",
-    paste0(pct(instr_share), "; ", pct(cross_sub_share))),
+    pct(instr_share), pct(cross_sub_share)),
   `Prior distribution (Sect. 12.6)` = c(
     "", "Fixed", "Fixed",
     "", sprintf("Log-normal, SD %.2f on the log scale", prior_sd_salary),
@@ -865,21 +871,29 @@ t2 <- data.frame(
     "", paste0("Uniform, ", pct(subsidy_rate - prior_hw_subsidy), " to ",
                pct(subsidy_rate + prior_hw_subsidy)),
     paste0("Uniform, ", pct(tax_lo), " to ", pct(tax_hi)),
-    "", sprintf("Log-normal multiplier, SD %.2f", prior_sd_tuition), "Fixed"),
+    "", sprintf("Log-normal multiplier, SD %.2f", prior_sd_tuition), "Fixed",
+    "Fixed"),
   `Sensitivity check (Sect. 12.7.3)` = c(
     "", "None", "2\u03a6(overage / 50) \u2212 1",
     "", "None", "10 years", "None",
     "", "None", "None",
-    "", "None", "None"),
+    "", "None", "None", "None"),
   check.names = FALSE)
 write_word_table(t2, "12.2", "Simulation assumptions",
   paste0("Note: MTE coefficients are drawn from a normal distribution ",
          "centered on the estimates (Eq. 12.3), with the robust ",
          "variance-covariance matrix. The simulation uses ",
          format(S_draws, big.mark = ","), " posterior draws.",
+         " Displacement probability is the probability that a completer",
+         " whose borrowing exceeds the limit leaves the program; overage is",
+         " the amount above the limit, in thousands of dollars. The tax rate",
+         " applies to forgone earnings. The instructional cost share is a",
+         " share of tuition; the cross-subsidy share is a share of net",
+         " institutional revenue.",
          " Source: Parameter settings in Stata_code12.do and R_code12.R, available in the book's GitHub code repository."),
   file.path(tables_dir, "Table12_2_Assumptions_R.docx"),
-  group_rows = c(1L, 4L, 8L, 11L), right_align = FALSE, fit_page = TRUE)
+  group_rows = c(1L, 4L, 8L, 11L), right_align = FALSE,
+  col_widths = c(1.75, 1.3, 2.1, 1.35))  # REVISION 8: fixed widths, 6.5" total
 
 # ── Point-estimate CBA by account (REVISION 6) ──────────────────────────────
 # Three accounts plus a social total. Amounts are present values in $000s.
