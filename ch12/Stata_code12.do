@@ -141,6 +141,16 @@
   parameter labels, the instructional cost and cross-subsidy shares on
   separate rows, label definitions moved to the table note, and fixed
   column widths. No results change.
+
+  REVISION 9 (Nov 2026): Table 12.2 columns fit to contents (the fixed
+  widths in REVISION 8 were not honored by Word); posterior draws shown
+  as "1,000" in the Table 12.2 and 12.3 notes; Fig. 12.6 note corrected
+  (the institutional revenue loss includes the cross-subsidy). No results
+  change.
+
+  REVISION 10 (Nov 2026): base salary computed from the data (geometric
+  mean salary of non-completers) instead of the undocumented $47,000.
+  CBA and posterior results change; MTE and treatment parameters do not.
 ===========================================================================*/
 
 
@@ -187,7 +197,8 @@ global career_years    30      // Earnings horizon (years)
 global subsidy_rate    0.20    // Government subsidy on Grad PLUS principal
 global tax_rate        0.20    // Marginal tax rate on forgone earnings (REVISION 6)
 global cap_threshold   100     // Policy cap ($000s)
-global base_salary     47000   // Pooled mean annual salary (non-holders)
+* base_salary is set in Section 3 from the data (REVISION 10): the geometric
+* mean annual salary of non-completers, exp(mean ln_salary | masters = 0).
 global cost_per_degree 100000  // Not used in any calculation (retained for reference)
 global S_draws         1000     // Number of Bayesian posterior draws
 global cross_sub_share 0.20    // Share of net revenue that cross-subsidizes other programs
@@ -417,6 +428,13 @@ di    "  Section 3: Descriptive Statistics and Policy Exposure"
 di    "============================================================"
 
 use "Example_12_1.dta", clear
+
+* ── Base salary for the CBA (REVISION 10) ───────────────────────────────────
+* Geometric mean annual salary of non-completers, consistent with returns
+* measured in log points. Replaces a hard-coded $47,000 with no source.
+qui sum ln_salary if masters == 0
+global base_salary = round(exp(r(mean)))
+di as text "Base salary (geometric mean, non-completers): $" %9.0fc $base_salary
 
 * ── Sample overview ─────────────────────────────────────────────────────────
 tab masters
@@ -791,16 +809,18 @@ local net_tot = r(sum)
 qui sum gross_tuition
 local instr_share = 1 - `net_tot' / r(sum)
 local pct = "%"
+local S_fmt = strtrim(string($S_draws, "%9.0fc"))   // REVISION 9: "1,000"
 putdocx clear
 putdocx begin, font("Times New Roman", 10)
 putdocx paragraph
 putdocx text ("Table 12.2 "), bold
 putdocx text ("Simulation assumptions")
 * REVISION 8: shorter labels (one line each), the two institutional shares
-* on separate rows, label definitions moved to the note, and fixed column
-* widths (1.75", 1.3", 2.1", 1.35" = 27/20/32/21 percent of 6.5").
-matrix t2w = (27, 20, 32, 21)
-putdocx table t2 = (16, 4), border(all, nil) width(100%) width(t2w) layout(fixed)
+* on separate rows, and label definitions moved to the note.
+* REVISION 9: column widths fit to contents, as in Tables 12.1 and 12.3.
+* (putdocx writes width(matname) cell widths that Word does not honor
+* under layout(fixed), so the columns came out equal.)
+putdocx table t2 = (16, 4), border(all, nil) layout(autofitcontents)
 putdocx table t2(1,1) = ("Parameter")
 putdocx table t2(1,2) = ("Baseline value")
 putdocx table t2(1,3) = ("Prior distribution (Sect. 12.6)")
@@ -849,7 +869,7 @@ putdocx table t2(15,1) = ("    Cross-subsidy share")
 putdocx table t2(15,2) = (strtrim(string(100*$cross_sub_share, "%4.0f")) + "`pct'")
 putdocx table t2(15,3) = ("Fixed")
 putdocx table t2(15,4) = ("None")
-putdocx table t2(16,1) = ("Note: MTE coefficients are drawn from a normal distribution centered on the estimates (Eq. 12.3), with the robust variance-covariance matrix. The simulation uses $S_draws posterior draws. Displacement probability is the probability that a completer whose borrowing exceeds the limit leaves the program; overage is the amount above the limit, in thousands of dollars. The tax rate applies to forgone earnings. The instructional cost share is a share of tuition; the cross-subsidy share is a share of net institutional revenue. Source: Parameter settings in Stata_code12.do and R_code12.R, available in the book's GitHub code repository."), colspan(4)
+putdocx table t2(16,1) = ("Note: MTE coefficients are drawn from a normal distribution centered on the estimates (Eq. 12.3), with the robust variance-covariance matrix. The simulation uses `S_fmt' posterior draws. Displacement probability is the probability that a completer whose borrowing exceeds the limit leaves the program; overage is the amount above the limit, in thousands of dollars. The tax rate applies to forgone earnings. The instructional cost share is a share of tuition; the cross-subsidy share is a share of net institutional revenue. Base salary is the geometric mean annual salary of non-completers in the data. Source: Parameter settings in Stata_code12.do and R_code12.R, available in the book's GitHub code repository."), colspan(4)
 putdocx table t2(1,.), border(top)
 putdocx table t2(1,.), border(bottom)
 putdocx table t2(15,.), border(bottom)
@@ -1421,7 +1441,7 @@ foreach var of local t3vars {
     putdocx table t3(`r',4) = (strtrim(string(`p_lo',  "`fmt'"))), halign(right)
     putdocx table t3(`r',5) = (strtrim(string(`p_hi',  "`fmt'"))), halign(right)
 }
-putdocx table t3(12,1) = ("Note: Based on $S_draws posterior draws. Net social benefit is the sum of the three accounts; tuition, loans, subsidies, and taxes are transfers between accounts and net out. Benefit-cost ratio = (avoided instructional cost + efficiency gain) / forgone earnings. Source: Posterior simulation using Example_12_1.dta (see Sect. 12.6)."), colspan(5)
+putdocx table t3(12,1) = ("Note: Based on `S_fmt' posterior draws. Net social benefit is the sum of the three accounts; tuition, loans, subsidies, and taxes are transfers between accounts and net out. Benefit-cost ratio = (avoided instructional cost + efficiency gain) / forgone earnings. Source: Posterior simulation using Example_12_1.dta (see Sect. 12.6)."), colspan(5)
 putdocx table t3(1,.), border(top)
 putdocx table t3(1,.), border(bottom)
 putdocx table t3(11,.), border(bottom)
@@ -1699,13 +1719,15 @@ replace sort_order = 4 if prog_area == "Education"
 replace sort_order = 5 if prog_area == "Health"
 sort sort_order
 
+local cs_pct = strtrim(string(100*$cross_sub_share, "%4.0f"))   // REVISION 9
 graph bar inst_rev_loss_i, over(prog_area, sort(sort_order)) ///
     bar(1, fcolor(gs5) lcolor(gs0)) ///
     ytitle("Net Institutional Revenue Loss ($000s)") ///
     title("Institutional Revenue Loss by Program Area") ///
     subtitle("Cap-displaced students × net tuition revenue per student") ///
     note("Net revenue = 65% of gross tuition (35% variable cost excluded)." ///
-         "Excludes cross-subsidy disruption. Based on point estimates.") ///
+         "Includes the cross-subsidy to other programs (`cs_pct'% of net revenue)." ///
+         "Based on point estimates.") ///
     name(fig12_6_inst_rev_byfield, replace)
 
 graph export "$graphs_dir/fig12_6_inst_rev_byfield_Stata.png", ///

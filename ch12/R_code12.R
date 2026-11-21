@@ -132,6 +132,16 @@
 #   fit the page: shorter parameter labels, the instructional cost and
 #   cross-subsidy shares on separate rows, label definitions moved to the
 #   table note, and fixed column widths. No results change.
+#
+# REVISION 9 (Nov 2026; mirrors Stata_code12.do): Fig. 12.6 note corrected
+#   (the institutional revenue loss includes the cross-subsidy). Table 12.2
+#   keeps its fixed widths here; flextable writes them in a form Word honors.
+#   No results change.
+#
+# REVISION 10 (Nov 2026; mirrors Stata_code12.do): base salary computed from
+#   the data (geometric mean salary of non-completers) instead of the
+#   undocumented $47,000. CBA and posterior results change; MTE and treatment
+#   parameters do not.
 # ==============================================================================
 
 
@@ -289,7 +299,8 @@ career_years    <- 30      # Earnings horizon (years)
 subsidy_rate    <- 0.20    # Government subsidy on Grad PLUS principal
 tax_rate        <- 0.20    # Marginal tax rate on forgone earnings (REVISION 6)
 cap_threshold   <- 100     # Policy cap ($000s)
-base_salary     <- 47000   # Pooled mean annual salary (non-holders)
+# base_salary is set in Section 3 from the data (REVISION 10): the geometric
+# mean annual salary of non-completers, exp(mean ln_salary | masters = 0).
 cost_per_degree <- 100000  # Not used in any calculation (retained for reference)
 S_draws         <- 1000    # Number of Bayesian posterior draws
 cross_sub_share <- 0.20    # Share of net revenue that cross-subsidizes other programs
@@ -514,6 +525,13 @@ cat("  Section 3: Descriptive Statistics and Policy Exposure\n")
 cat("============================================================\n")
 
 dat <- haven::read_dta("Example_12_1.dta")
+
+# ── Base salary for the CBA (REVISION 10) ───────────────────────────────────
+# Geometric mean annual salary of non-completers, consistent with returns
+# measured in log points. Replaces a hard-coded $47,000 with no source.
+base_salary <- round(exp(mean(dat$ln_salary[dat$masters == 0])))
+cat("Base salary (geometric mean, non-completers): $",
+    format(base_salary, big.mark = ","), "\n", sep = "")
 
 # ── Sample overview ─────────────────────────────────────────────────────────
 print(table(dat$masters))
@@ -889,7 +907,8 @@ write_word_table(t2, "12.2", "Simulation assumptions",
          " the amount above the limit, in thousands of dollars. The tax rate",
          " applies to forgone earnings. The instructional cost share is a",
          " share of tuition; the cross-subsidy share is a share of net",
-         " institutional revenue.",
+         " institutional revenue. Base salary is the geometric mean annual",
+         " salary of non-completers in the data.",
          " Source: Parameter settings in Stata_code12.do and R_code12.R, available in the book's GitHub code repository."),
   file.path(tables_dir, "Table12_2_Assumptions_R.docx"),
   group_rows = c(1L, 4L, 8L, 11L), right_align = FALSE,
@@ -1615,7 +1634,9 @@ fig12_6 <- ggplot(byarea, aes(x = prog_area, y = inst_rev_loss_i)) +
        subtitle = "Cap-displaced students x net tuition revenue per student",
        caption = paste(
          "Net revenue = 65% of gross tuition (35% variable cost excluded).",
-         "Excludes cross-subsidy disruption. Based on point estimates.",
+         sprintf("Includes the cross-subsidy to other programs (%.0f%% of net revenue).",
+                 100 * cross_sub_share),
+         "Based on point estimates.",
          sep = "\n"))
 
 save_fig(fig12_6, "fig12_6_inst_rev_byfield_R.png")
